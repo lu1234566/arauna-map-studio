@@ -22,7 +22,6 @@ describe("clipboardStore", () => {
   beforeEach(() => {
     clipboardStore.clear();
     editorStore.newMap();
-    editorStore.toggleProtect();
     if (!editorStore.getState().protectProgression) editorStore.toggleProtect();
     editorStore.setSelection(null);
     editorStore.selectCell(null);
@@ -81,7 +80,9 @@ describe("clipboardStore", () => {
       layout: "LAYOUT_TEST",
       connections: [],
       object_events: [],
-      warp_events: [{ x: 5, y: 5, elevation: 0, dest_map: "MAP_TEST", dest_warp_id: 0 }],
+      warp_events: [
+        { x: 5, y: 5, elevation: 0, dest_map: "MAP_TEST", dest_warp_id: "0" },
+      ],
       coord_events: [],
       bg_events: [],
     });
@@ -107,5 +108,25 @@ describe("clipboardStore", () => {
     expect(getCollision(map.physical[cell] ?? 0)).toBe(2);
     expect(getElevation(map.physical[cell] ?? 0)).toBe(6);
     expect(clipboardStore.getState().clipboard?.values[0]).toBe(88);
+  });
+
+  it("records a pasted pattern as one undo operation", () => {
+    paintVisual(1, 1, 10);
+    paintVisual(2, 1, 11);
+    editorStore.setViewMode("visual");
+    editorStore.setSelection({ x: 1, y: 1, w: 2, h: 1 });
+    clipboardStore.copySelection();
+    editorStore.setSelection(null);
+    editorStore.selectCell(idx(10, 10, editorStore.getState().map.width));
+
+    const beforeA = editorStore.getState().map.metatiles[idx(10, 10, 20)];
+    const beforeB = editorStore.getState().map.metatiles[idx(11, 10, 20)];
+    clipboardStore.pasteAtSelected();
+    expect(editorStore.getState().map.metatiles[idx(10, 10, 20)]).toBe(10);
+    expect(editorStore.getState().map.metatiles[idx(11, 10, 20)]).toBe(11);
+
+    editorStore.undo();
+    expect(editorStore.getState().map.metatiles[idx(10, 10, 20)]).toBe(beforeA);
+    expect(editorStore.getState().map.metatiles[idx(11, 10, 20)]).toBe(beforeB);
   });
 });
