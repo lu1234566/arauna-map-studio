@@ -76,7 +76,11 @@ function getWorkspaceFile(workspace: AraunaWorkspace, path: string): File | unde
 
 function requireWorkspaceFile(workspace: AraunaWorkspace, path: string): File {
   const file = getWorkspaceFile(workspace, path);
-  if (!file) throw new StructuralWorkspaceError(`Arquivo obrigatório não encontrado: ${normalizeWorkspacePath(path)}`);
+  if (!file) {
+    throw new StructuralWorkspaceError(
+      `Arquivo obrigatório não encontrado: ${normalizeWorkspacePath(path)}`,
+    );
+  }
   return file;
 }
 
@@ -90,11 +94,15 @@ async function ensureWritePermission(access: WritableWorkspaceAccess) {
   if (root.queryPermission) {
     const current = await root.queryPermission({ mode: "readwrite" });
     if (current === "granted") return;
-    if (current === "denied") throw new StructuralWorkspaceError("Permissão de escrita negada para a pasta.");
+    if (current === "denied") {
+      throw new StructuralWorkspaceError("Permissão de escrita negada para a pasta.");
+    }
   }
   if (root.requestPermission) {
     const next = await root.requestPermission({ mode: "readwrite" });
-    if (next !== "granted") throw new StructuralWorkspaceError("Permissão de escrita não concedida para a pasta.");
+    if (next !== "granted") {
+      throw new StructuralWorkspaceError("Permissão de escrita não concedida para a pasta.");
+    }
   }
 }
 
@@ -104,7 +112,11 @@ async function writeHandle(handle: FileHandleLike, data: string | ArrayBuffer) {
     await writable.write(data);
     await writable.close();
   } catch (error) {
-    try { await writable.abort?.(); } catch { /* best effort */ }
+    try {
+      await writable.abort?.();
+    } catch {
+      /* best effort */
+    }
     throw error;
   }
 }
@@ -140,26 +152,39 @@ async function loadConnectionNeighbors(
     const file = getWorkspaceFile(workspace, mapEntry.path);
     if (!file) continue;
     const source = await file.text();
-    neighbors.push({ mapEntry, source, document: parseEditableMapJson(source) });
+    neighbors.push({
+      mapEntry,
+      source,
+      document: parseEditableMapJson(source),
+    });
   }
   return neighbors;
 }
 
-export async function loadStructuralSource(workspace: AraunaWorkspace, mapEntry: WorkspaceMap): Promise<StructuralSource> {
+export async function loadStructuralSource(
+  workspace: AraunaWorkspace,
+  mapEntry: WorkspaceMap,
+): Promise<StructuralSource> {
   const layout = mapEntry.layout ?? workspace.layouts.get(mapEntry.layoutId);
-  if (!layout) throw new StructuralWorkspaceError(`Layout não encontrado: ${mapEntry.layoutId}.`);
+  if (!layout) {
+    throw new StructuralWorkspaceError(`Layout não encontrado: ${mapEntry.layoutId}.`);
+  }
 
   const mapFile = requireWorkspaceFile(workspace, layout.blockdata_filepath);
   const mapJsonFile = requireWorkspaceFile(workspace, mapEntry.path);
   const layoutsFile = requireWorkspaceFile(workspace, "data/layouts/layouts.json");
   const expected = layout.width * layout.height * 2;
   if (mapFile.size !== expected) {
-    throw new StructuralWorkspaceError(`${layout.blockdata_filepath} possui ${mapFile.size} bytes; esperado ${expected}.`);
+    throw new StructuralWorkspaceError(
+      `${layout.blockdata_filepath} possui ${mapFile.size} bytes; esperado ${expected}.`,
+    );
   }
 
   let border: MapData | null = null;
   if (layout.border_filepath) {
-    border = parseEmeraldBorder(await requireWorkspaceFile(workspace, layout.border_filepath).arrayBuffer());
+    border = parseEmeraldBorder(
+      await requireWorkspaceFile(workspace, layout.border_filepath).arrayBuffer(),
+    );
   }
 
   const mapJsonSource = await mapJsonFile.text();
@@ -209,9 +234,13 @@ function updateReciprocalConnections(
     }
 
     const delta = nextOffset - oldOffset;
-    const neighbor = source.neighbors.find((candidate) => candidate.mapEntry.id === targetId);
+    const neighbor = source.neighbors.find(
+      (candidate) => candidate.mapEntry.id === targetId,
+    );
     if (!neighbor) {
-      issues.push(`${direction} → ${targetId}: mapa vizinho não pôde ser carregado para ajustar a conexão recíproca.`);
+      issues.push(
+        `${direction} → ${targetId}: mapa vizinho não pôde ser carregado para ajustar a conexão recíproca.`,
+      );
       return;
     }
 
@@ -228,10 +257,14 @@ function updateReciprocalConnections(
 
     const candidates = connectionRecords(draft.document)
       .map((connection, candidateIndex) => ({ connection, candidateIndex }))
-      .filter(({ connection }) =>
-        connection["map"] === source.mapEntry.id && connection["direction"] === opposite,
+      .filter(
+        ({ connection }) =>
+          connection["map"] === source.mapEntry.id &&
+          connection["direction"] === opposite,
       );
-    const exact = candidates.filter(({ connection }) => Number(connection["offset"]) === -oldOffset);
+    const exact = candidates.filter(
+      ({ connection }) => Number(connection["offset"]) === -oldOffset,
+    );
     if (exact.length !== 1) {
       issues.push(
         `${direction} → ${targetId}: esperado 1 recíproco ${opposite} com offset ${-oldOffset}, encontrado(s) ${exact.length}.`,
@@ -251,14 +284,35 @@ function updateReciprocalConnections(
   return { neighbors, adjusted, issues };
 }
 
-export function buildStructuralDraft(source: StructuralSource, resize: ResizeResult, border: MapData | null): StructuralDraft {
-  const shifted = shiftMapJsonForResize(source.mapJson, resize.dx, resize.dy, resize.map.width, resize.map.height);
+export function buildStructuralDraft(
+  source: StructuralSource,
+  resize: ResizeResult,
+  border: MapData | null,
+): StructuralDraft {
+  const shifted = shiftMapJsonForResize(
+    source.mapJson,
+    resize.dx,
+    resize.dy,
+    resize.map.width,
+    resize.map.height,
+  );
   const reciprocal = updateReciprocalConnections(source, shifted.document);
+  const jsonChanged = shifted.shiftedEvents > 0 || shifted.adjustedConnections > 0;
+  const dimensionsChanged =
+    resize.map.width !== source.layout.width || resize.map.height !== source.layout.height;
+
   return {
     map: resize.map,
     mapJson: shifted.document,
-    mapJsonSource: stringifyMapJson(shifted.document),
-    layoutsSource: updateLayoutDimensionsSource(source.layoutsSource, source.layout.id, resize.map.width, resize.map.height),
+    mapJsonSource: jsonChanged ? stringifyMapJson(shifted.document) : source.mapJsonSource,
+    layoutsSource: dimensionsChanged
+      ? updateLayoutDimensionsSource(
+          source.layoutsSource,
+          source.layout.id,
+          resize.map.width,
+          resize.map.height,
+        )
+      : source.layoutsSource,
     border,
     resize,
     outOfBounds: shifted.outOfBounds,
@@ -270,20 +324,39 @@ export function buildStructuralDraft(source: StructuralSource, resize: ResizeRes
   };
 }
 
-export function structuralWrites(source: StructuralSource, draft: StructuralDraft): StructuralWrite[] {
+export function structuralWrites(
+  source: StructuralSource,
+  draft: StructuralDraft,
+): StructuralWrite[] {
   const writes: StructuralWrite[] = [];
   const mapBytes = exportMapBin(draft.map);
   const sourceMapBytes = exportMapBin(source.map);
-  if (mapBytes.byteLength !== sourceMapBytes.byteLength || mapBytes.some((value, index) => value !== sourceMapBytes[index])) {
-    writes.push({ path: source.layout.blockdata_filepath, data: mapBytes.slice().buffer as ArrayBuffer });
+  if (
+    mapBytes.byteLength !== sourceMapBytes.byteLength ||
+    mapBytes.some((value, index) => value !== sourceMapBytes[index])
+  ) {
+    writes.push({
+      path: source.layout.blockdata_filepath,
+      data: mapBytes.slice().buffer as ArrayBuffer,
+    });
   }
-  if (draft.mapJsonSource !== source.mapJsonSource) writes.push({ path: source.mapEntry.path, data: draft.mapJsonSource });
-  if (draft.layoutsSource !== source.layoutsSource) writes.push({ path: "data/layouts/layouts.json", data: draft.layoutsSource });
+  if (draft.mapJsonSource !== source.mapJsonSource) {
+    writes.push({ path: source.mapEntry.path, data: draft.mapJsonSource });
+  }
+  if (draft.layoutsSource !== source.layoutsSource) {
+    writes.push({
+      path: "data/layouts/layouts.json",
+      data: draft.layoutsSource,
+    });
+  }
   if (source.layout.border_filepath && source.border && draft.border) {
     const before = exportMapBin(source.border);
     const after = exportMapBin(draft.border);
     if (after.some((value, index) => value !== before[index])) {
-      writes.push({ path: source.layout.border_filepath, data: after.slice().buffer as ArrayBuffer });
+      writes.push({
+        path: source.layout.border_filepath,
+        data: after.slice().buffer as ArrayBuffer,
+      });
     }
   }
   for (const neighbor of draft.neighbors) {
@@ -294,17 +367,25 @@ export function structuralWrites(source: StructuralSource, draft: StructuralDraf
   return writes;
 }
 
-export async function writeStructuralFiles(workspace: AraunaWorkspace, access: WritableWorkspaceAccess, writes: StructuralWrite[]) {
+export async function writeStructuralFiles(
+  workspace: AraunaWorkspace,
+  access: WritableWorkspaceAccess,
+  writes: StructuralWrite[],
+) {
   if (!writes.length) return [];
   await ensureWritePermission(access);
 
-  const prepared = await Promise.all(writes.map(async (write) => {
-    const path = normalizeWorkspacePath(write.path);
-    const handle = findHandle(access, path);
-    if (!handle) throw new StructuralWorkspaceError(`Sem acesso de escrita para ${path}.`);
-    const original = await (await handle.getFile()).arrayBuffer();
-    return { ...write, path, handle, original };
-  }));
+  const prepared = await Promise.all(
+    writes.map(async (write) => {
+      const path = normalizeWorkspacePath(write.path);
+      const handle = findHandle(access, path);
+      if (!handle) {
+        throw new StructuralWorkspaceError(`Sem acesso de escrita para ${path}.`);
+      }
+      const original = await (await handle.getFile()).arrayBuffer();
+      return { ...write, path, handle, original };
+    }),
+  );
 
   const completed: typeof prepared = [];
   try {
@@ -314,7 +395,11 @@ export async function writeStructuralFiles(workspace: AraunaWorkspace, access: W
     }
   } catch (error) {
     for (const item of [...completed].reverse()) {
-      try { await writeHandle(item.handle, item.original); } catch { /* best effort rollback */ }
+      try {
+        await writeHandle(item.handle, item.original);
+      } catch {
+        /* best effort rollback */
+      }
     }
     throw new StructuralWorkspaceError(
       `Falha na gravação estrutural; rollback foi tentado: ${error instanceof Error ? error.message : String(error)}`,
@@ -329,9 +414,15 @@ export async function writeStructuralFiles(workspace: AraunaWorkspace, access: W
   return prepared.map((item) => item.path);
 }
 
-export function applyDraftLayoutToWorkspace(source: StructuralSource, workspace: AraunaWorkspace, draft: StructuralDraft) {
+export function applyDraftLayoutToWorkspace(
+  source: StructuralSource,
+  workspace: AraunaWorkspace,
+  draft: StructuralDraft,
+) {
   source.layout.width = draft.map.width;
   source.layout.height = draft.map.height;
   workspace.layouts.set(source.layout.id, source.layout);
-  for (const map of workspace.maps) if (map.layoutId === source.layout.id) map.layout = source.layout;
+  for (const map of workspace.maps) {
+    if (map.layoutId === source.layout.id) map.layout = source.layout;
+  }
 }
