@@ -130,7 +130,7 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
       </button>
 
       {open && (
-        <div className="absolute left-[calc(100%+8px)] top-0 z-50 flex h-[min(70vh,620px)] w-80 flex-col overflow-hidden rounded-md border border-border bg-panel shadow-2xl">
+        <div className="absolute left-full top-0 z-50 ml-2 flex h-[min(70vh,620px)] w-80 flex-col overflow-hidden rounded-md border border-border bg-panel shadow-2xl">
           <div className="flex items-start gap-2 border-b border-border bg-toolbar px-3 py-2.5">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold">Tilesets de Pokémon Emerald</p>
