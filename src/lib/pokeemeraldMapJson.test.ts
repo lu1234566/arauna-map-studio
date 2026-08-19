@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LITTLEROOT_MAP_JSON, littlerootMapBinBuffer } from "@/data/littlerootSnapshot";
+import { LITTLEROOT_MAP_JSON, littlerootMapBinBuffer } from "../data/littlerootSnapshot";
 import {
   MapJsonParseError,
   metadataOutOfBounds,
