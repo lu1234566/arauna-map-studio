@@ -21,6 +21,14 @@ export const Route = createFileRoute("/")({
 function Index() {
   const state = useEditor();
 
+  // Smart Paths assume a dedicated visual brush. If the normal toolbar changes
+  // to picker/fill/selection, hand control back to MapCanvas automatically.
+  useEffect(() => {
+    if (state.tool !== "pencil" && smartPathStore.getState().enabled) {
+      smartPathStore.setEnabled(false);
+    }
+  }, [state.tool]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -81,6 +89,7 @@ function Index() {
 
       if (key === "p") {
         event.preventDefault();
+        if (!smartPathStore.getState().enabled) editorStore.setTool("pencil");
         smartPathStore.toggleEnabled();
         return;
       }
