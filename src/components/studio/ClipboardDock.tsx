@@ -42,8 +42,11 @@ export function ClipboardDock() {
   const selection = editor.selection;
   const editableLayer = editor.viewMode === "visual" || editor.viewMode === "collision" || editor.viewMode === "elevation";
   const hasAnchor = Boolean(selection || editor.selectedCell != null);
+  const selectedCellLabel = editor.selectedCell == null
+    ? "sem seleção ativa"
+    : `célula (${editor.selectedCell % editor.map.width},${Math.floor(editor.selectedCell / editor.map.width)})`;
 
-  if (!selection && !clipboard) return null;
+  if (!hasAnchor && !clipboard) return null;
 
   return (
     <section className="absolute bottom-9 right-2 z-30 w-[310px] overflow-hidden rounded border border-border bg-panel/95 shadow-xl backdrop-blur-sm">
@@ -51,7 +54,7 @@ export function ClipboardDock() {
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground">Seleção / Clipboard</p>
           <p className="text-[9px] text-muted-foreground">
-            {selection ? `seleção ${selection.w}×${selection.h} em (${selection.x},${selection.y})` : "sem seleção ativa"}
+            {selection ? `seleção ${selection.w}×${selection.h} em (${selection.x},${selection.y})` : selectedCellLabel}
           </p>
         </div>
         {clipboard && (
