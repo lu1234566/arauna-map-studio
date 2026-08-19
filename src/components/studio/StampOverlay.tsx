@@ -15,7 +15,10 @@ export function StampOverlay() {
   const [hover, setHover] = useState<CellPoint | null>(null);
   const dragging = useRef(false);
   const lastStamp = useRef<string | null>(null);
-  const editableView = editor.viewMode === "visual" || editor.viewMode === "collision" || editor.viewMode === "elevation";
+  const editableView =
+    editor.viewMode === "visual" ||
+    editor.viewMode === "collision" ||
+    editor.viewMode === "elevation";
   const active = Boolean(clipboardState.stampMode && clipboard && editableView);
   const cellSize = TILE_PX * editor.zoom * 2;
 
@@ -25,7 +28,14 @@ export function StampOverlay() {
 
   if (!active || !clipboard) return null;
 
-  const cellFromEvent = (event: { currentTarget: EventTarget & HTMLDivElement; clientX: number; clientY: number }) => {
+  const showInternalGrid =
+    clipboard.width <= 32 && clipboard.height <= 32 && cellSize >= 4;
+
+  const cellFromEvent = (event: {
+    currentTarget: EventTarget & HTMLDivElement;
+    clientX: number;
+    clientY: number;
+  }) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.floor((event.clientX - rect.left - editor.pan.x) / cellSize);
     const y = Math.floor((event.clientY - rect.top - editor.pan.y) / cellSize);
@@ -63,7 +73,9 @@ export function StampOverlay() {
       onPointerUp={(event) => {
         dragging.current = false;
         lastStamp.current = null;
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
       }}
       onPointerCancel={() => {
         dragging.current = false;
@@ -87,25 +99,30 @@ export function StampOverlay() {
           <div className="absolute -top-5 left-0 whitespace-nowrap rounded bg-primary px-1.5 py-0.5 font-mono text-[9px] font-semibold text-primary-foreground">
             {clipboard.width}×{clipboard.height} · ({hover.x},{hover.y})
           </div>
-          {Array.from({ length: clipboard.width + 1 }, (_, index) => (
-            <span
-              key={`v-${index}`}
-              className="absolute bottom-0 top-0 border-l border-primary/25"
-              style={{ left: index * cellSize }}
-            />
-          ))}
-          {Array.from({ length: clipboard.height + 1 }, (_, index) => (
-            <span
-              key={`h-${index}`}
-              className="absolute left-0 right-0 border-t border-primary/25"
-              style={{ top: index * cellSize }}
-            />
-          ))}
+          {showInternalGrid && (
+            <>
+              {Array.from({ length: clipboard.width + 1 }, (_, index) => (
+                <span
+                  key={`v-${index}`}
+                  className="absolute bottom-0 top-0 border-l border-primary/25"
+                  style={{ left: index * cellSize }}
+                />
+              ))}
+              {Array.from({ length: clipboard.height + 1 }, (_, index) => (
+                <span
+                  key={`h-${index}`}
+                  className="absolute left-0 right-0 border-t border-primary/25"
+                  style={{ top: index * cellSize }}
+                />
+              ))}
+            </>
+          )}
         </div>
       )}
 
       <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded border border-primary/50 bg-panel/95 px-3 py-1.5 text-center text-[10px] text-foreground shadow-lg">
-        <b className="text-primary">Carimbo multi-metatile ativo</b> · clique/arraste para pintar · Esc para sair
+        <b className="text-primary">Carimbo multi-metatile ativo</b> · clique/arraste para
+        pintar · Esc para sair
       </div>
     </div>
   );
