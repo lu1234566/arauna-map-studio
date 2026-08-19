@@ -168,10 +168,12 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
 function MapSettingsPage() {
   const state = useEditor();
   const document = state.mapJsonDocument;
-  const connections = useMemo(
-    () => (document && Array.isArray(document.connections) ? document.connections.filter(isRecord) : []),
-    [document],
-  );
+  const connections = useMemo(() => {
+    if (!document || !Array.isArray(document.connections)) return [];
+    return document.connections.flatMap((value, index) =>
+      isRecord(value) ? [{ index, connection: value }] : [],
+    );
+  }, [document]);
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
@@ -256,8 +258,12 @@ function MapSettingsPage() {
             </div>
 
             <div className="space-y-2 p-3">
-              {connections.map((connection, index) => (
-                <ConnectionCard key={`${index}-${String(connection.map)}-${String(connection.direction)}`} index={index} connection={connection} />
+              {connections.map(({ index, connection }) => (
+                <ConnectionCard
+                  key={`${index}-${String(connection.map)}-${String(connection.direction)}`}
+                  index={index}
+                  connection={connection}
+                />
               ))}
               {connections.length === 0 && (
                 <div className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
