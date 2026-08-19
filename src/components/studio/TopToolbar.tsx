@@ -19,6 +19,7 @@ import {
   Info,
   Map,
   FolderOpen,
+  Braces,
 } from "lucide-react";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,15 @@ function TB({
 
 const Divider = () => <span className="mx-1 h-5 w-px shrink-0 bg-border" />;
 
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function TopToolbar({ onValidate }: { onValidate: () => void }) {
   const state = useEditor();
   const binRef = useRef<HTMLInputElement>(null);
@@ -110,17 +120,25 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     );
   };
 
-  const handleExport = () => {
+  const handleExportBin = () => {
     const bytes = editorStore.exportBytes();
-    const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: "application/octet-stream" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "map.bin";
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([bytes.slice().buffer as ArrayBuffer], { type: "application/octet-stream" }),
+      "map.bin",
+    );
+    editorStore.markBinExported();
     editorStore.setMessage(`Exportado map.bin — ${bytes.byteLength} bytes.`);
   };
+
+  const handleExportJson = () => {
+    const source = editorStore.exportMapJsonSource();
+    if (!source) return;
+    downloadBlob(new Blob([source], { type: "application/json;charset=utf-8" }), "map.json");
+    editorStore.markMapJsonExported();
+    editorStore.setMessage(`Exportado map.json — ${new TextEncoder().encode(source).byteLength} bytes.`);
+  };
+
+  const eventView = state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers";
 
   return (
     <header className="flex flex-col border-b border-border bg-toolbar">
@@ -154,10 +172,15 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
         <TB title="Importar data/maps/.../map.json manualmente" onClick={() => jsonRef.current?.click()}>
           <Upload className="size-3.5" /> map.json
         </TB>
-        <TB title="Exportar map.bin" onClick={handleExport}>
-          <Download className="size-3.5" /> Exportar
+        <TB title="Exportar map.bin atual" onClick={handleExportBin}>
+          <Download className="size-3.5" /> BIN
+          {state.dirty && <span className="text-[9px] text-warning">*</span>}
         </TB>
-        <TB title="Validar layout e metadados" onClick={onValidate}>
+        <TB title="Exportar map.json com eventos editados" onClick={handleExportJson} disabled={!state.mapJsonDocument}>
+          <Braces className="size-3.5" /> JSON
+          {state.mapJsonDirty && <span className="text-[9px] text-warning">*</span>}
+        </TB>
+        <TB title="Validar layout, bits físicos e eventos" onClick={onValidate}>
           <CheckCircle2 className="size-3.5" /> Validar
         </TB>
         <input
@@ -186,7 +209,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
         <Divider />
 
         <TB
-          title="Desfazer (Ctrl+Z)"
+          title="Desfazer (Ctrl+Z) — inclui mapa, colisão, elevação e eventos"
           onClick={editorStore.undo}
           disabled={state.undoDepth === 0}
         >
@@ -215,7 +238,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
             <Grid3x3 className="size-3.5" /> Grid
           </TB>
           <TB
-            title="Bloqueia edição em células críticas derivadas de warps, coord events e BG events"
+            title="Bloqueia pintura do terreno em células críticas derivadas de warps, coord events e BG events"
             active={state.protectProgression}
             onClick={editorStore.toggleProtect}
           >
@@ -254,8 +277,9 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
         {TOOLS.map((tool) => (
           <TB
             key={tool.id}
-            title={`${tool.label} (${tool.key})`}
-            active={state.tool === tool.id}
+            title={eventView ? "Em camadas de eventos, clique seleciona e arraste move" : `${tool.label} (${tool.key})`}
+            active={!eventView && state.tool === tool.id}
+            disabled={eventView}
             onClick={() => editorStore.setTool(tool.id)}
           >
             <tool.icon className="size-3.5" /> {tool.label}
@@ -264,20 +288,25 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
 
         <Divider />
         <span className="panel-title mr-1 shrink-0">Camada</span>
-        {VIEWS.map((view) => {
-          const editable = view.id === "visual" || view.id === "collision" || view.id === "elevation";
-          return (
-            <TB
-              key={view.id}
-              title={editable ? "Camada editável" : "Overlay somente leitura nesta fase"}
-              active={state.viewMode === view.id}
-              onClick={() => editorStore.setViewMode(view.id)}
-            >
-              {view.label}
-              {!editable && <span className="text-[9px] text-muted-foreground">ro</span>}
-            </TB>
-          );
-        })}
+        {VIEWS.map((view) => (
+          <TB
+            key={view.id}
+            title={
+              view.id === "warps" || view.id === "npcs" || view.id === "triggers"
+                ? "Camada de eventos editável quando map.json está carregado"
+                : "Camada editável"
+            }
+            active={state.viewMode === view.id}
+            onClick={() => editorStore.setViewMode(view.id)}
+          >
+            {view.label}
+            {(view.id === "warps" || view.id === "npcs" || view.id === "triggers") && (
+              <span className={cn("text-[9px]", state.mapJsonDocument ? "text-success" : "text-warning")}>
+                {state.mapJsonDocument ? "edit" : "json"}
+              </span>
+            )}
+          </TB>
+        ))}
       </div>
     </header>
   );
