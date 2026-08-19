@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Brush,
@@ -10,6 +10,7 @@ import {
   FilePlus2,
   Upload,
   Download,
+  Save,
   ShieldCheck,
   ShieldOff,
   Grid3x3,
@@ -22,8 +23,10 @@ import {
   Braces,
 } from "lucide-react";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
+import { saveEditorToWritableWorkspace } from "@/lib/fileSystemWorkspace";
 import { cn } from "@/lib/utils";
 import { realAtlasStore } from "@/lib/realAtlasStore";
+import { useWorkspaceSession } from "@/lib/workspaceSession";
 import {
   LITTLEROOT_MAP_JSON,
   littlerootMapBinBuffer,
@@ -89,8 +92,10 @@ function downloadBlob(blob: Blob, fileName: string) {
 
 export function TopToolbar({ onValidate }: { onValidate: () => void }) {
   const state = useEditor();
+  const session = useWorkspaceSession();
   const binRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
 
   const handleImportBin = async (file: File) => {
     const buffer = await file.arrayBuffer();
@@ -138,7 +143,38 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     editorStore.setMessage(`Exportado map.json — ${new TextEncoder().encode(source).byteLength} bytes.`);
   };
 
+  const handleSaveWorkspace = async () => {
+    const currentSession = session;
+    if (!currentSession?.writeAccess || savingWorkspace) return;
+    setSavingWorkspace(true);
+    editorStore.setMessage("Salvando alterações diretamente na pasta local…");
+    try {
+      const result = await saveEditorToWritableWorkspace(
+        currentSession.workspace,
+        currentSession.writeAccess,
+      );
+      if (result.saved.length) {
+        editorStore.setMessage(`Salvo na pasta local: ${result.saved.join(" + ")}.`);
+      } else {
+        editorStore.setMessage("Nada para salvar: map.bin e map.json não possuem alterações pendentes.");
+      }
+    } catch (cause) {
+      editorStore.setMessage(
+        `Falha ao salvar na pasta: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setSavingWorkspace(false);
+    }
+  };
+
   const eventView = state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers";
+  const hasWorkspaceChanges = state.dirty || state.mapJsonDirty;
+  const directSaveAvailable = Boolean(
+    session?.writeAccess &&
+      session.lastMapPath &&
+      state.sourceFile?.startsWith("data/") &&
+      state.mapJsonSource?.startsWith("data/"),
+  );
 
   return (
     <header className="flex flex-col border-b border-border bg-toolbar">
@@ -172,11 +208,28 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
         <TB title="Importar data/maps/.../map.json manualmente" onClick={() => jsonRef.current?.click()}>
           <Upload className="size-3.5" /> map.json
         </TB>
-        <TB title="Exportar map.bin atual" onClick={handleExportBin}>
+
+        {session?.writeAccess && (
+          <TB
+            title={
+              directSaveAvailable
+                ? "Gravar map.bin e/ou map.json alterados diretamente na pasta local"
+                : "Abra um mapa pelo Workspace R/W para habilitar gravação direta"
+            }
+            active={directSaveAvailable && hasWorkspaceChanges}
+            onClick={() => void handleSaveWorkspace()}
+            disabled={!directSaveAvailable || !hasWorkspaceChanges || savingWorkspace}
+          >
+            <Save className="size-3.5" /> {savingWorkspace ? "Salvando…" : "Salvar pasta"}
+            {hasWorkspaceChanges && <span className="text-[9px] text-warning">*</span>}
+          </TB>
+        )}
+
+        <TB title="Baixar map.bin atual" onClick={handleExportBin}>
           <Download className="size-3.5" /> BIN
           {state.dirty && <span className="text-[9px] text-warning">*</span>}
         </TB>
-        <TB title="Exportar map.json com eventos editados" onClick={handleExportJson} disabled={!state.mapJsonDocument}>
+        <TB title="Baixar map.json com eventos editados" onClick={handleExportJson} disabled={!state.mapJsonDocument}>
           <Braces className="size-3.5" /> JSON
           {state.mapJsonDirty && <span className="text-[9px] text-warning">*</span>}
         </TB>
@@ -253,7 +306,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           <Link
             to="/workspace"
             className="inline-flex h-7 items-center gap-1.5 rounded border border-primary/30 bg-primary/10 px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
-            title="Caminho recomendado: abra a pasta data/ e escolha qualquer mapa"
+            title="Abra a pasta data/ e escolha qualquer mapa"
           >
             <FolderOpen className="size-3.5" /> Workspace
           </Link>

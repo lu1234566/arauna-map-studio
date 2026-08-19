@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import type { WritableWorkspaceAccess } from "./fileSystemWorkspace";
 import type { AraunaWorkspace } from "./repoWorkspace";
 
 export interface WorkspaceSession {
@@ -6,6 +7,7 @@ export interface WorkspaceSession {
   label: string;
   openedAt: string;
   lastMapPath: string | null;
+  writeAccess: WritableWorkspaceAccess | null;
 }
 
 type Listener = () => void;
@@ -26,12 +28,13 @@ class WorkspaceSessionStore {
     this.listeners.forEach((listener) => listener());
   }
 
-  open(workspace: AraunaWorkspace, label: string) {
+  open(workspace: AraunaWorkspace, label: string, writeAccess: WritableWorkspaceAccess | null = null) {
     this.session = {
       workspace,
       label,
       openedAt: new Date().toISOString(),
       lastMapPath: null,
+      writeAccess,
     };
     this.emit();
   }

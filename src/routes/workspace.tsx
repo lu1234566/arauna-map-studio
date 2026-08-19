@@ -13,6 +13,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  pickWritableAraunaWorkspace,
+  writableDirectoryPickerSupported,
+} from "@/lib/fileSystemWorkspace";
+import {
   loadAraunaWorkspace,
   openWorkspaceMap,
   type WorkspaceMap,
@@ -31,6 +35,7 @@ function WorkspaceRoute() {
   const session = useWorkspaceSession();
   const workspace = session?.workspace ?? null;
   const [query, setQuery] = useState("");
+  const [writableSupported, setWritableSupported] = useState(false);
   const [message, setMessage] = useState(() =>
     session
       ? `Workspace ${session.label} continua ativo nesta sessão. Escolha outro mapa sem selecionar a pasta novamente.`
@@ -43,6 +48,7 @@ function WorkspaceRoute() {
   useEffect(() => {
     directoryRef.current?.setAttribute("webkitdirectory", "");
     directoryRef.current?.setAttribute("directory", "");
+    setWritableSupported(writableDirectoryPickerSupported());
   }, []);
 
   const filteredMaps = useMemo(() => {
@@ -69,13 +75,13 @@ function WorkspaceRoute() {
     if (!files?.length) return;
     setLoadingWorkspace(true);
     setError(null);
-    setMessage(`Indexando ${files.length} arquivos localmente…`);
+    setMessage(`Indexando ${files.length} arquivos localmente em modo somente leitura…`);
     try {
       const next = await loadAraunaWorkspace(files);
       const label = inferWorkspaceLabel(files);
-      workspaceSessionStore.open(next, label);
+      workspaceSessionStore.open(next, label, null);
       setMessage(
-        `Workspace ${label} pronto: ${next.maps.length} mapas, ${next.layouts.size} layouts e ${next.tilesets.length} diretórios de tileset detectados.`,
+        `Workspace ${label} pronto em SOMENTE LEITURA: ${next.maps.length} mapas, ${next.layouts.size} layouts e ${next.tilesets.length} diretórios de tileset. Você pode editar e baixar BIN/JSON, mas não sobrescrever a pasta diretamente.`,
       );
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -84,6 +90,32 @@ function WorkspaceRoute() {
     } finally {
       setLoadingWorkspace(false);
       if (directoryRef.current) directoryRef.current.value = "";
+    }
+  };
+
+  const handleWritableDirectory = async () => {
+    if (loadingWorkspace || openingPath) return;
+    setLoadingWorkspace(true);
+    setError(null);
+    setMessage("Solicitando acesso de leitura e escrita à pasta…");
+    try {
+      const selection = await pickWritableAraunaWorkspace();
+      setMessage(`Indexando ${selection.files.length} arquivos da pasta data/…`);
+      const next = await loadAraunaWorkspace(selection.files);
+      workspaceSessionStore.open(next, selection.access.label, selection.access);
+      setMessage(
+        `Workspace ${selection.access.label} pronto com GRAVAÇÃO DIRETA: ${next.maps.length} mapas, ${next.layouts.size} layouts e ${next.tilesets.length} tilesets. No editor, “Salvar pasta” grava BIN/JSON de volta nos arquivos originais.`,
+      );
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") {
+        setMessage("Seleção de pasta cancelada.");
+      } else {
+        const text = cause instanceof Error ? cause.message : String(cause);
+        setError(text);
+        setMessage("Falha ao abrir a pasta com permissão de escrita.");
+      }
+    } finally {
+      setLoadingWorkspace(false);
     }
   };
 
@@ -134,10 +166,15 @@ function WorkspaceRoute() {
         <div className="ml-auto flex items-center gap-2">
           {session && (
             <span
-              className="max-w-56 truncate rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success"
-              title={session.label}
+              className={
+                "max-w-64 truncate rounded border px-2 py-1 text-[10px] " +
+                (session.writeAccess
+                  ? "border-success/30 bg-success/10 text-success"
+                  : "border-warning/30 bg-warning/10 text-warning")
+              }
+              title={`${session.label} · ${session.writeAccess ? "leitura + escrita" : "somente leitura"}`}
             >
-              <CheckCircle2 className="mr-1 inline size-3" /> {session.label}
+              <CheckCircle2 className="mr-1 inline size-3" /> {session.label} · {session.writeAccess ? "R/W" : "RO"}
             </span>
           )}
           {workspace && (
@@ -150,14 +187,26 @@ function WorkspaceRoute() {
               <X className="size-3" /> Fechar
             </button>
           )}
+          {writableSupported && (
+            <button
+              type="button"
+              onClick={() => void handleWritableDirectory()}
+              disabled={loadingWorkspace || Boolean(openingPath)}
+              className="inline-flex h-8 items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 text-xs font-medium text-primary hover:bg-primary/15 disabled:opacity-50"
+              title="Recomendado no Chrome/Chromebook: permite salvar alterações diretamente nos arquivos locais"
+            >
+              {loadingWorkspace ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
+              {workspace ? "Trocar pasta R/W" : "Abrir pasta R/W"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => directoryRef.current?.click()}
             disabled={loadingWorkspace || Boolean(openingPath)}
-            className="inline-flex h-8 items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 text-xs text-primary hover:bg-primary/15 disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2 text-[10px] text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-50"
+            title="Fallback: lê os arquivos, mas salvar exige baixar BIN/JSON"
           >
-            {loadingWorkspace ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
-            {workspace ? "Trocar pasta" : "Abrir pasta data/"}
+            <FolderOpen className="size-3" /> Somente leitura
           </button>
           <input
             ref={directoryRef}
@@ -173,10 +222,14 @@ function WorkspaceRoute() {
         <aside className="w-72 shrink-0 overflow-y-auto border-r border-border bg-panel p-3">
           <h2 className="panel-title mb-2">Como usar</h2>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Selecione uma vez a pasta <b className="text-foreground">data/</b> do clone local ou a raiz inteira do repositório. O workspace permanece ativo enquanto esta aba do Studio estiver aberta, inclusive ao voltar ao editor e retornar aqui.
+            No Chrome/Chromebook, prefira <b className="text-foreground">Abrir pasta R/W</b>. Selecione a raiz do repositório ou diretamente <b className="text-foreground">data/</b>. O navegador pedirá permissão e o Studio poderá salvar as mudanças de volta no clone local.
           </p>
 
-          <div className="mt-3 rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed text-muted-foreground">
+          <div className="mt-3 rounded border border-success/30 bg-success/5 p-2 text-[10px] leading-relaxed text-muted-foreground">
+            <b className="text-success">R/W:</b> o botão <b className="text-foreground">Salvar pasta</b> do editor grava o map.bin e/ou map.json modificados exatamente nos caminhos de origem. O modo “Somente leitura” continua disponível como fallback e usa download.
+          </div>
+
+          <div className="mt-2 rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed text-muted-foreground">
             Ao abrir um mapa, o Studio resolve automaticamente <b>layouts.json</b>, dimensão, <b>map.bin</b>, <b>map.json</b>, primary tileset, secondary tileset, paletas e atributos.
           </div>
 
@@ -189,12 +242,22 @@ function WorkspaceRoute() {
           )}
 
           {workspace && (
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <Metric icon={Database} label="Arquivos" value={workspace.files.size} />
-              <Metric icon={MapIcon} label="Mapas" value={workspace.maps.length} />
-              <Metric icon={Layers3} label="Layouts" value={workspace.layouts.size} />
-              <Metric icon={Layers3} label="Tilesets" value={workspace.tilesets.length} />
-            </div>
+            <>
+              <div className="mt-3 rounded border border-border bg-canvas p-2 text-[10px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Acesso ao disco</span>
+                  <span className={session?.writeAccess ? "font-semibold text-success" : "font-semibold text-warning"}>
+                    {session?.writeAccess ? "LEITURA + ESCRITA" : "SOMENTE LEITURA"}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Metric icon={Database} label="Arquivos" value={workspace.files.size} />
+                <Metric icon={MapIcon} label="Mapas" value={workspace.maps.length} />
+                <Metric icon={Layers3} label="Layouts" value={workspace.layouts.size} />
+                <Metric icon={Layers3} label="Tilesets" value={workspace.tilesets.length} />
+              </div>
+            </>
           )}
         </aside>
 
@@ -222,7 +285,9 @@ function WorkspaceRoute() {
                   <FolderOpen className="mx-auto mb-3 size-10 opacity-40" />
                   <p className="text-sm">Nenhum workspace aberto.</p>
                   <p className="mt-1 max-w-md text-xs leading-relaxed">
-                    Clique em “Abrir pasta data/”. No Chromebook, escolha a pasta data do repositório extraído.
+                    {writableSupported
+                      ? "Clique em “Abrir pasta R/W” e escolha a raiz do repositório ou a pasta data/."
+                      : "Seu navegador não expôs escrita em diretório; use “Somente leitura” e escolha a pasta data/."}
                   </p>
                 </div>
               </div>
