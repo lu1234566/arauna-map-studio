@@ -61,7 +61,6 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
       pair.secondarySymbol,
       pair.primaryDir,
       pair.secondaryDir,
-      ...(pair.layoutNames ?? []),
     ].some((value) => value.toLowerCase().includes(q)));
   }, [pairs, query]);
 
@@ -146,7 +145,7 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 autoFocus
-                placeholder="Buscar tileset ou layout…"
+                placeholder="Buscar primary / secondary…"
                 className="h-8 w-full rounded border border-border bg-canvas pl-7 pr-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-primary/60"
               />
             </div>
@@ -177,7 +176,6 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
                   const key = `${pair.primaryDir}|${pair.secondaryDir}`;
                   const active = samePair(atlas, pair);
                   const loading = loadingPair === key;
-                  const examples = (pair.layoutNames ?? []).slice(0, 2);
                   return (
                     <button
                       key={key}
@@ -198,9 +196,7 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
                             {active && <span className="rounded bg-success/15 px-1 py-0.5 text-[7px] font-bold text-success">ATIVO</span>}
                           </div>
                           <p className="truncate font-mono text-[8px] text-muted-foreground">+ {shortSymbol(pair.primarySymbol)}</p>
-                          <p className="mt-1 text-[8px] text-muted-foreground">
-                            {pair.usageCount} layout(s){examples.length ? ` · ${examples.join(" · ")}` : ""}
-                          </p>
+                          <p className="mt-1 text-[8px] text-muted-foreground">{pair.usageCount} layout(s) usam este par</p>
                         </div>
                         <span className="grid size-6 shrink-0 place-items-center rounded border border-border bg-background/50 text-muted-foreground">
                           {loading ? <Loader2 className="size-3 animate-spin" /> : active ? <Check className="size-3 text-success" /> : <ChevronDown className="size-3 -rotate-90" />}
