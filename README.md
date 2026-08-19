@@ -28,7 +28,9 @@ O Studio já suporta:
 - rollback best-effort em gravações estruturais com múltiplos arquivos;
 - seleção de regiões com clipboard interno, copiar/recortar/colar e carimbo multi-metatile;
 - clipboard por camada ou RAW completo, com rotação e espelhamento;
-- testes unitários com Vitest para parser, estrutura, workspace, eventos e clipboard.
+- **Smart Paths** com 16 máscaras NESW, presets persistentes e pintura por clique/arraste;
+- importação/exportação de presets Smart Path em JSON, com escopo opcional do par de tilesets;
+- testes unitários com Vitest para parser, estrutura, workspace, eventos, clipboard e Smart Paths.
 
 ## Fluxo recomendado no Chromebook
 
@@ -65,6 +67,40 @@ Atalhos:
 - `+` / `-`: zoom.
 
 Copiar uma camada preserva as outras propriedades físicas no destino. O modo RAW substitui metatile, colisão e elevação em conjunto. Células protegidas continuam bloqueadas enquanto **Proteger progressão** estiver ligado.
+
+## Smart Paths
+
+Smart Paths é o autotile explícito do Studio. Em vez de tentar adivinhar quais metatiles do Emerald representam uma curva, uma ponta ou uma bifurcação, cada preset define conscientemente os 16 estados possíveis dos quatro vizinhos ortogonais:
+
+```text
+N = 1
+E = 2
+S = 4
+W = 8
+mask = N | E | S | W
+```
+
+Assim, `0` é uma peça isolada, `5` é N+S, `10` é E+W e `15` é um cruzamento completo.
+
+Fluxo:
+
+1. selecione na paleta um metatile que pertença ao caminho;
+2. abra **Smart Paths → Configurar → Novo preset**;
+3. atribua um metatile a cada um dos 16 masks usando `← atual` enquanto navega pela paleta;
+4. escolha um `eraseMetatile` que **não** pertença à família do caminho;
+5. ative Smart Paths e desenhe com clique/arraste;
+6. o Studio recalcula somente a célula pintada e seus quatro vizinhos.
+
+O modo de apagar só age sobre metatiles pertencentes ao preset, evitando substituir acidentalmente casas, água ou outros elementos por `eraseMetatile`. Colisão e elevação permanecem intactas. Células protegidas de progressão continuam protegidas.
+
+Atalhos:
+
+- `P`: ligar/desligar Smart Paths;
+- `E`: alternar **Adicionar / Apagar** quando Smart Paths está ativo;
+- `Esc`: sair de Smart Paths;
+- `Shift`, `Alt`, botão do meio ou botão direito: mover o canvas durante o modo Smart Path.
+
+Os presets ficam em `localStorage` e podem ser exportados/importados em JSON. Quando criados com um atlas real carregado, também guardam o par `primary + secondary` como referência de escopo; divergências são mostradas como aviso, não corrigidas por adivinhação.
 
 ## Formato Emerald usado
 
@@ -111,8 +147,12 @@ Não é necessário GitHub Actions ou Codespaces para desenvolver o Studio.
 - `src/lib/structuralWorkspace.ts` — alterações estruturais multi-arquivo;
 - `src/lib/mapClipboard.ts` — captura e transformações de regiões;
 - `src/lib/clipboardStore.ts` — copiar/recortar/colar e carimbo;
+- `src/lib/smartPath.ts` — masks NESW, validação e planejamento do autotile;
+- `src/lib/smartPathStore.ts` — presets persistentes e aplicação no editor;
 - `src/components/studio/MapCanvas.tsx` — canvas principal;
 - `src/components/studio/StampOverlay.tsx` — carimbo multi-metatile;
+- `src/components/studio/SmartPathOverlay.tsx` — pincel Smart Path;
+- `src/components/studio/SmartPathDock.tsx` — editor dos 16 masks;
 - `src/routes/workspace.tsx` — seletor de mapas;
 - `src/routes/structure.tsx` — edição estrutural;
 - `src/routes/map-settings.tsx` — propriedades e conexões.
