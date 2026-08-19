@@ -1,13 +1,6 @@
+import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { editorStore, useEditor } from "@/lib/editorStore";
-import {
-  CATEGORIES,
-  DEMO_METATILES,
-  TILE_PX,
-  drawMetatile,
-  type DemoMetatile,
-  type MetatileCategory,
-} from "@/lib/demoAtlas";
 import { hex } from "@/lib/emeraldMap";
 import {
   atlasSourceRect,
@@ -17,22 +10,6 @@ import {
   type SavedRealAtlas,
 } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
-
-function DemoSwatch({ tile, size = 32 }: { tile: DemoMetatile; size?: number }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    canvas.width = TILE_PX;
-    canvas.height = TILE_PX;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, TILE_PX, TILE_PX);
-    drawMetatile(ctx, tile);
-  }, [tile]);
-  return <canvas ref={ref} className="pixelated block" style={{ width: size, height: size }} aria-hidden />;
-}
 
 function RealSwatch({
   atlas,
@@ -64,23 +41,7 @@ export function TilePalette() {
   const state = useEditor();
   const atlas = useRealAtlas();
   const [query, setQuery] = useState("");
-  const [demoCategory, setDemoCategory] = useState<MetatileCategory | "Todos">("Todos");
   const [realCategory, setRealCategory] = useState<"Todos" | "Primary" | "Secondary">("Todos");
-
-  const demoTiles = useMemo(
-    () =>
-      DEMO_METATILES.filter((tile) => {
-        if (demoCategory !== "Todos" && tile.category !== demoCategory) return false;
-        if (!query.trim()) return true;
-        const q = query.toLowerCase();
-        return (
-          tile.name.toLowerCase().includes(q) ||
-          String(tile.id).includes(q) ||
-          hex(tile.id, 3).toLowerCase().includes(q)
-        );
-      }),
-    [demoCategory, query],
-  );
 
   const realTiles = useMemo(() => {
     if (!atlas) return [];
@@ -98,7 +59,6 @@ export function TilePalette() {
     });
   }, [atlas, query, realCategory]);
 
-  const selectedDemo = DEMO_METATILES.find((tile) => tile.id === state.selectedMetatile);
   const selectedReal = atlas ? realAtlasStore.recordFor(state.selectedMetatile, atlas) : undefined;
 
   if (state.viewMode === "collision" || state.viewMode === "elevation") {
@@ -115,53 +75,44 @@ export function TilePalette() {
         <span className="panel-title">Metatiles</span>
         {atlas ? (
           <span className="rounded-sm bg-success/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-success">
-            ATLAS REAL
+            GBA REAL
           </span>
         ) : (
           <span className="rounded-sm bg-warning/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-warning">
-            ATLAS DEMO
+            CARREGANDO REAL
           </span>
         )}
       </div>
 
-      <div className="space-y-2 border-b border-border p-2">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={atlas ? "Buscar ID / hex / behavior…" : "Buscar nome ou id…"}
-          className="h-7 w-full rounded border border-border bg-canvas px-2 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
-        />
-        {atlas ? (
-          <div className="flex flex-wrap gap-1">
-            {(["Todos", "Primary", "Secondary"] as const).map((category) => (
-              <FilterButton
-                key={category}
-                active={realCategory === category}
-                onClick={() => setRealCategory(category)}
-              >
-                {category}
-              </FilterButton>
-            ))}
+      {atlas ? (
+        <>
+          <div className="space-y-2 border-b border-border p-2">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar ID / hex / behavior…"
+              className="h-7 w-full rounded border border-border bg-canvas px-2 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+            />
+            <div className="flex flex-wrap gap-1">
+              {(["Todos", "Primary", "Secondary"] as const).map((category) => (
+                <FilterButton
+                  key={category}
+                  active={realCategory === category}
+                  onClick={() => setRealCategory(category)}
+                >
+                  {category}
+                </FilterButton>
+              ))}
+            </div>
+            <div className="rounded border border-border bg-canvas px-2 py-1.5 text-[9px] leading-relaxed text-muted-foreground">
+              <b className="text-foreground">{atlas.primary}</b><br />+ {atlas.secondary}
+              {atlas.game && <><br /><span>{atlas.game}</span></>}
+            </div>
           </div>
-        ) : (
-          <div className="flex flex-wrap gap-1">
-            {(["Todos", ...CATEGORIES] as const).map((category) => (
-              <FilterButton
-                key={category}
-                active={demoCategory === category}
-                onClick={() => setDemoCategory(category)}
-              >
-                {category}
-              </FilterButton>
-            ))}
-          </div>
-        )}
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        <div className="grid grid-cols-4 gap-1">
-          {atlas
-            ? realTiles.map((record) => (
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <div className="grid grid-cols-4 gap-1">
+              {realTiles.map((record) => (
                 <button
                   key={record.id}
                   type="button"
@@ -179,64 +130,58 @@ export function TilePalette() {
                     {record.id}
                   </span>
                 </button>
-              ))
-            : demoTiles.map((tile) => (
-                <button
-                  key={tile.id}
-                  type="button"
-                  title={`${tile.name} — id ${tile.id} (${hex(tile.id, 3)}) · ${tile.category}`}
-                  onClick={() => editorStore.setMetatile(tile.id)}
-                  className={cn(
-                    "relative overflow-hidden rounded-sm border p-0 leading-none transition-shadow",
-                    state.selectedMetatile === tile.id
-                      ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]"
-                      : "border-border hover:border-border-strong",
-                  )}
-                >
-                  <DemoSwatch tile={tile} size={44} />
-                  <span className="absolute bottom-0 right-0 bg-background/80 px-0.5 font-mono text-[8px] text-muted-foreground">
-                    {tile.id}
-                  </span>
-                </button>
               ))}
-        </div>
-        {(atlas ? realTiles.length : demoTiles.length) === 0 && (
-          <p className="p-3 text-center text-xs text-muted-foreground">Nenhum metatile.</p>
-        )}
-      </div>
+            </div>
+            {realTiles.length === 0 && (
+              <p className="p-3 text-center text-xs text-muted-foreground">Nenhum metatile corresponde ao filtro.</p>
+            )}
+          </div>
 
-      <div className="border-t border-border p-2">
-        <span className="panel-title">Selecionado</span>
-        {atlas && selectedReal ? (
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="rounded-sm border border-border">
-              <RealSwatch atlas={atlas} record={selectedReal} size={40} />
-            </div>
-            <div className="min-w-0 leading-tight">
-              <p className="font-mono text-xs font-medium">ID {selectedReal.id} · {hex(selectedReal.id, 3)}</p>
-              <p className="text-[10px] text-muted-foreground">
-                {selectedReal.source} · local {selectedReal.localId}
+          <div className="border-t border-border p-2">
+            <span className="panel-title">Selecionado</span>
+            {selectedReal ? (
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="rounded-sm border border-border">
+                  <RealSwatch atlas={atlas} record={selectedReal} size={40} />
+                </div>
+                <div className="min-w-0 leading-tight">
+                  <p className="font-mono text-xs font-medium">ID {selectedReal.id} · {hex(selectedReal.id, 3)}</p>
+                  <p className="text-[10px] text-muted-foreground">{selectedReal.source} · local {selectedReal.localId}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    behavior {selectedReal.behavior == null ? "—" : hex(selectedReal.behavior, 2)} · layer {selectedReal.layerType ?? "—"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
+                id {state.selectedMetatile} (não existe no atlas ativo)
               </p>
-              <p className="text-[10px] text-muted-foreground">
-                behavior {selectedReal.behavior == null ? "—" : hex(selectedReal.behavior, 2)} · layer {selectedReal.layerType ?? "—"}
-              </p>
-            </div>
+            )}
           </div>
-        ) : !atlas && selectedDemo ? (
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="rounded-sm border border-border"><DemoSwatch tile={selectedDemo} size={40} /></div>
-            <div className="min-w-0 leading-tight">
-              <p className="truncate text-xs font-medium">{selectedDemo.name}</p>
-              <p className="font-mono text-[10px] text-muted-foreground">id {selectedDemo.id} · {hex(selectedDemo.id, 3)}</p>
-              <p className="text-[10px] text-muted-foreground">{selectedDemo.category}</p>
-            </div>
+        </>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+          <div className="size-8 animate-pulse rounded border border-success/30 bg-success/10" />
+          <div>
+            <p className="text-xs font-semibold">Buscando metatiles reais do Emerald…</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+              O Studio não usa mais árvores, casas ou caminhos desenhados com formas genéricas como fallback.
+            </p>
           </div>
-        ) : (
-          <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-            id {state.selectedMetatile} (não existe no atlas ativo)
-          </p>
-        )}
-      </div>
+          <Link
+            to="/workspace"
+            className="rounded border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] text-primary hover:bg-primary/15"
+          >
+            Abrir Workspace Arauna
+          </Link>
+          <Link
+            to="/gen3-library"
+            className="rounded border border-border px-2 py-1 text-[10px] text-foreground/80 hover:bg-surface"
+          >
+            Biblioteca Gen III
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }
