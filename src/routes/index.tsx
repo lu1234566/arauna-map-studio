@@ -5,6 +5,7 @@ import { Inspector } from "@/components/studio/Inspector";
 import { MapCanvas } from "@/components/studio/MapCanvas";
 import { SmartPathDock } from "@/components/studio/SmartPathDock";
 import { SmartPathOverlay } from "@/components/studio/SmartPathOverlay";
+import { SmartPathScopeGuard } from "@/components/studio/SmartPathScopeGuard";
 import { StampOverlay } from "@/components/studio/StampOverlay";
 import { StatusBar } from "@/components/studio/StatusBar";
 import { TilePalette } from "@/components/studio/TilePalette";
@@ -134,6 +135,7 @@ function Index() {
           <MapCanvas />
           <StampOverlay />
           <SmartPathOverlay />
+          <SmartPathScopeGuard />
           <SmartPathDock />
           <ClipboardDock />
         </main>
