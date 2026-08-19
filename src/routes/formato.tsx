@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Binary, FolderOpen, HardDrive, Layers3, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Binary, Braces, FolderOpen, HardDrive, Layers3, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/formato")({
   component: FormatPage,
@@ -23,38 +23,39 @@ function FormatPage() {
 
       <main className="mx-auto grid max-w-5xl gap-4 p-5 md:grid-cols-2">
         <InfoCard icon={HardDrive} title="Dimensões reais">
-          <p>As dimensões vêm de <b>data/layouts/layouts.json</b>. O Studio não fica mais limitado a 20×20.</p>
+          <p>As dimensões vêm de <b>data/layouts/layouts.json</b>. O Studio não fica limitado a 20×20.</p>
           <p className="mt-2 text-muted-foreground">LittlerootTown continua sendo o primeiro alvo: 20 × 20 = 400 células.</p>
         </InfoCard>
 
         <InfoCard icon={Binary} title="map.bin">
           <p>Cada célula ocupa <b>2 bytes</b>, lidos e escritos como <b>uint16 little-endian</b>.</p>
           <p className="mt-2 font-mono text-xs text-primary">tamanho = width × height × 2</p>
-          <p className="mt-1 text-muted-foreground">Ex.: LittlerootTown 20×20 = 800 bytes; Route110 40×100 = 8000 bytes.</p>
+          <p className="mt-1 text-muted-foreground">Metatile, colisão e elevação são editáveis e usam um histórico único de undo/redo.</p>
         </InfoCard>
 
         <InfoCard icon={Layers3} title="Separação dos bits">
           <div className="space-y-1 font-mono text-xs">
             <p>metatileId = raw &amp; 0x03FF</p>
-            <p>physicalBits = raw &amp; 0xFC00</p>
+            <p>collision = (raw &amp; 0x0C00) &gt;&gt; 10</p>
+            <p>elevation = (raw &amp; 0xF000) &gt;&gt; 12</p>
             <p>raw = physicalBits | metatileId</p>
           </div>
-          <p className="mt-3 text-muted-foreground">No modo Visual o editor altera apenas o ID do metatile e mantém colisão/elevação da célula intactas.</p>
+          <p className="mt-3 text-muted-foreground">Cada camada física altera somente a própria máscara e preserva os demais bits.</p>
         </InfoCard>
 
-        <InfoCard icon={Layers3} title="map.json">
-          <p><b>data/maps/.../map.json</b> complementa o layout binário com o mapa lógico do pokeemerald.</p>
-          <p className="mt-2 text-muted-foreground">O Studio lê ID, layout, música, conexões, warps, object events/NPCs, coord events e BG events.</p>
+        <InfoCard icon={Braces} title="map.json editável">
+          <p><b>data/maps/.../map.json</b> guarda o mapa lógico: warps, object events/NPCs, coord events, BG events e conexões.</p>
+          <p className="mt-2 text-muted-foreground">Warps, NPCs, triggers e BG events podem ser selecionados, arrastados, criados, removidos e editados no inspetor. O botão JSON exporta o documento atualizado preservando campos desconhecidos.</p>
         </InfoCard>
 
         <InfoCard icon={ShieldCheck} title="Proteção de progressão">
-          <p>Ao importar map.json, o editor deriva automaticamente células protegidas de <b>warps, coord events e BG events</b>.</p>
-          <p className="mt-2 text-muted-foreground">NPCs aparecem no overlay e no inspetor, mas não bloqueiam a pintura do terreno por padrão.</p>
+          <p>O editor deriva automaticamente células protegidas de <b>warps, coord events e BG events</b>.</p>
+          <p className="mt-2 text-muted-foreground">A proteção bloqueia pintura de terreno/colisão/elevação nessas células. A própria camada de eventos continua editável para permitir corrigir a progressão conscientemente.</p>
         </InfoCard>
 
         <InfoCard icon={FolderOpen} title="Workspace Arauna">
           <p>O caminho recomendado é abrir a pasta <b>data/</b> uma única vez no Chrome/Chromebook.</p>
-          <p className="mt-2 text-muted-foreground">O Studio indexa layouts, mapas e tilesets localmente e, ao escolher um mapa, carrega automaticamente map.bin, map.json, dimensão, primary e secondary tileset.</p>
+          <p className="mt-2 text-muted-foreground">O workspace permanece em memória durante a sessão da aba e permite alternar entre mapas sem escolher a pasta novamente.</p>
         </InfoCard>
 
         <InfoCard icon={HardDrive} title="Snapshot da Vila">
@@ -64,13 +65,13 @@ function FormatPage() {
 
         <InfoCard icon={Layers3} title="Atlas gráfico real">
           <p>O Tileset Lab e o Workspace reconstruem os metatiles reais a partir de <b>tiles.png</b>, <b>metatiles.bin</b>, atributos e paletas.</p>
-          <p className="mt-2 text-muted-foreground">O primary ocupa a faixa base; o secondary é resolvido por layout e pode variar entre cidades, rotas e interiores. O atlas DEMO existe apenas como fallback quando nenhum atlas real foi carregado.</p>
+          <p className="mt-2 text-muted-foreground">O primary ocupa a faixa base; o secondary é resolvido por layout. O atlas DEMO existe apenas como fallback.</p>
         </InfoCard>
 
         <section className="rounded-md border border-success/40 bg-success/5 p-4 md:col-span-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-success">Fluxo recomendado</h2>
           <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-            Abra <b>Workspace</b> → escolha a pasta <b>data/</b> do repositório → pesquise o mapa → clique nele. O Studio resolve o layout e os tilesets, valida o tamanho do map.bin e volta ao editor com o mapa visual e os eventos carregados. As importações manuais continuam disponíveis como fallback avançado.
+            Abra <b>Workspace</b> → escolha <b>data/</b> → abra um mapa → edite Visual/Colisão/Elevação ou Warps/NPCs/Triggers → valide → exporte <b>BIN</b> e/ou <b>JSON</b>. O asterisco na barra/status indica qual arquivo possui alterações ainda não exportadas.
           </p>
         </section>
       </main>

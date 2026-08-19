@@ -20,6 +20,18 @@ import {
   type PhysicalLayer,
 } from "./physicalMap";
 import {
+  addEvent as addEditableEvent,
+  cloneMapJson,
+  eventRecord,
+  moveEvent as moveEditableEvent,
+  parseEditableMapJson,
+  removeEvent as removeEditableEvent,
+  stringifyMapJson,
+  updateEventField as updateEditableEventField,
+  type EditableEventSource,
+  type EditableMapJson,
+} from "./eventMapJson";
+import {
   metadataOutOfBounds,
   parsePokeemeraldMapJson,
   type MapEventSource,
@@ -36,12 +48,14 @@ export interface ProtectedCell {
 }
 
 export interface DemoEvent {
+  id: string;
+  sourceIndex: number;
   x: number;
   y: number;
   kind: "warp" | "npc" | "trigger";
   label: string;
   detail: string;
-  source?: MapEventSource;
+  source: MapEventSource;
 }
 
 export interface Selection {
@@ -67,6 +81,9 @@ export interface EditorState {
   protectedCells: ProtectedCell[];
   events: DemoEvent[];
   mapMetadata: PokeemeraldMapMetadata | null;
+  mapJsonDocument: EditableMapJson | null;
+  mapJsonDirty: boolean;
+  selectedEventId: string | null;
   selection: Selection | null;
   selectedCell: number | null;
   hoverCell: number | null;
@@ -79,7 +96,15 @@ export interface EditorState {
   mapJsonSource: string | null;
 }
 
-const STORAGE_MAP = "arauna.map.v2";
+interface EditorSnapshot {
+  map: MapData;
+  mapJsonDocument: EditableMapJson | null;
+  selectedEventId: string | null;
+  dirty: boolean;
+  mapJsonDirty: boolean;
+}
+
+const STORAGE_MAP = "arauna.map.v3";
 const STORAGE_PREFS = "arauna.prefs.v1";
 const MAX_HISTORY = 100;
 
@@ -90,6 +115,15 @@ function defaultMap(): MapData {
 function editablePhysicalLayer(viewMode: ViewMode): PhysicalLayer | null {
   if (viewMode === "collision" || viewMode === "elevation") return viewMode;
   return null;
+}
+
+function deriveMapJson(document: EditableMapJson) {
+  const metadata = parsePokeemeraldMapJson(stringifyMapJson(document));
+  return {
+    metadata,
+    events: metadata.events as DemoEvent[],
+    protectedCells: metadata.protectedCells as ProtectedCell[],
+  };
 }
 
 function initialState(): EditorState {
@@ -109,6 +143,9 @@ function initialState(): EditorState {
     protectedCells: [],
     events: [],
     mapMetadata: null,
+    mapJsonDocument: null,
+    mapJsonDirty: false,
+    selectedEventId: null,
     selection: null,
     selectedCell: null,
     hoverCell: null,
@@ -127,8 +164,8 @@ type Listener = () => void;
 class EditorStore {
   private state: EditorState = initialState();
   private listeners = new Set<Listener>();
-  private undoStack: MapData[] = [];
-  private redoStack: MapData[] = [];
+  private undoStack: EditorSnapshot[] = [];
+  private redoStack: EditorSnapshot[] = [];
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   getState = () => this.state;
@@ -164,6 +201,9 @@ class EditorStore {
           physical: Array.from(s.map.physical),
           sourceFile: s.sourceFile,
           mapJsonSource: s.mapJsonSource,
+          mapJsonDocument: s.mapJsonDocument,
+          mapJsonDirty: s.mapJsonDirty,
+          selectedEventId: s.selectedEventId,
           mapMetadata: s.mapMetadata,
           events: s.events,
           protectedCells: s.protectedCells,
@@ -208,7 +248,10 @@ class EditorStore {
         };
       }
 
-      const rawMap = localStorage.getItem(STORAGE_MAP) ?? localStorage.getItem("arauna.map.v1");
+      const rawMap =
+        localStorage.getItem(STORAGE_MAP) ??
+        localStorage.getItem("arauna.map.v2") ??
+        localStorage.getItem("arauna.map.v1");
       if (rawMap) {
         const saved = JSON.parse(rawMap) as Record<string, unknown>;
         const width = Number(saved.width);
@@ -226,19 +269,37 @@ class EditorStore {
             restoredMap.physical = new Uint16Array(restoredMap.metatiles.length);
           }
 
+          let mapJsonDocument: EditableMapJson | null = null;
+          let mapMetadata: PokeemeraldMapMetadata | null = null;
+          let events: DemoEvent[] = [];
+          let protectedCells: ProtectedCell[] = [];
+          if (saved.mapJsonDocument && typeof saved.mapJsonDocument === "object" && !Array.isArray(saved.mapJsonDocument)) {
+            mapJsonDocument = cloneMapJson(saved.mapJsonDocument as EditableMapJson);
+            const derived = deriveMapJson(mapJsonDocument);
+            mapMetadata = derived.metadata;
+            events = derived.events;
+            protectedCells = derived.protectedCells;
+          } else {
+            mapMetadata = saved.mapMetadata && typeof saved.mapMetadata === "object"
+              ? (saved.mapMetadata as PokeemeraldMapMetadata)
+              : null;
+            events = Array.isArray(saved.events) ? (saved.events as DemoEvent[]) : [];
+            protectedCells = Array.isArray(saved.protectedCells)
+              ? (saved.protectedCells as ProtectedCell[])
+              : [];
+          }
+
           this.state = {
             ...this.state,
             mapName: typeof saved.mapName === "string" ? saved.mapName : this.state.mapName,
             sourceFile: typeof saved.sourceFile === "string" ? saved.sourceFile : null,
             mapJsonSource: typeof saved.mapJsonSource === "string" ? saved.mapJsonSource : null,
-            mapMetadata:
-              saved.mapMetadata && typeof saved.mapMetadata === "object"
-                ? (saved.mapMetadata as PokeemeraldMapMetadata)
-                : null,
-            events: Array.isArray(saved.events) ? (saved.events as DemoEvent[]) : this.state.events,
-            protectedCells: Array.isArray(saved.protectedCells)
-              ? (saved.protectedCells as ProtectedCell[])
-              : this.state.protectedCells,
+            mapJsonDocument,
+            mapJsonDirty: Boolean(saved.mapJsonDirty),
+            selectedEventId: typeof saved.selectedEventId === "string" ? saved.selectedEventId : null,
+            mapMetadata,
+            events,
+            protectedCells,
             map: restoredMap,
             lastMessage: "Projeto restaurado do armazenamento local.",
           };
@@ -250,10 +311,50 @@ class EditorStore {
     }
   }
 
+  private snapshot(): EditorSnapshot {
+    return {
+      map: cloneMap(this.state.map),
+      mapJsonDocument: this.state.mapJsonDocument ? cloneMapJson(this.state.mapJsonDocument) : null,
+      selectedEventId: this.state.selectedEventId,
+      dirty: this.state.dirty,
+      mapJsonDirty: this.state.mapJsonDirty,
+    };
+  }
+
   private pushHistory() {
-    this.undoStack.push(cloneMap(this.state.map));
+    this.undoStack.push(this.snapshot());
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
     this.redoStack = [];
+  }
+
+  private restoreSnapshot(snapshot: EditorSnapshot, lastMessage: string) {
+    let mapMetadata = this.state.mapMetadata;
+    let events = this.state.events;
+    let protectedCells = this.state.protectedCells;
+    if (snapshot.mapJsonDocument) {
+      const derived = deriveMapJson(snapshot.mapJsonDocument);
+      mapMetadata = derived.metadata;
+      events = derived.events;
+      protectedCells = derived.protectedCells;
+    } else {
+      mapMetadata = null;
+      events = [];
+      protectedCells = [];
+    }
+    this.set({
+      map: cloneMap(snapshot.map),
+      mapJsonDocument: snapshot.mapJsonDocument ? cloneMapJson(snapshot.mapJsonDocument) : null,
+      mapMetadata,
+      events,
+      protectedCells,
+      selectedEventId: snapshot.selectedEventId,
+      dirty: snapshot.dirty,
+      mapJsonDirty: snapshot.mapJsonDirty,
+      validation: null,
+      lastMessage,
+      undoDepth: this.undoStack.length,
+      redoDepth: this.redoStack.length,
+    });
   }
 
   private syncHistoryDepths(patch: Partial<EditorState> = {}) {
@@ -267,15 +368,15 @@ class EditorStore {
   undo = () => {
     const prev = this.undoStack.pop();
     if (!prev) return;
-    this.redoStack.push(cloneMap(this.state.map));
-    this.syncHistoryDepths({ map: prev, dirty: true, lastMessage: "Desfeito." });
+    this.redoStack.push(this.snapshot());
+    this.restoreSnapshot(prev, "Desfeito.");
   };
 
   redo = () => {
     const next = this.redoStack.pop();
     if (!next) return;
-    this.undoStack.push(cloneMap(this.state.map));
-    this.syncHistoryDepths({ map: next, dirty: true, lastMessage: "Refeito." });
+    this.undoStack.push(this.snapshot());
+    this.restoreSnapshot(next, "Refeito.");
   };
 
   isProtected = (x: number, y: number) =>
@@ -364,7 +465,11 @@ class EditorStore {
       return;
     }
     this.pushHistory();
-    const layerName = s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
+    const layerName = s.viewMode === "visual"
+      ? "visual"
+      : physicalLayer === "collision"
+        ? "colisão"
+        : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
@@ -403,12 +508,142 @@ class EditorStore {
 
     if (!changed) return;
     this.pushHistory();
-    const layerName = s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
+    const layerName = s.viewMode === "visual"
+      ? "visual"
+      : physicalLayer === "collision"
+        ? "colisão"
+        : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
       lastMessage: `Seleção preenchida em ${layerName}: ${changed} célula(s).`,
     });
+  };
+
+  private applyMapJsonDocument(
+    document: EditableMapJson,
+    patch: Partial<EditorState>,
+  ) {
+    const derived = deriveMapJson(document);
+    this.syncHistoryDepths({
+      mapJsonDocument: document,
+      mapMetadata: derived.metadata,
+      events: derived.events,
+      protectedCells: derived.protectedCells,
+      validation: null,
+      ...patch,
+    });
+  }
+
+  selectEvent = (selectedEventId: string | null) => {
+    if (!selectedEventId) {
+      this.set({ selectedEventId: null }, false);
+      return;
+    }
+    const event = this.state.events.find((candidate) => candidate.id === selectedEventId);
+    if (!event) return;
+    this.set({
+      selectedEventId,
+      selectedCell: idx(event.x, event.y, this.state.map.width),
+      lastMessage: `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
+    }, false);
+  };
+
+  moveEvent = (id: string, x: number, y: number, continuous = false) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) return;
+    if (x < 0 || y < 0 || x >= s.map.width || y >= s.map.height) return;
+    const current = s.events.find((event) => event.id === id);
+    if (!current || (current.x === x && current.y === y)) return;
+    if (!continuous) this.pushHistory();
+    try {
+      const document = moveEditableEvent(s.mapJsonDocument, id, x, y);
+      this.applyMapJsonDocument(document, {
+        selectedEventId: id,
+        selectedCell: idx(x, y, s.map.width),
+        mapJsonDirty: true,
+        lastMessage: `${current.label} movido para (${x},${y}).`,
+      });
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao mover evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+    }
+  };
+
+  updateEventField = (id: string, key: string, value: unknown) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) return;
+    try {
+      if ((key === "x" || key === "y") && Number.isInteger(Number(value))) {
+        const current = s.events.find((event) => event.id === id);
+        if (current) {
+          const x = key === "x" ? Number(value) : current.x;
+          const y = key === "y" ? Number(value) : current.y;
+          if (x < 0 || y < 0 || x >= s.map.width || y >= s.map.height) {
+            throw new Error(`Coordenada (${x},${y}) fora do mapa ${s.map.width}×${s.map.height}.`);
+          }
+        }
+      }
+      this.pushHistory();
+      const document = updateEditableEventField(s.mapJsonDocument, id, key, value);
+      const derived = deriveMapJson(document);
+      const selected = derived.events.find((event) => event.id === id);
+      this.syncHistoryDepths({
+        mapJsonDocument: document,
+        mapMetadata: derived.metadata,
+        events: derived.events,
+        protectedCells: derived.protectedCells,
+        selectedEventId: id,
+        selectedCell: selected ? idx(selected.x, selected.y, s.map.width) : s.selectedCell,
+        mapJsonDirty: true,
+        validation: null,
+        lastMessage: `Campo ${key} atualizado em ${id}.`,
+      });
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao editar evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+    }
+  };
+
+  createEvent = (source: EditableEventSource, x?: number, y?: number) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) {
+      this.set({ lastMessage: "Importe/abra um map.json antes de criar eventos." }, false);
+      return null;
+    }
+    const fallbackIndex = s.selectedCell ?? 0;
+    const targetX = x ?? (fallbackIndex % s.map.width);
+    const targetY = y ?? Math.floor(fallbackIndex / s.map.width);
+    if (targetX < 0 || targetY < 0 || targetX >= s.map.width || targetY >= s.map.height) return null;
+    try {
+      this.pushHistory();
+      const result = addEditableEvent(s.mapJsonDocument, source, targetX, targetY);
+      this.applyMapJsonDocument(result.document, {
+        selectedEventId: result.id,
+        selectedCell: idx(targetX, targetY, s.map.width),
+        mapJsonDirty: true,
+        lastMessage: `${source} criado em (${targetX},${targetY}). Revise os campos no inspetor antes de exportar.`,
+      });
+      return result.id;
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao criar evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      return null;
+    }
+  };
+
+  removeEvent = (id = this.state.selectedEventId) => {
+    const s = this.state;
+    if (!id || !s.mapJsonDocument) return;
+    const current = s.events.find((event) => event.id === id);
+    try {
+      this.pushHistory();
+      const document = removeEditableEvent(s.mapJsonDocument, id);
+      this.applyMapJsonDocument(document, {
+        selectedEventId: null,
+        mapJsonDirty: true,
+        lastMessage: `${current?.label ?? id} removido do map.json.`,
+      });
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao remover evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+    }
   };
 
   setSelection = (selection: Selection | null) => this.set({ selection }, false);
@@ -439,9 +674,12 @@ class EditorStore {
       map: defaultMap(),
       sourceFile: null,
       mapJsonSource: null,
+      mapJsonDocument: null,
+      mapJsonDirty: false,
       mapMetadata: null,
       events: [],
       protectedCells: [],
+      selectedEventId: null,
       dirty: false,
       selection: null,
       selectedCell: null,
@@ -479,20 +717,25 @@ class EditorStore {
 
   importMapJson = (source: string, fileName: string) => {
     try {
+      const document = parseEditableMapJson(source);
       const metadata = parsePokeemeraldMapJson(source);
       const totalEvents = metadata.events.length;
-      this.set({
+      this.pushHistory();
+      this.syncHistoryDepths({
         mapName: `${metadata.name} (${metadata.id})`,
         mapMetadata: metadata,
+        mapJsonDocument: document,
+        mapJsonDirty: false,
         mapJsonSource: fileName,
-        events: metadata.events,
-        protectedCells: metadata.protectedCells,
+        events: metadata.events as DemoEvent[],
+        protectedCells: metadata.protectedCells as ProtectedCell[],
+        selectedEventId: null,
         selectedCell: null,
         validation: null,
         lastMessage:
           `Importado ${fileName} — ${metadata.counts.warps} warp(s), ` +
           `${metadata.counts.objects} NPC(s), ${metadata.counts.coordEvents} trigger(s), ` +
-          `${metadata.counts.bgEvents} BG event(s); ${totalEvents} evento(s) visíveis.`,
+          `${metadata.counts.bgEvents} BG event(s); ${totalEvents} evento(s) editáveis.`,
       });
       return { ok: true as const, metadata };
     } catch (error) {
@@ -503,6 +746,20 @@ class EditorStore {
   };
 
   exportBytes = () => exportMapBin(this.state.map);
+
+  exportMapJsonSource = () => {
+    if (!this.state.mapJsonDocument) return null;
+    return stringifyMapJson(this.state.mapJsonDocument);
+  };
+
+  markBinExported = () => this.set({ dirty: false, lastMessage: "map.bin exportado." });
+  markMapJsonExported = () => this.set({ mapJsonDirty: false, lastMessage: "map.json exportado." });
+
+  selectedEventRecord = () => {
+    const s = this.state;
+    if (!s.selectedEventId || !s.mapJsonDocument) return null;
+    return eventRecord(s.mapJsonDocument, s.selectedEventId);
+  };
 
   runValidation = () => {
     const base = validateMap(this.state.map);
@@ -531,6 +788,12 @@ class EditorStore {
         level: "info" as const,
         message: `Layout declarado: ${metadata.layout}. Conexões: ${metadata.connections.length}. Células protegidas derivadas: ${metadata.protectedCells.length}.`,
       });
+      if (this.state.mapJsonDirty) {
+        issues.push({
+          level: "info" as const,
+          message: "map.json contém alterações ainda não exportadas.",
+        });
+      }
     }
 
     const validation: ValidationReport = {
