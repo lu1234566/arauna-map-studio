@@ -1,20 +1,30 @@
 import { useEffect, useSyncExternalStore } from "react";
 import {
   METATILE_SIZE,
+  PRIMARY_METATILE_LIMIT,
   atlasRecords,
   renderAtlasCanvas,
   type AtlasRecord,
   type RenderTilesetPair,
 } from "./emeraldTileset";
 
+export type AtlasCompatibility = "native" | "reference" | "custom";
+
 export interface SavedAtlasRecord extends AtlasRecord {
   slot: number;
 }
 
 export interface SavedRealAtlas {
-  format: "arauna-real-atlas-v2";
+  format: "arauna-real-atlas-v3";
+  packId: string;
+  family: string;
+  familyLabel: string;
+  compatibility: AtlasCompatibility;
+  sourceRepo?: string;
+  sourceRevision?: string;
   primary: string;
   secondary: string;
+  primaryMetatileLimit: number;
   columns: number;
   tileSize: number;
   width: number;
@@ -24,7 +34,24 @@ export interface SavedRealAtlas {
   records: SavedAtlasRecord[];
 }
 
-const STORAGE_KEY = "arauna.realAtlas.v2";
+export interface ActivateAtlasInput {
+  packId: string;
+  family: string;
+  familyLabel: string;
+  compatibility: AtlasCompatibility;
+  sourceRepo?: string;
+  sourceRevision?: string;
+  primary: string;
+  secondary: string;
+  primaryMetatileLimit: number;
+  columns: number;
+  tileSize?: number;
+  image: ImageData;
+  records: SavedAtlasRecord[];
+}
+
+const STORAGE_KEY = "arauna.realAtlas.v3";
+const V2_KEY = "arauna.realAtlas.v2";
 const LEGACY_KEY = "arauna.realAtlas.v1";
 
 type Listener = () => void;
@@ -66,26 +93,43 @@ class RealAtlasStore {
     this.listeners.forEach((listener) => listener());
   }
 
+  private resetCaches() {
+    this.canvasCache = null;
+    this.rowCache = null;
+    this.recordCache = null;
+  }
+
+  private persist(atlas: SavedRealAtlas) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(atlas));
+    } catch {
+      // Atlases continuam ativos em memória mesmo quando a quota local está cheia.
+    }
+    localStorage.removeItem(V2_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+  }
+
   hydrate = () => {
     if (this.hydrated || typeof window === "undefined") return;
     this.hydrated = true;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) {
-        // O formato v1 usava PNG data URL e não podia ser reconstruído de forma
-        // síncrona pelo MapCanvas. Removemos silenciosamente o cache antigo.
+        localStorage.removeItem(V2_KEY);
         localStorage.removeItem(LEGACY_KEY);
         return;
       }
       const parsed = JSON.parse(raw) as SavedRealAtlas;
       const expectedBytes = parsed.width * parsed.height * 4;
       const valid =
-        parsed?.format === "arauna-real-atlas-v2" &&
+        parsed?.format === "arauna-real-atlas-v3" &&
+        typeof parsed.packId === "string" &&
         typeof parsed.rgbaBase64 === "string" &&
         Array.isArray(parsed.records) &&
         Number.isInteger(parsed.columns) &&
         parsed.columns > 0 &&
         parsed.tileSize === METATILE_SIZE &&
+        Number.isInteger(parsed.primaryMetatileLimit) &&
         Number.isInteger(parsed.width) &&
         Number.isInteger(parsed.height) &&
         expectedBytes > 0;
@@ -110,46 +154,74 @@ class RealAtlasStore {
     return this.atlas;
   };
 
-  savePair = (pair: RenderTilesetPair, columns = 16): SavedRealAtlas => {
+  activate = (input: ActivateAtlasInput): SavedRealAtlas => {
+    if (typeof window === "undefined") throw new Error("O atlas real só pode ser ativado no navegador.");
+    const atlas: SavedRealAtlas = {
+      format: "arauna-real-atlas-v3",
+      packId: input.packId,
+      family: input.family,
+      familyLabel: input.familyLabel,
+      compatibility: input.compatibility,
+      sourceRepo: input.sourceRepo,
+      sourceRevision: input.sourceRevision,
+      primary: input.primary,
+      secondary: input.secondary,
+      primaryMetatileLimit: input.primaryMetatileLimit,
+      columns: input.columns,
+      tileSize: input.tileSize ?? METATILE_SIZE,
+      width: input.image.width,
+      height: input.image.height,
+      createdAt: new Date().toISOString(),
+      rgbaBase64: bytesToBase64(input.image.data),
+      records: input.records,
+    };
+    this.persist(atlas);
+    this.atlas = atlas;
+    this.hydrated = true;
+    this.resetCaches();
+    this.emit();
+    return atlas;
+  };
+
+  savePair = (
+    pair: RenderTilesetPair,
+    columns = 16,
+    metadata: Partial<Pick<SavedRealAtlas, "packId" | "family" | "familyLabel" | "compatibility" | "sourceRepo" | "sourceRevision" | "primary" | "secondary" | "primaryMetatileLimit">> = {},
+  ): SavedRealAtlas => {
     if (typeof window === "undefined") throw new Error("O atlas real só pode ser salvo no navegador.");
     const canvas = renderAtlasCanvas(pair, columns);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Canvas 2D indisponível para salvar o atlas real.");
-    const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const records = atlasRecords(pair).map((record, slot) => ({ ...record, slot }));
-    const atlas: SavedRealAtlas = {
-      format: "arauna-real-atlas-v2",
-      primary: "gTileset_General",
-      secondary: "gTileset_Petalburg",
+    const atlas = this.activate({
+      packId: metadata.packId ?? "custom:emerald",
+      family: metadata.family ?? "emerald",
+      familyLabel: metadata.familyLabel ?? "Pokémon Emerald / custom",
+      compatibility: metadata.compatibility ?? "custom",
+      sourceRepo: metadata.sourceRepo,
+      sourceRevision: metadata.sourceRevision,
+      primary: metadata.primary ?? "gTileset_General",
+      secondary: metadata.secondary ?? "gTileset_Petalburg",
+      primaryMetatileLimit: metadata.primaryMetatileLimit ?? PRIMARY_METATILE_LIMIT,
       columns,
       tileSize: METATILE_SIZE,
-      width: canvas.width,
-      height: canvas.height,
-      createdAt: new Date().toISOString(),
-      rgbaBase64: bytesToBase64(rgba),
+      image,
       records,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(atlas));
-    localStorage.removeItem(LEGACY_KEY);
-    this.atlas = atlas;
-    this.hydrated = true;
+    });
     this.canvasCache = { createdAt: atlas.createdAt, canvas };
-    this.rowCache = null;
-    this.recordCache = null;
-    this.emit();
     return atlas;
   };
 
   clear = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(V2_KEY);
       localStorage.removeItem(LEGACY_KEY);
     }
     this.atlas = null;
     this.hydrated = true;
-    this.canvasCache = null;
-    this.rowCache = null;
-    this.recordCache = null;
+    this.resetCaches();
     this.emit();
   };
 
@@ -179,10 +251,6 @@ class RealAtlasStore {
     return canvas;
   };
 
-  /**
-   * Compatibilidade com o MapCanvas legado: cria um atlas de uma única linha,
-   * em que cada slot ocupa exatamente 16 px e pode ser acessado por slot*16.
-   */
   getSingleRowCanvas = (atlas = this.ensureHydrated()): HTMLCanvasElement | null => {
     if (!atlas || typeof document === "undefined") return null;
     if (this.rowCache?.createdAt === atlas.createdAt) return this.rowCache.canvas;
@@ -196,17 +264,7 @@ class RealAtlasStore {
     ctx.imageSmoothingEnabled = false;
     for (const record of atlas.records) {
       const rect = atlasSourceRect(atlas, record);
-      ctx.drawImage(
-        source,
-        rect.x,
-        rect.y,
-        rect.w,
-        rect.h,
-        record.slot * atlas.tileSize,
-        0,
-        atlas.tileSize,
-        atlas.tileSize,
-      );
+      ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, record.slot * atlas.tileSize, 0, atlas.tileSize, atlas.tileSize);
     }
     this.rowCache = { createdAt: atlas.createdAt, canvas };
     return canvas;
@@ -216,11 +274,7 @@ class RealAtlasStore {
 export const realAtlasStore = new RealAtlasStore();
 
 export function useRealAtlas(): SavedRealAtlas | null {
-  const atlas = useSyncExternalStore(
-    realAtlasStore.subscribe,
-    realAtlasStore.getSnapshot,
-    realAtlasStore.getServerSnapshot,
-  );
+  const atlas = useSyncExternalStore(realAtlasStore.subscribe, realAtlasStore.getSnapshot, realAtlasStore.getServerSnapshot);
   useEffect(() => realAtlasStore.hydrate(), []);
   return atlas;
 }
