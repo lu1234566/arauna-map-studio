@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, ExternalLink, Layers3, Loader2, Search, X } from "lucide-react";
+import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore } from "@/lib/editorStore";
 import {
   GEN3_SOURCES,
@@ -86,13 +87,15 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
         origin: `${EMERALD.owner}/${EMERALD.repo}@${EMERALD.ref}`,
         game: EMERALD.profile.label,
       });
+      const clipboard = clipboardStore.getState().clipboard;
+      if (clipboard?.kind === "visual" || clipboard?.kind === "raw") clipboardStore.clear();
       const currentId = editorStore.getState().selectedMetatile;
       if (!realAtlasStore.recordFor(currentId, installed)) {
         const first = installed.records[0];
         if (first) editorStore.setMetatile(first.id);
       }
       editorStore.setMessage(
-        `Tileset ativo: ${installed.primary} + ${installed.secondary} — metatiles reais de Pokémon Emerald.`,
+        `Tileset ativo: ${installed.primary} + ${installed.secondary} — metatiles reais de Pokémon Emerald. Brush visual anterior foi descartado para evitar IDs incompatíveis.`,
       );
       window.dispatchEvent(new Event("resize"));
       setOpen(false);
