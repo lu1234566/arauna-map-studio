@@ -44,9 +44,15 @@ function memoryHandle(name: string, initial: string, failFirstWrite = false) {
             shouldFail = false;
             throw new Error("simulated write failure");
           }
-          if (typeof value === "string") pending = new TextEncoder().encode(value).slice().buffer as ArrayBuffer;
-          else if (value instanceof ArrayBuffer) pending = value.slice(0);
-          else pending = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer;
+          if (typeof value === "string") {
+            pending = new TextEncoder().encode(value).slice().buffer as ArrayBuffer;
+          } else if (value instanceof ArrayBuffer) {
+            pending = value.slice(0);
+          } else if (value instanceof Blob) {
+            pending = await value.arrayBuffer();
+          } else {
+            pending = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer;
+          }
         },
         async close() {
           bytes = pending;
