@@ -63,7 +63,11 @@ export function SmartPathOverlay() {
         dragRef.current = { mode: "paint", lastKey: key };
         setHover(cell);
         editorStore.selectCell(cell.y * editor.map.width + cell.x);
-        smartPathStore.applyAt(cell.x, cell.y, false);
+        // Sempre abre uma única transação de histórico no pointerdown. Assim,
+        // mesmo se a primeira célula já estiver correta e só as próximas mudarem,
+        // todo o gesto de arraste continua sendo um único Undo.
+        editorStore.beginStroke();
+        smartPathStore.applyAt(cell.x, cell.y, true);
       }}
       onPointerMove={(event) => {
         const drag = dragRef.current;
