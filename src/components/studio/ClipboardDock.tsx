@@ -1,6 +1,7 @@
 import { clipboardStore, useClipboard } from "@/lib/clipboardStore";
 import { useEditor } from "@/lib/editorStore";
 import { kindLabel } from "@/lib/mapClipboard";
+import { smartPathStore } from "@/lib/smartPathStore";
 import { cn } from "@/lib/utils";
 
 function Action({
@@ -97,7 +98,12 @@ export function ClipboardDock() {
           title="Ativar carimbo multi-metatile no mapa (V); clique ou arraste para repetir o padrão"
           disabled={!clipboard}
           active={clipboardState.stampMode}
-          onClick={() => clipboardStore.toggleStampMode()}
+          onClick={() => {
+            if (!clipboardState.stampMode && smartPathStore.getState().enabled) {
+              smartPathStore.setEnabled(false);
+            }
+            clipboardStore.toggleStampMode();
+          }}
         >
           {clipboardState.stampMode ? "Carimbo ON" : "Carimbo"}
         </Action>
