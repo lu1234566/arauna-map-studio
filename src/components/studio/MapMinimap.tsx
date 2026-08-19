@@ -58,7 +58,6 @@ export function MapMinimap() {
   const atlas = useRealAtlas();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseRef = useRef<HTMLCanvasElement | null>(null);
-  const hostRef = useRef<HTMLElement | null>(null);
   const dragging = useRef(false);
   const [open, setOpen] = useState(true);
   const [viewport, setViewport] = useState({ width: 1, height: 1 });
@@ -78,7 +77,6 @@ export function MapMinimap() {
   useEffect(() => {
     const host = canvasRef.current?.parentElement?.parentElement?.parentElement;
     if (!(host instanceof HTMLElement)) return;
-    hostRef.current = host;
     const update = () => {
       const rect = host.getBoundingClientRect();
       setViewport({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
@@ -129,7 +127,7 @@ export function MapMinimap() {
       ctx.lineWidth = 1;
       ctx.strokeRect(sx * scale + 0.5, sy * scale + 0.5, Math.max(1, scale - 1), Math.max(1, scale - 1));
     }
-  }, [open, scale, state.map.width, state.map.height, state.pan, state.selectedCell, state.zoom, viewport]);
+  }, [atlas, open, scale, state.map.height, state.map.metatiles, state.map.width, state.pan, state.selectedCell, state.zoom, viewport]);
 
   const navigate = (event: { clientX: number; clientY: number; currentTarget: HTMLCanvasElement }) => {
     const rect = event.currentTarget.getBoundingClientRect();
