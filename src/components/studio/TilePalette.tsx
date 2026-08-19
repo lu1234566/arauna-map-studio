@@ -1,7 +1,10 @@
 import { Link } from "@tanstack/react-router";
+import { Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { hex } from "@/lib/emeraldMap";
+import { metatileShelfStore, useMetatileShelf } from "@/lib/metatileShelfStore";
 import {
   atlasSourceRect,
   realAtlasStore,
@@ -14,6 +17,7 @@ import { MetatileGrid } from "./MetatileGrid";
 import { TilesetQuickPicker } from "./TilesetQuickPicker";
 
 type TileDensity = "compact" | "normal" | "large";
+type RealCategory = "Todos" | "Primary" | "Secondary" | "Favoritos" | "Usados";
 
 const DENSITY: Record<TileDensity, { size: number; columns: number; label: string }> = {
   compact: { size: 28, columns: 7, label: "C" },
@@ -50,10 +54,27 @@ function RealSwatch({
 export function TilePalette() {
   const state = useEditor();
   const atlas = useRealAtlas();
+  const shelf = useMetatileShelf(atlas);
   const [query, setQuery] = useState("");
-  const [realCategory, setRealCategory] = useState<"Todos" | "Primary" | "Secondary">("Todos");
+  const [realCategory, setRealCategory] = useState<RealCategory>("Todos");
   const [density, setDensity] = useState<TileDensity>("compact");
   const densityConfig = DENSITY[density];
+  const favoriteIds = useMemo(() => new Set(shelf.favorites), [shelf.favorites]);
+  const usedIds = useMemo(() => new Set(Array.from(state.map.metatiles)), [state.map.metatiles]);
+  const selectedReal = atlas ? realAtlasStore.recordFor(state.selectedMetatile, atlas) : undefined;
+
+  useEffect(() => {
+    if (!atlas || !selectedReal) return;
+    metatileShelfStore.touch(atlas, selectedReal.id);
+  }, [atlas?.createdAt, selectedReal?.id]);
+
+  const recentRecords = useMemo(() => {
+    if (!atlas) return [];
+    return shelf.recent
+      .map((id) => realAtlasStore.recordFor(id, atlas))
+      .filter((record): record is SavedAtlasRecord => Boolean(record))
+      .slice(0, 8);
+  }, [atlas, shelf.recent]);
 
   const realTiles = useMemo(() => {
     if (!atlas) return [];
@@ -61,6 +82,8 @@ export function TilePalette() {
     return atlas.records.filter((record) => {
       if (realCategory === "Primary" && record.source !== "primary") return false;
       if (realCategory === "Secondary" && record.source !== "secondary") return false;
+      if (realCategory === "Favoritos" && !favoriteIds.has(record.id)) return false;
+      if (realCategory === "Usados" && !usedIds.has(record.id)) return false;
       if (!q) return true;
       return (
         String(record.id).includes(q) ||
@@ -72,9 +95,7 @@ export function TilePalette() {
         (record.layerType != null && `layer ${record.layerType}`.includes(q))
       );
     });
-  }, [atlas, query, realCategory]);
-
-  const selectedReal = atlas ? realAtlasStore.recordFor(state.selectedMetatile, atlas) : undefined;
+  }, [atlas, query, realCategory, favoriteIds, usedIds]);
 
   if (state.viewMode === "collision" || state.viewMode === "elevation") {
     return <PhysicalPalette mode={state.viewMode} />;
@@ -116,13 +137,21 @@ export function TilePalette() {
 
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-wrap gap-1">
-                {(["Todos", "Primary", "Secondary"] as const).map((category) => (
+                {(["Todos", "Primary", "Secondary", "Favoritos", "Usados"] as const).map((category) => (
                   <FilterButton
                     key={category}
                     active={realCategory === category}
                     onClick={() => setRealCategory(category)}
                   >
-                    {category === "Todos" ? "Todos" : category === "Primary" ? "P" : "S"}
+                    {category === "Todos"
+                      ? "Todos"
+                      : category === "Primary"
+                        ? "P"
+                        : category === "Secondary"
+                          ? "S"
+                          : category === "Favoritos"
+                            ? `★ ${shelf.favorites.length}`
+                            : "Mapa"}
                   </FilterButton>
                 ))}
               </div>
@@ -149,6 +178,37 @@ export function TilePalette() {
               <span className="px-1 text-border-strong">+</span>
               <span className="truncate text-right"><b className="text-foreground">S</b> {atlas.secondary.replace(/^gTileset_/, "")}</span>
             </div>
+
+            {recentRecords.length > 0 && (
+              <div className="rounded border border-border bg-toolbar/50 p-1.5">
+                <div className="mb-1 flex items-center justify-between text-[8px] text-muted-foreground">
+                  <span className="font-semibold uppercase tracking-wide">Recentes</span>
+                  <span>{recentRecords.length}/{Math.min(8, shelf.recent.length)}</span>
+                </div>
+                <div className="flex gap-1 overflow-x-auto pb-0.5">
+                  {recentRecords.map((record) => (
+                    <button
+                      key={record.id}
+                      type="button"
+                      onClick={() => {
+                        if (clipboardStore.getState().stampMode) clipboardStore.toggleStampMode(false);
+                        metatileShelfStore.touch(atlas, record.id);
+                        editorStore.setMetatile(record.id);
+                      }}
+                      className={cn(
+                        "relative shrink-0 overflow-hidden rounded-sm border bg-canvas",
+                        state.selectedMetatile === record.id
+                          ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]"
+                          : "border-border hover:border-border-strong",
+                      )}
+                      title={`Recente · ID ${record.id} (${hex(record.id, 3)})`}
+                    >
+                      <RealSwatch atlas={atlas} record={record} size={24} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -161,12 +221,36 @@ export function TilePalette() {
               densityLabel={densityConfig.label}
             />
             {realTiles.length === 0 && (
-              <p className="p-3 text-center text-xs text-muted-foreground">Nenhum metatile corresponde ao filtro.</p>
+              <p className="p-3 text-center text-xs text-muted-foreground">
+                {realCategory === "Favoritos"
+                  ? "Nenhum favorito neste par de tilesets. Marque um metatile pela estrela no painel Selecionado."
+                  : realCategory === "Usados"
+                    ? "Nenhum metatile do atlas ativo foi encontrado no mapa atual."
+                    : "Nenhum metatile corresponde ao filtro."}
+              </p>
             )}
           </div>
 
           <div className="border-t border-border bg-toolbar/40 p-2">
-            <span className="panel-title">Selecionado</span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="panel-title">Selecionado</span>
+              {selectedReal && (
+                <button
+                  type="button"
+                  onClick={() => metatileShelfStore.toggleFavorite(atlas, selectedReal.id)}
+                  className={cn(
+                    "inline-flex h-6 items-center gap-1 rounded border px-1.5 text-[8px] font-semibold transition-colors",
+                    favoriteIds.has(selectedReal.id)
+                      ? "border-warning/50 bg-warning/15 text-warning"
+                      : "border-border bg-canvas text-muted-foreground hover:bg-surface hover:text-foreground",
+                  )}
+                  title={favoriteIds.has(selectedReal.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                >
+                  <Star className={cn("size-3", favoriteIds.has(selectedReal.id) && "fill-current")} />
+                  {favoriteIds.has(selectedReal.id) ? "Favorito" : "Favoritar"}
+                </button>
+              )}
+            </div>
             {selectedReal ? (
               <div className="mt-1.5 flex items-center gap-2">
                 <div className="rounded-sm border border-border bg-canvas">
