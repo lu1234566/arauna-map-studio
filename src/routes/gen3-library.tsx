@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Gamepad2, Loader2, Search } from "lucide-react";
+import { ArrowLeft, Check, Gamepad2, Loader2, Search } from "lucide-react";
 import {
   GEN3_SOURCES,
   discoverGen3Pairs,
@@ -12,6 +12,8 @@ import {
   type Gen3Source,
   type Gen3TilesetPairRef,
 } from "@/lib/gen3RemoteTilesets";
+import { editorStore } from "@/lib/editorStore";
+import { realAtlasStore, useRealAtlas } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/gen3-library")({ component: Gen3Library });
@@ -24,6 +26,7 @@ function Gen3Library() {
   const [loaded, setLoaded] = useState<Gen3RemotePair | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("Carregando catálogo Gen III…");
+  const activeAtlas = useRealAtlas();
   const source = GEN3_SOURCES.find((item) => item.id === sourceId) ?? GEN3_SOURCES[0]!;
 
   useEffect(() => {
@@ -77,6 +80,25 @@ function Gen3Library() {
     }
   };
 
+  const installEmeraldPair = () => {
+    if (!loaded || source.id !== "emerald") return;
+    const atlas = realAtlasStore.savePair(loaded, 16, {
+      primary: loaded.primarySymbol,
+      secondary: loaded.secondarySymbol,
+      origin: `${source.owner}/${source.repo}@${source.ref}`,
+      game: source.profile.label,
+    });
+    const confirmation = `${atlas.primary} + ${atlas.secondary} agora é o atlas real ativo do editor.`;
+    setMessage(confirmation);
+    editorStore.setMessage(confirmation);
+  };
+
+  const loadedIsActive = Boolean(
+    loaded &&
+    activeAtlas?.primary === loaded.primarySymbol &&
+    activeAtlas?.secondary === loaded.secondarySymbol,
+  );
+
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-toolbar px-4">
@@ -92,7 +114,7 @@ function Gen3Library() {
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_260px] overflow-hidden">
+      <main className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_280px] overflow-hidden">
         <aside className="flex min-h-0 flex-col border-r border-border bg-panel">
           <div className="space-y-2 border-b border-border p-3">
             <label className="block text-[10px] font-medium text-muted-foreground">Jogo / família</label>
@@ -178,9 +200,36 @@ function Gen3Library() {
             atributos: {source.profile.attributeBytes} byte(s) / metatile
           </section>
 
-          <section className="mt-3 rounded border border-warning/30 bg-warning/5 p-2 text-[9px] leading-relaxed text-warning">
-            <b>Biblioteca visual ≠ conversão automática.</b> Arauna é baseado em Emerald. Tiles de FireRed/LeafGreen e Ruby/Sapphire podem ser estudados aqui, mas precisam ser importados/convertidos para um tileset do projeto antes de serem usados num mapa compilável de Arauna.
-          </section>
+          {loaded && source.id === "emerald" ? (
+            <section className="mt-3 rounded border border-success/40 bg-success/5 p-2">
+              <p className="text-[9px] leading-relaxed text-muted-foreground">
+                Este par é nativo de Emerald, portanto pode ser usado diretamente como atlas visual do editor de Arauna.
+              </p>
+              <button
+                type="button"
+                disabled={loadedIsActive}
+                onClick={installEmeraldPair}
+                className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded border border-success/50 bg-success/10 px-2 text-[10px] font-semibold text-success hover:bg-success/15 disabled:opacity-55"
+              >
+                {loadedIsActive ? <><Check className="size-3.5" /> Ativo no editor</> : "Usar este par no editor"}
+              </button>
+              {loadedIsActive && (
+                <Link to="/" className="mt-1.5 inline-flex h-7 w-full items-center justify-center rounded border border-border text-[10px] hover:bg-surface">
+                  Voltar ao editor
+                </Link>
+              )}
+            </section>
+          ) : (
+            <section className="mt-3 rounded border border-warning/30 bg-warning/5 p-2 text-[9px] leading-relaxed text-warning">
+              <b>Biblioteca visual ≠ conversão automática.</b> Arauna é baseado em Emerald. Tiles de FireRed/LeafGreen e Ruby/Sapphire podem ser estudados aqui, mas não são instalados como IDs do mapa: primeiro precisam ser convertidos para um tileset Emerald do projeto.
+            </section>
+          )}
+
+          {source.id === "emerald" && !loaded && (
+            <section className="mt-3 rounded border border-success/30 bg-success/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
+              Carregue qualquer par Emerald desta lista para poder torná-lo o atlas ativo do editor.
+            </section>
+          )}
 
           <section className="mt-3 text-[9px] leading-relaxed text-muted-foreground">
             Fonte de dados: <b className="text-foreground">{source.owner}/{source.repo}@{source.ref}</b>. Os arquivos são buscados em tempo de execução; o Studio não guarda um pacote refeito de sprites no repositório.
