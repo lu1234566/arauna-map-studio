@@ -18,9 +18,11 @@ import {
   ZoomOut,
   Info,
   Map,
+  FolderOpen,
 } from "lucide-react";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
 import { cn } from "@/lib/utils";
+import { realAtlasStore } from "@/lib/realAtlasStore";
 import {
   LITTLEROOT_MAP_JSON,
   littlerootMapBinBuffer,
@@ -100,8 +102,11 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
       LITTLEROOT_MAP_JSON,
       "LittlerootTown/map.json (snapshot Arauna)",
     );
+    const atlas = realAtlasStore.getSnapshot();
     editorStore.setMessage(
-      "Vila Amanhecer/LittlerootTown real carregada. IDs e eventos são do repositório Arauna; previews gráficos ainda usam o atlas DEMO.",
+      atlas
+        ? `Vila Amanhecer/LittlerootTown carregada do snapshot. Atlas ativo: ${atlas.primary} + ${atlas.secondary}.`
+        : "Vila Amanhecer/LittlerootTown carregada do snapshot. Abra Workspace ou Tilesets para carregar os gráficos reais; enquanto isso o fallback DEMO permanece.",
     );
   };
 
@@ -138,15 +143,15 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           <FilePlus2 className="size-3.5" /> Novo 20×20
         </TB>
         <TB
-          title="Carregar snapshot real da Vila Amanhecer/LittlerootTown do repositório Arauna"
+          title="Carregar snapshot interno da Vila Amanhecer/LittlerootTown"
           onClick={loadRealLittleroot}
         >
-          <Map className="size-3.5" /> Vila real
+          <Map className="size-3.5" /> Vila snapshot
         </TB>
-        <TB title="Importar map.bin (800 bytes)" onClick={() => binRef.current?.click()}>
+        <TB title="Importar map.bin 20×20 manualmente" onClick={() => binRef.current?.click()}>
           <Upload className="size-3.5" /> map.bin
         </TB>
-        <TB title="Importar data/maps/.../map.json" onClick={() => jsonRef.current?.click()}>
+        <TB title="Importar data/maps/.../map.json manualmente" onClick={() => jsonRef.current?.click()}>
           <Upload className="size-3.5" /> map.json
         </TB>
         <TB title="Exportar map.bin" onClick={handleExport}>
@@ -222,6 +227,13 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
             Proteger
           </TB>
           <Divider />
+          <Link
+            to="/workspace"
+            className="inline-flex h-7 items-center gap-1.5 rounded border border-primary/30 bg-primary/10 px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+            title="Caminho recomendado: abra a pasta data/ e escolha qualquer mapa"
+          >
+            <FolderOpen className="size-3.5" /> Workspace
+          </Link>
           <Link
             to="/tilesets"
             className="inline-flex h-7 items-center gap-1.5 rounded border border-transparent px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-surface hover:text-foreground"
