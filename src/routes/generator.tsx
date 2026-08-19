@@ -1,11 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ClipboardCopy, Dices, ExternalLink, MapPinned, RefreshCw, Save, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, ClipboardCopy, Dices, ExternalLink, MapPinned, RefreshCw, Save, Sparkles, Trophy } from "lucide-react";
+import { SeedCandidateGallery } from "@/components/studio/SeedCandidateGallery";
 import { createEmptyMap, type MapData } from "@/lib/emeraldMap";
 import { planMapTemplate, serializeMapTemplates } from "@/lib/mapTemplate";
 import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import type { MapPattern } from "@/lib/patternLibrary";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
+import {
+  generateProceduralCandidates,
+  type ProceduralSeedCandidate,
+} from "@/lib/proceduralCandidates";
 import {
   createProceduralBlueprintSpec,
   type ProceduralBlueprintResult,
@@ -32,6 +37,8 @@ function ProceduralGenerator() {
   const [spec, setSpec] = useState<ProceduralBlueprintSpec>(() => createProceduralBlueprintSpec(30, 24));
   const [result, setResult] = useState<ProceduralBlueprintResult | null>(null);
   const [saved, setSaved] = useState("");
+  const [candidates, setCandidates] = useState<ProceduralSeedCandidate[]>([]);
+  const [candidateCount, setCandidateCount] = useState(8);
 
   const previewMap = useMemo(() => {
     const template = result?.compiled?.template;
@@ -48,10 +55,15 @@ function ProceduralGenerator() {
     return plan.valid ? plan.map : null;
   }, [result, spec.width, spec.height, patterns.patterns, smartPaths.presets, atlas]);
 
+  const resetResult = () => {
+    setResult(null);
+    setCandidates([]);
+    setSaved("");
+  };
+
   const update = <K extends keyof ProceduralBlueprintSpec>(key: K, value: ProceduralBlueprintSpec[K]) => {
     setSpec((current) => ({ ...current, [key]: value }));
-    setResult(null);
-    setSaved("");
+    resetResult();
   };
 
   const setOptionalId = (field: "centerPatternId" | "roadPresetId", value: string) => {
@@ -61,8 +73,7 @@ function ProceduralGenerator() {
       else delete next[field];
       return next;
     });
-    setResult(null);
-    setSaved("");
+    resetResult();
   };
 
   const togglePattern = (role: PatternRole, id: string) => {
@@ -72,8 +83,28 @@ function ProceduralGenerator() {
   };
 
   const generate = () => {
+    setCandidates([]);
     setResult(generateSafeProceduralBlueprint(spec, patterns.patterns, smartPaths.presets, scopeFromAtlas(atlas)));
     setSaved("");
+  };
+
+  const selectCandidate = (candidate: ProceduralSeedCandidate) => {
+    setSpec((current) => ({ ...current, seed: candidate.seed }));
+    setResult(candidate.result);
+    setSaved("");
+  };
+
+  const generateCandidates = () => {
+    const gallery = generateProceduralCandidates(
+      spec,
+      patterns.patterns,
+      smartPaths.presets,
+      scopeFromAtlas(atlas),
+      candidateCount,
+    );
+    setCandidates(gallery);
+    const best = gallery[0];
+    if (best) selectCandidate(best);
   };
 
   const saveTemplate = () => {
@@ -93,6 +124,10 @@ function ProceduralGenerator() {
         <div className="ml-auto flex items-center gap-2 text-[10px]">
           <Badge>{patterns.patterns.length} padrões</Badge><Badge>{smartPaths.presets.length} Smart Paths</Badge>
           <span className={cn("rounded border px-2 py-1", atlas ? "border-success/30 bg-success/10 text-success" : "border-warning/30 bg-warning/10 text-warning")}>{atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas real ausente"}</span>
+          <select value={candidateCount} onChange={(event) => setCandidateCount(Number(event.target.value))} className="h-8 rounded border border-border bg-canvas px-1.5 text-[10px]" title="Quantidade de seeds para comparar">
+            {[4, 8, 12, 16, 24].map((count) => <option key={count} value={count}>{count} seeds</option>)}
+          </select>
+          <button type="button" onClick={generateCandidates} className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2.5 text-xs hover:bg-surface"><Trophy className="size-3.5 text-warning" /> Melhor de {candidateCount}</button>
           <button type="button" onClick={generate} className="inline-flex h-8 items-center gap-1.5 rounded border border-primary/50 bg-primary/15 px-3 text-xs font-semibold text-primary hover:bg-primary/20"><Sparkles className="size-3.5" /> Gerar</button>
         </div>
       </header>
@@ -131,11 +166,12 @@ function ProceduralGenerator() {
 
         <section className="min-w-0 overflow-y-auto bg-canvas p-4">
           <div className="mx-auto flex min-h-full max-w-[980px] flex-col gap-3">
-            <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Prévia do layout</h2><p className="text-[10px] text-muted-foreground">A mesma seed reproduz o mesmo arranjo; rotas contornam estruturas em grade.</p></div><button type="button" onClick={generate} className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-surface"><RefreshCw className="size-3.5" /> Recalcular</button></div>
+            <div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Prévia do layout</h2><p className="text-[10px] text-muted-foreground">A mesma seed reproduz o mesmo arranjo; “Melhor de N” compara várias seeds e abre automaticamente a mais completa.</p></div><button type="button" onClick={generate} className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs hover:bg-surface"><RefreshCw className="size-3.5" /> Recalcular</button></div>
             <div className="grid min-h-[480px] flex-1 place-items-center overflow-auto rounded-lg border border-border bg-background/40 p-4 shadow-inner">
-              {!result ? <EmptyPreview title="Pronto para gerar" text="Escolha as peças e clique em Gerar." /> : !result.ok ? <EmptyPreview title="Geração bloqueada" text={result.errors.join(" ")} error /> : previewMap ? <GbaMapPreview map={previewMap} atlas={atlas} result={result} /> : <SchematicPreview result={result} width={spec.width} height={spec.height} />}
+              {!result ? <EmptyPreview title="Pronto para gerar" text="Escolha as peças e clique em Gerar ou Melhor de N." /> : !result.ok ? <EmptyPreview title="Geração bloqueada" text={result.errors.join(" ")} error /> : previewMap ? <GbaMapPreview map={previewMap} atlas={atlas} result={result} /> : <SchematicPreview result={result} width={spec.width} height={spec.height} />}
             </div>
             {result?.ok && <div className="grid grid-cols-4 gap-2"><Stat label="Estruturas" value={result.placements.length} /><Stat label="Conexões" value={result.roads.length} /><Stat label="Blueprint" value={(result.blueprint?.patterns.length ?? 0) + (result.blueprint?.routes.length ?? 0)} /><Stat label="Template" value={result.compiled?.template?.elements.length ?? 0} /></div>}
+            <SeedCandidateGallery candidates={candidates} activeSeed={spec.seed} onSelect={selectCandidate} />
             {result?.warnings.length ? <div className="rounded border border-warning/30 bg-warning/5 p-2 text-[10px] leading-relaxed text-warning">{result.warnings.join(" ")}</div> : null}
             {result?.errors.length ? <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-[10px] leading-relaxed text-destructive">{result.errors.join(" ")}</div> : null}
           </div>
