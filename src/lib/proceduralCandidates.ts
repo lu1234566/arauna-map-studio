@@ -77,6 +77,17 @@ export function candidateSeed(baseSeed: string, index: number): string {
 }
 
 /**
+ * BFS routing allocates arrays proportional to map area for each candidate.
+ * Keep the gallery responsive on unusually large layouts instead of allowing
+ * an accidental 24 × 512 × 512 search burst on the browser main thread.
+ */
+export function candidateBudget(spec: Pick<ProceduralBlueprintSpec, "width" | "height">, requested: number) {
+  const area = Math.max(1, Math.floor(spec.width)) * Math.max(1, Math.floor(spec.height));
+  const maxForArea = area > 65536 ? 4 : area > 16384 ? 8 : area > 4096 ? 16 : 24;
+  return Math.max(1, Math.min(maxForArea, 24, Math.floor(requested)));
+}
+
+/**
  * Generates and ranks a small deterministic gallery of seeds. The first entry
  * always evaluates the user's current seed; later entries use stable suffixes.
  */
@@ -87,7 +98,7 @@ export function generateProceduralCandidates(
   currentScope?: PatternScope,
   count = 8,
 ): ProceduralSeedCandidate[] {
-  const safeCount = Math.max(1, Math.min(24, Math.floor(count)));
+  const safeCount = candidateBudget(spec, count);
   const candidates = Array.from({ length: safeCount }, (_, index) => {
     const seed = candidateSeed(spec.seed, index);
     const candidateSpec: ProceduralBlueprintSpec = { ...spec, seed, exits: { ...spec.exits } };
