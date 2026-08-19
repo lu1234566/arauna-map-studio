@@ -1,244 +1,259 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Download, FolderOpen, Image as ImageIcon, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Check, ExternalLink, Loader2, Search, ShieldCheck, TriangleAlert } from "lucide-react";
 import {
-  PRIMARY_METATILE_LIMIT,
-  atlasRecords,
-  combineOverworldPalettes,
-  decodeIndexedTilesPng,
-  parseJascPalette,
-  parseMetatileAttributes,
-  parseMetatilesBin,
-  renderAtlasCanvas,
-  renderMetatileImage,
-  validateTilesetPair,
-  type RenderTilesetPair,
-  type RgbColor,
-} from "@/lib/emeraldTileset";
-import { realAtlasStore, useRealAtlas } from "@/lib/realAtlasStore";
+  activateGbaPack,
+  loadGbaTilesetCatalog,
+  useGbaTilesetLibrary,
+  type GbaCatalogPack,
+  type GbaFamilyId,
+} from "@/lib/gbaTilesetLibrary";
+import { useRealAtlas } from "@/lib/realAtlasStore";
+import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/tilesets")({ component: TilesetLab });
+export const Route = createFileRoute("/tilesets")({ component: GbaTilesetLibrary });
 
-type Side = "primary" | "secondary";
-interface SideFiles {
-  tiles: File | null;
-  metatiles: File | null;
-  attributes: File | null;
-  palettes: File[];
+type FamilyFilter = "all" | GbaFamilyId;
+
+function shortTilesetName(value: string) {
+  return value.replace(/^gTileset_/, "");
 }
-const emptySide = (): SideFiles => ({ tiles: null, metatiles: null, attributes: null, palettes: [] });
 
-function TilesetLab() {
-  const [primary, setPrimary] = useState<SideFiles>(emptySide);
-  const [secondary, setSecondary] = useState<SideFiles>(emptySide);
-  const [pair, setPair] = useState<RenderTilesetPair | null>(null);
-  const [message, setMessage] = useState(
-    "Carregue General (primary) e Petalburg (secondary). Tudo é processado localmente no navegador.",
-  );
-  const [busy, setBusy] = useState(false);
-  const [selectedId, setSelectedId] = useState(0);
-  const savedAtlas = useRealAtlas();
+function GbaTilesetLibrary() {
+  const library = useGbaTilesetLibrary();
+  const activeAtlas = useRealAtlas();
+  const [family, setFamily] = useState<FamilyFilter>("emerald");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const records = useMemo(() => (pair ? atlasRecords(pair) : []), [pair]);
-  const warnings = useMemo(() => (pair ? validateTilesetPair(pair) : []), [pair]);
+  useEffect(() => {
+    void loadGbaTilesetCatalog();
+  }, []);
 
-  const update = (side: Side, patch: Partial<SideFiles>) => {
-    if (side === "primary") setPrimary((current) => ({ ...current, ...patch }));
-    else setSecondary((current) => ({ ...current, ...patch }));
-    setPair(null);
-  };
+  const packs = useMemo(() => {
+    const catalog = library.catalog;
+    if (!catalog) return [];
+    const q = query.trim().toLowerCase();
+    return catalog.packs.filter((pack) => {
+      if (family !== "all" && pack.family !== family) return false;
+      if (!q) return true;
+      return [
+        pack.primary,
+        pack.secondary,
+        pack.familyLabel,
+        pack.id,
+        ...pack.maps,
+      ].some((value) => value.toLowerCase().includes(q));
+    });
+  }, [family, library.catalog, query]);
 
-  const build = async () => {
-    if (!primary.tiles || !primary.metatiles || !secondary.tiles || !secondary.metatiles) {
-      setMessage("Faltam arquivos obrigatórios: tiles.png e metatiles.bin dos dois tilesets.");
+  useEffect(() => {
+    if (!packs.length) {
+      setSelectedId(null);
       return;
     }
-    setBusy(true);
-    try {
-      const [primaryTiles, secondaryTiles, primaryMetatiles, secondaryMetatiles] = await Promise.all([
-        decodeIndexedTilesPng(primary.tiles),
-        decodeIndexedTilesPng(secondary.tiles),
-        primary.metatiles.arrayBuffer().then(parseMetatilesBin),
-        secondary.metatiles.arrayBuffer().then(parseMetatilesBin),
-      ]);
-      const primaryPalettes = await readPalettes(primary.palettes);
-      const secondaryPalettes = await readPalettes(secondary.palettes);
-      const primaryAttributes = primary.attributes
-        ? parseMetatileAttributes(await primary.attributes.arrayBuffer())
-        : undefined;
-      const secondaryAttributes = secondary.attributes
-        ? parseMetatileAttributes(await secondary.attributes.arrayBuffer())
-        : undefined;
-      const next: RenderTilesetPair = {
-        primaryTiles,
-        secondaryTiles,
-        primaryMetatiles,
-        secondaryMetatiles,
-        primaryAttributes,
-        secondaryAttributes,
-        palettes: combineOverworldPalettes(primaryPalettes, secondaryPalettes),
-      };
-      setPair(next);
-      setSelectedId(0);
-      const issues = validateTilesetPair(next);
-      const saved = realAtlasStore.savePair(next, 16);
-      setMessage(
-        `Atlas montado e salvo no editor: ${saved.records.length} metatiles (${primaryMetatiles.count} primary + ${secondaryMetatiles.count} secondary).` +
-          (issues.length ? ` ${issues.length} aviso(s).` : " Sem avisos."),
-      );
-    } catch (error) {
-      setPair(null);
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
+    if (!selectedId || !packs.some((pack) => pack.id === selectedId)) {
+      const active = packs.find((pack) => pack.id === activeAtlas?.packId);
+      setSelectedId((active ?? packs[0]).id);
     }
-  };
+  }, [activeAtlas?.packId, packs, selectedId]);
 
-  const exportPng = async () => {
-    if (!pair) return;
-    const canvas = renderAtlasCanvas(pair, 16);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    if (blob) downloadBlob(blob, "general-petalburg-metatiles.png");
-  };
-
-  const exportJson = () => {
-    if (!pair) return;
-    const payload = {
-      format: "arauna-metatile-atlas-v1",
-      primary: "gTileset_General",
-      secondary: "gTileset_Petalburg",
-      tileSize: 8,
-      metatileSize: 16,
-      primaryTileOffset: 0,
-      secondaryTileOffset: 512,
-      secondaryMetatileOffset: PRIMARY_METATILE_LIMIT,
-      palettes: pair.palettes.map((palette) => palette ?? null),
-      records: atlasRecords(pair),
-    };
-    downloadBlob(
-      new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
-      "general-petalburg-metatiles.json",
-    );
-  };
+  const selected = packs.find((pack) => pack.id === selectedId) ?? null;
+  const familyCounts = useMemo(() => {
+    const result = new Map<string, number>();
+    for (const pack of library.catalog?.packs ?? []) {
+      result.set(pack.family, (result.get(pack.family) ?? 0) + 1);
+    }
+    return result;
+  }, [library.catalog]);
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-toolbar px-4">
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b border-border bg-toolbar px-4 py-2">
         <Link to="/" className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs hover:bg-surface">
           <ArrowLeft className="size-3.5" /> Editor
         </Link>
         <div>
-          <h1 className="text-sm font-semibold">Tileset Lab — General + Petalburg</h1>
-          <p className="text-[10px] text-muted-foreground">Gerador local de atlas real para pokeemerald</p>
+          <h1 className="text-sm font-semibold">Biblioteca real de tilesets Pokémon GBA</h1>
+          <p className="text-[10px] text-muted-foreground">Metatiles 16×16 compostos pixel-perfect a partir dos decomps pret</p>
         </div>
-        <div className="ml-auto flex items-center gap-1">
-          {savedAtlas && (
-            <span className="mr-2 rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
-              Atlas ativo · {savedAtlas.records.length} IDs
-            </span>
-          )}
-          <button type="button" onClick={() => void build()} disabled={busy} className="inline-flex h-8 items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-3 text-xs text-primary hover:bg-primary/15 disabled:opacity-50">
-            <RefreshCw className={`size-3.5 ${busy ? "animate-spin" : ""}`} /> Montar e usar
-          </button>
-          <button type="button" disabled={!pair} onClick={() => void exportPng()} className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2 text-xs hover:bg-surface disabled:opacity-30">
-            <Download className="size-3.5" /> PNG
-          </button>
-          <button type="button" disabled={!pair} onClick={exportJson} className="inline-flex h-8 items-center gap-1.5 rounded border border-border px-2 text-xs hover:bg-surface disabled:opacity-30">
-            <Download className="size-3.5" /> JSON
-          </button>
-          <button type="button" disabled={!savedAtlas} onClick={() => realAtlasStore.clear()} title="Remover atlas real salvo" className="inline-flex h-8 items-center rounded border border-border px-2 text-xs hover:bg-surface disabled:opacity-30">
-            <Trash2 className="size-3.5" />
-          </button>
-        </div>
+        {activeAtlas && (
+          <div className="ml-auto rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
+            Ativo · {activeAtlas.familyLabel} · {shortTilesetName(activeAtlas.primary)} + {shortTilesetName(activeAtlas.secondary)}
+          </div>
+        )}
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_260px] overflow-hidden">
+      <main className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)_320px] overflow-hidden">
         <aside className="overflow-y-auto border-r border-border bg-panel p-3">
-          <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-            Selecione os arquivos do repositório do jogo. Ao clicar em <b>Montar e usar</b>, o atlas fica salvo neste navegador e o editor principal passa a priorizá-lo sobre o atlas DEMO.
-          </p>
-          <FileGroup title="Primary · General" root="data/tilesets/primary/general" value={primary} onChange={(patch) => update("primary", patch)} paletteHint="Selecione 00.pal até 05.pal" />
-          <FileGroup title="Secondary · Petalburg" root="data/tilesets/secondary/petalburg" value={secondary} onChange={(patch) => update("secondary", patch)} paletteHint="Selecione 06.pal até 12.pal" />
-          <div className="mt-3 rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed text-muted-foreground">
-            <b className="text-foreground">Regra Emerald:</b><br />512 tiles/metatiles pertencem ao primary. O secondary começa no ID 512 e pode reutilizar tiles do primary. As paletas 0–5 vêm do primary; 6–12, do secondary.
+          <section className="rounded border border-success/30 bg-success/5 p-3 text-[10px] leading-relaxed text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
+              <div>
+                <p className="font-semibold text-foreground">Sem placeholders geométricos</p>
+                <p className="mt-1">Cada item desta biblioteca é um metatile real de terceira geração, montado com tiles 8×8, paletas, flips e duas camadas do jogo de origem.</p>
+              </div>
+            </div>
+          </section>
+
+          <div className="relative mt-3">
+            <Search className="pointer-events-none absolute left-2 top-2 size-3.5 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tileset, mapa, cidade…"
+              className="h-8 w-full rounded border border-border bg-canvas pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+            />
+          </div>
+
+          <div className="mt-3 space-y-1">
+            <FamilyButton active={family === "emerald"} onClick={() => setFamily("emerald")} label="Emerald" count={familyCounts.get("emerald") ?? 0} badge="NATIVO" />
+            <FamilyButton active={family === "ruby-sapphire"} onClick={() => setFamily("ruby-sapphire")} label="Ruby / Sapphire" count={familyCounts.get("ruby-sapphire") ?? 0} badge="REF." />
+            <FamilyButton active={family === "firered-leafgreen"} onClick={() => setFamily("firered-leafgreen")} label="FireRed / LeafGreen" count={familyCounts.get("firered-leafgreen") ?? 0} badge="REF." />
+            <FamilyButton active={family === "all"} onClick={() => setFamily("all")} label="Todas as famílias" count={library.catalog?.packs.length ?? 0} />
+          </div>
+
+          <div className="mt-4 border-t border-border pt-3 text-[10px] leading-relaxed text-muted-foreground">
+            <p><b className="text-foreground">Emerald</b> é a família nativa de Juramento de Arauna e pode ser usada para edição/exportação.</p>
+            <p className="mt-2"><b className="text-foreground">Ruby/Sapphire e FRLG</b> ficam disponíveis como referência visual real. Os IDs não são tratados como equivalentes aos de Emerald.</p>
           </div>
         </aside>
 
-        <section className="min-w-0 overflow-auto bg-canvas p-4">
-          {!pair ? (
-            <div className="grid h-full place-items-center text-center text-muted-foreground">
-              <div><ImageIcon className="mx-auto mb-3 size-10 opacity-40" /><p className="text-sm">O atlas real aparecerá aqui.</p><p className="mt-1 text-xs">Carregue os arquivos à esquerda e clique em “Montar e usar”.</p></div>
-            </div>
+        <section className="min-w-0 overflow-y-auto bg-canvas p-4">
+          {library.phase === "loading" && !library.catalog ? (
+            <CenteredStatus icon={<Loader2 className="size-8 animate-spin" />} title="Carregando catálogo GBA real…" detail="Nenhum atlas DEMO é usado durante o carregamento." />
+          ) : library.error && !library.catalog ? (
+            <CenteredStatus icon={<TriangleAlert className="size-8 text-warning" />} title="Biblioteca ainda não foi gerada" detail={library.error} />
           ) : (
-            <div className="mx-auto w-fit">
-              <div className="mb-2 flex items-center justify-between text-[10px] text-muted-foreground"><span>{records.length} metatiles renderizados</span><span>16×16 px · pixel-perfect</span></div>
-              <div className="grid grid-cols-16 gap-px bg-border p-px shadow-2xl">
-                {records.map((record) => <MetatileButton key={record.id} pair={pair} id={record.id} selected={record.id === selectedId} onSelect={() => setSelectedId(record.id)} />)}
+            <>
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Pares usados pelos mapas originais</h2>
+                  <p className="text-[10px] text-muted-foreground">{packs.length} combinação(ões) compatíveis neste filtro</p>
+                </div>
+                {library.catalog?.unresolvedPairs.length ? (
+                  <span className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[9px] text-warning">{library.catalog.unresolvedPairs.length} par(es) não resolvido(s) no gerador</span>
+                ) : null}
               </div>
-            </div>
+
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+                {packs.map((pack) => (
+                  <PackCard
+                    key={pack.id}
+                    pack={pack}
+                    selected={pack.id === selectedId}
+                    active={pack.id === activeAtlas?.packId}
+                    busy={pack.id === library.activatingPackId}
+                    onSelect={() => setSelectedId(pack.id)}
+                    onActivate={() => void activateGbaPack(pack)}
+                  />
+                ))}
+              </div>
+              {!packs.length && <p className="p-8 text-center text-xs text-muted-foreground">Nenhum tileset corresponde ao filtro.</p>}
+            </>
           )}
         </section>
 
         <aside className="overflow-y-auto border-l border-border bg-panel p-3">
-          <h2 className="panel-title mb-2">Status</h2>
-          <p className="rounded border border-border bg-canvas p-2 text-[11px] leading-relaxed">{message}</p>
-          {warnings.length > 0 && <div className="mt-3"><h3 className="panel-title mb-1">Avisos</h3><ul className="space-y-1">{warnings.map((warning) => <li key={warning} className="rounded border border-warning/30 bg-warning/5 p-1.5 text-[10px] text-warning">{warning}</li>)}</ul></div>}
-          {pair && <SelectedInfo pair={pair} id={selectedId} />}
-          {savedAtlas && <div className="mt-3 rounded border border-success/30 bg-success/5 p-2 text-[10px] leading-relaxed text-success">Persistido em localStorage em {new Date(savedAtlas.createdAt).toLocaleString("pt-BR")}. Volte ao Editor para usar os gráficos reais.</div>}
+          {selected ? <PackInspector pack={selected} active={selected.id === activeAtlas?.packId} busy={selected.id === library.activatingPackId} /> : <p className="text-xs text-muted-foreground">Selecione um pack.</p>}
         </aside>
       </main>
     </div>
   );
 }
 
-async function readPalettes(files: File[]): Promise<Map<number, RgbColor[]>> {
-  const result = new Map<number, RgbColor[]>();
-  for (const file of files) {
-    const match = file.name.match(/^(\d{2})\.pal$/i);
-    if (match) result.set(Number(match[1]), parseJascPalette(await file.text()));
-  }
-  return result;
-}
-
-function FileGroup({ title, root, value, onChange, paletteHint }: { title: string; root: string; value: SideFiles; onChange: (patch: Partial<SideFiles>) => void; paletteHint: string }) {
+function FamilyButton({ active, onClick, label, count, badge }: { active: boolean; onClick: () => void; label: string; count: number; badge?: string }) {
   return (
-    <section className="mb-3 rounded-md border border-border bg-background/20 p-2.5">
-      <div className="mb-2"><h2 className="text-xs font-semibold">{title}</h2><p className="mt-0.5 break-all font-mono text-[9px] text-muted-foreground">{root}</p></div>
-      <FileLine label="tiles.png" file={value.tiles} accept="image/png" onFile={(file) => onChange({ tiles: file })} />
-      <FileLine label="metatiles.bin" file={value.metatiles} accept=".bin" onFile={(file) => onChange({ metatiles: file })} />
-      <FileLine label="metatile_attributes.bin" file={value.attributes} accept=".bin" optional onFile={(file) => onChange({ attributes: file })} />
-      <label className="mt-2 block rounded border border-dashed border-border p-2 hover:bg-surface">
-        <span className="flex cursor-pointer items-center gap-1.5 text-[11px]"><FolderOpen className="size-3.5" /> Paletas .pal</span>
-        <span className="mt-0.5 block text-[9px] text-muted-foreground">{value.palettes.length ? `${value.palettes.length} arquivo(s)` : paletteHint}</span>
-        <input className="hidden" type="file" accept=".pal" multiple onChange={(event) => onChange({ palettes: Array.from(event.target.files ?? []) })} />
-      </label>
-    </section>
+    <button type="button" onClick={onClick} className={cn("flex w-full items-center gap-2 rounded border px-2 py-2 text-left text-xs", active ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-canvas hover:bg-surface")}>
+      <span className="font-medium">{label}</span>
+      {badge && <span className="rounded bg-background/60 px-1 text-[8px] font-bold tracking-wider">{badge}</span>}
+      <span className="ml-auto font-mono text-[10px] text-muted-foreground">{count}</span>
+    </button>
   );
 }
 
-function FileLine({ label, file, accept, optional, onFile }: { label: string; file: File | null; accept: string; optional?: boolean; onFile: (file: File | null) => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  return <div className="mb-1 flex items-center gap-1"><button type="button" onClick={() => ref.current?.click()} className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded border border-border px-2 text-left text-[10px] hover:bg-surface"><FolderOpen className="size-3 shrink-0" /><span className="min-w-0 truncate">{file?.name ?? label}</span></button>{optional && <span className="text-[8px] text-muted-foreground">opc.</span>}<input ref={ref} className="hidden" type="file" accept={accept} onChange={(event) => onFile(event.target.files?.[0] ?? null)} /></div>;
+function PackCard({ pack, selected, active, busy, onSelect, onActivate }: { pack: GbaCatalogPack; selected: boolean; active: boolean; busy: boolean; onSelect: () => void; onActivate: () => void }) {
+  return (
+    <article className={cn("overflow-hidden rounded border bg-panel", selected ? "border-primary/60" : "border-border")}>
+      <button type="button" onClick={onSelect} className="block w-full text-left">
+        <div className="grid h-28 place-items-center overflow-hidden bg-background/60 p-2">
+          <img src={pack.atlasUrl} alt={`Atlas real ${pack.primary} + ${pack.secondary}`} className="pixelated max-h-full max-w-full object-contain" style={{ imageRendering: "pixelated" }} loading="lazy" />
+        </div>
+        <div className="border-t border-border p-2">
+          <div className="flex items-center gap-1">
+            <span className={cn("rounded px-1 py-0.5 text-[8px] font-bold tracking-wider", pack.native ? "bg-success/15 text-success" : "bg-warning/15 text-warning")}>{pack.native ? "NATIVO" : "REFERÊNCIA"}</span>
+            {active && <span className="rounded bg-primary/15 px-1 py-0.5 text-[8px] font-bold text-primary">ATIVO</span>}
+          </div>
+          <p className="mt-1 truncate text-[11px] font-semibold">{shortTilesetName(pack.primary)}</p>
+          <p className="truncate text-[10px] text-muted-foreground">+ {shortTilesetName(pack.secondary)}</p>
+          <p className="mt-1 font-mono text-[9px] text-muted-foreground">{pack.primaryCount + pack.secondaryCount} metatiles · {pack.maps.length} layout(s)</p>
+        </div>
+      </button>
+      <button type="button" disabled={busy || active} onClick={onActivate} className="flex h-7 w-full items-center justify-center gap-1 border-t border-border text-[10px] font-medium text-primary hover:bg-primary/10 disabled:text-muted-foreground disabled:hover:bg-transparent">
+        {busy ? <><Loader2 className="size-3 animate-spin" /> Carregando…</> : active ? <><Check className="size-3" /> Ativo</> : "Visualizar no editor"}
+      </button>
+    </article>
+  );
 }
 
-function MetatileButton({ pair, id, selected, onSelect }: { pair: RenderTilesetPair; id: number; selected: boolean; onSelect: () => void }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const image = useMemo(() => renderMetatileImage(pair, id), [pair, id]);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    canvas.width = 16;
-    canvas.height = 16;
-    canvas.getContext("2d")?.putImageData(image, 0, 0);
-  }, [image]);
-  return <button type="button" title={`Metatile ${id} · 0x${id.toString(16).toUpperCase().padStart(3, "0")}`} onClick={onSelect} className={`relative size-8 overflow-hidden bg-background p-0 ${selected ? "z-10 outline-2 outline-primary" : "hover:outline hover:outline-1 hover:outline-foreground/60"}`}><canvas ref={ref} className="pixelated size-8" /></button>;
+function PackInspector({ pack, active, busy }: { pack: GbaCatalogPack; active: boolean; busy: boolean }) {
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-2">
+        <div><h2 className="text-sm font-semibold">{shortTilesetName(pack.primary)}</h2><p className="text-[10px] text-muted-foreground">+ {shortTilesetName(pack.secondary)}</p></div>
+        <span className={cn("rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider", pack.native ? "bg-success/15 text-success" : "bg-warning/15 text-warning")}>{pack.native ? "EMERALD NATIVO" : "REFERÊNCIA"}</span>
+      </div>
+
+      <div className="mt-3 overflow-auto rounded border border-border bg-background/50 p-2">
+        <img src={pack.atlasUrl} alt="Preview pixel-perfect do atlas" className="pixelated mx-auto block max-w-none" style={{ width: pack.width * 2, height: pack.height * 2, imageRendering: "pixelated" }} />
+      </div>
+
+      <dl className="mt-3 space-y-1 text-[10px]">
+        <Info label="Família" value={pack.familyLabel} />
+        <Info label="Primary" value={`${pack.primaryCount} metatiles`} />
+        <Info label="Secondary" value={`${pack.secondaryCount} metatiles`} />
+        <Info label="Offset secondary" value={String(pack.primaryMetatileLimit)} />
+        <Info label="Paletas primary" value={String(pack.primaryPaletteCount)} />
+        <Info label="Paletas totais" value={String(pack.totalPaletteCount)} />
+      </dl>
+
+      {!pack.native && (
+        <div className="mt-3 rounded border border-warning/40 bg-warning/10 p-2 text-[10px] leading-relaxed text-warning">
+          Este pack é real, mas não é diretamente compatível com pokeemerald. Ele pode ser estudado/visualizado; a pintura direta fica bloqueada no editor para evitar map.bin inválido.
+        </div>
+      )}
+
+      <button type="button" disabled={active || busy} onClick={() => void activateGbaPack(pack)} className="mt-3 flex h-8 w-full items-center justify-center gap-1 rounded border border-primary/40 bg-primary/10 text-xs font-medium text-primary hover:bg-primary/15 disabled:opacity-50">
+        {busy ? <><Loader2 className="size-3.5 animate-spin" /> Carregando…</> : active ? <><Check className="size-3.5" /> Pack ativo</> : "Abrir no editor"}
+      </button>
+
+      <section className="mt-4 border-t border-border pt-3">
+        <h3 className="panel-title">Layouts que usam este par</h3>
+        <div className="mt-1 max-h-40 overflow-y-auto rounded border border-border bg-canvas p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+          {pack.maps.length ? pack.maps.join("\n") : "Nenhum layout listado"}
+        </div>
+      </section>
+
+      <section className="mt-4 border-t border-border pt-3 text-[9px] leading-relaxed text-muted-foreground">
+        <p className="flex items-center gap-1 font-medium text-foreground"><ExternalLink className="size-3" /> Fonte técnica</p>
+        <p className="mt-1">{pack.sourceRepo}</p>
+        <p className="break-all font-mono">rev {pack.sourceRevision}</p>
+      </section>
+
+      {pack.warnings.length > 0 && (
+        <section className="mt-4 border-t border-border pt-3">
+          <h3 className="panel-title text-warning">Avisos</h3>
+          <ul className="mt-1 space-y-1 text-[9px] text-warning">{pack.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul>
+        </section>
+      )}
+    </div>
+  );
 }
 
-function SelectedInfo({ pair, id }: { pair: RenderTilesetPair; id: number }) {
-  const source = id < PRIMARY_METATILE_LIMIT ? "primary" : "secondary";
-  const localId = source === "primary" ? id : id - PRIMARY_METATILE_LIMIT;
-  const attr = source === "primary" ? pair.primaryAttributes?.[localId] : pair.secondaryAttributes?.[localId];
-  return <section className="mt-3 border-t border-border pt-3"><h3 className="panel-title mb-1">Selecionado</h3><dl className="space-y-1 font-mono text-[10px]"><InfoRow label="ID" value={`${id} / 0x${id.toString(16).toUpperCase().padStart(3, "0")}`} /><InfoRow label="Origem" value={source} /><InfoRow label="Local ID" value={String(localId)} /><InfoRow label="Behavior" value={attr ? `0x${attr.behavior.toString(16).toUpperCase().padStart(2, "0")}` : "—"} /><InfoRow label="Layer type" value={attr ? String(attr.layerType) : "—"} /></dl></section>;
+function Info({ label, value }: { label: string; value: string }) {
+  return <div className="flex justify-between gap-2"><dt className="text-muted-foreground">{label}</dt><dd className="text-right font-mono">{value}</dd></div>;
 }
-function InfoRow({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-2"><dt className="text-muted-foreground">{label}</dt><dd>{value}</dd></div>; }
-function downloadBlob(blob: Blob, name: string) { const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }
+
+function CenteredStatus({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
+  return <div className="grid min-h-[50vh] place-items-center text-center"><div className="max-w-sm"><div className="mx-auto mb-3 grid place-items-center text-muted-foreground">{icon}</div><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p></div></div>;
+}
