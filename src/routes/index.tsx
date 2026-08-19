@@ -11,6 +11,7 @@ import { MapTemplateScopeGuard } from "@/components/studio/MapTemplateScopeGuard
 import { PatternLibraryDock } from "@/components/studio/PatternLibraryDock";
 import { PatternOverlay } from "@/components/studio/PatternOverlay";
 import { PatternScopeGuard } from "@/components/studio/PatternScopeGuard";
+import { ProceduralGeneratorLauncher } from "@/components/studio/ProceduralGeneratorLauncher";
 import { SmartPathDock } from "@/components/studio/SmartPathDock";
 import { SmartPathOverlay } from "@/components/studio/SmartPathOverlay";
 import { SmartPathScopeGuard } from "@/components/studio/SmartPathScopeGuard";
@@ -127,6 +128,7 @@ function Index() {
           <MapTemplateDock />
           <MapBlueprintDock />
           <ClipboardDock />
+          <ProceduralGeneratorLauncher />
         </main>
         <Inspector />
         {state.validation && <ValidationPanel report={state.validation} onClose={() => editorStore.clearValidation()} />}
