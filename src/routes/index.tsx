@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
 import { Inspector } from "@/components/studio/Inspector";
+import { MapBlueprintDock } from "@/components/studio/MapBlueprintDock";
 import { MapCanvas } from "@/components/studio/MapCanvas";
 import { MapTemplateDock } from "@/components/studio/MapTemplateDock";
 import { MapTemplateOverlay } from "@/components/studio/MapTemplateOverlay";
@@ -124,6 +125,7 @@ function Index() {
           <SmartPathDock />
           <PatternLibraryDock />
           <MapTemplateDock />
+          <MapBlueprintDock />
           <ClipboardDock />
         </main>
         <Inspector />
