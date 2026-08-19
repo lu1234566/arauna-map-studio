@@ -1,84 +1,122 @@
 # Arauna Map Studio
 
-Crie um novo app web chamado “Arauna Map Studio”, uma ferramenta online específica para editar mapas do projeto decomp Pokémon Emerald “Pokémon Juramento de Arauna”. O objetivo é substituir a necessidade de instalar Porymap no Chromebook do usuário.
+Editor web especializado para os mapas do decomp **Pokémon Juramento de Arauna**, baseado em `pokeemerald`.
 
-FASE 1 / MVP: construa um editor visual funcional, não apenas um mockup.
+O objetivo é oferecer no Chrome/Chromebook o fluxo de edição que normalmente dependeria do Porymap, trabalhando com os arquivos reais do repositório e preservando as regras do Emerald.
 
-Contexto técnico real do jogo:
-- Base: pokeemerald decomp.
-- Primeiro mapa de teste: LittlerootTown / Vila Amanhecer.
-- Dimensão inicial: 20x20 metatiles.
-- map.bin usa 400 valores uint16 little-endian = 800 bytes.
-- Cada célula usa bits de metatile + colisão/elevação; máscara de metatile 0x03FF e máscara física 0xFC00.
-- O editor deve conseguir importar um map.bin local, editar somente a parte de metatile quando estiver no modo visual e exportar novamente um map.bin válido preservando os bits físicos.
-- Não invente integração com ROM; o alvo é o repositório decomp.
+## Estado atual
 
-Requisitos do MVP:
-1. Interface desktop-first otimizada para Chrome/Chromebook, responsiva o suficiente para telas 1366x768.
-2. Layout de editor profissional: barra superior, painel de metatiles à esquerda, canvas central, propriedades à direita, status bar inferior.
-3. Canvas de mapa 20x20 com zoom, pan, grid opcional e coordenadas visíveis.
-4. Ferramentas: lápis, picker/conta-gotas, bucket fill, seleção retangular simples, undo e redo.
-5. Um “Atlas de demonstração” temporário com metatiles placeholder visualmente inspirados em GBA/Emerald, claramente marcados como DEMO. Não use assets Pokémon oficiais copiados de terceiros. O atlas real será conectado depois a arquivos gerados do nosso repo.
-6. Cada metatile demo precisa ter id numérico e categoria: Natureza, Caminhos, Construções, Água, Decoração.
-7. Modos de visualização na UI: Visual, Colisão, Elevação, Warps, NPCs, Triggers. Nesta primeira versão, apenas Visual precisa editar; os outros podem mostrar overlays/dados demo, mas a arquitetura deve estar preparada para edição posterior.
-8. Importação de map.bin pelo navegador com File API/ArrayBuffer/DataView.
-9. Parser TypeScript robusto para uint16 little-endian. Para um arquivo 20x20, validar exatamente 800 bytes. Ao importar, preencher o grid usando value & 0x03FF e guardar value & 0xFC00 separadamente.
-10. Ao pintar em modo Visual, atualizar somente o metatile ID e preservar collision/elevation bits daquela célula.
-11. Exportar map.bin reconstruindo (physicalBits | metatileId), uint16 little-endian.
-12. Botão “Novo mapa 20x20” para testar sem arquivo.
-13. Botão “Validar” que verifica: 400 células, IDs <= 0x03FF, valores uint16 válidos e tamanho final 800 bytes; mostrar relatório em modal/painel.
-14. Mostrar no inspetor da célula selecionada: X, Y, metatile ID, valor bruto hex, bits físicos hex.
-15. Proteção futura: adicione um modelo de dados para protectedCells e mostre no mapa cadeados em coordenadas demo como (5,8), (14,8), (7,16), (10,1), (11,1). No MVP, impedir alteração VISUAL dessas células apenas quando um toggle “Proteger progressão” estiver ligado.
-16. Persistência local automática no localStorage para o projeto demo e preferências de UI.
-17. Atalhos úteis: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, B lápis, I picker, G fill, +/- zoom.
-18. Não usar backend, banco, autenticação ou IA ainda. Tudo deve funcionar client-side.
-19. Adicione uma tela/aba “Sobre o formato” explicando de forma curta: 20x20, 800 bytes, uint16 little-endian, metatile mask 0x03FF, physical mask 0xFC00.
-20. Adicione testes unitários para parser/exportador e flood fill se o setup suportar Vitest facilmente.
+O Studio já suporta:
 
-Direção visual:
-- Ferramenta séria de level design, não landing page.
-- Tema escuro neutro inspirado em ferramentas de desenvolvimento, com acentos verdes naturais discretos.
-- Canvas e tiles pixel-perfect (image-rendering: pixelated).
-- Não faça hero banner, cards de marketing ou conteúdo promocional.
-- Priorize densidade de informação, clareza e uso real.
+- abertura de um Workspace a partir da raiz do repositório ou da pasta `data/`;
+- modo somente leitura e modo R/W via File System Access API no Chrome/Chromebook;
+- descoberta de mapas e layouts por `data/maps/**/map.json` e `data/layouts/layouts.json`;
+- dimensões reais por layout, sem limite fixo de 20×20;
+- leitura e escrita de `map.bin` como `uint16` little-endian;
+- metatile `0x03FF`, colisão `0x0C00` e elevação `0xF000` editáveis separadamente;
+- reconstrução dos metatiles reais de `gTileset_General` + secondary do mapa;
+- editor visual com lápis, conta-gotas, bucket fill, seleção, zoom, pan, grid e undo/redo;
+- edição de warps, NPCs/object events, coord events e BG events em `map.json`;
+- edição das propriedades gerais do mapa e das conexões;
+- proteção automática de células críticas de progressão;
+- gravação direta de `map.bin` e `map.json` no Workspace R/W;
+- redimensionamento estrutural de layouts com 9 âncoras;
+- deslocamento de eventos ao redimensionar;
+- atualização dos offsets de conexões e das conexões recíprocas em mapas vizinhos;
+- atualização de `data/layouts/layouts.json`;
+- edição de `border.bin` Emerald 2×2;
+- rollback best-effort em gravações estruturais com múltiplos arquivos;
+- seleção de regiões com clipboard interno, copiar/recortar/colar e carimbo multi-metatile;
+- clipboard por camada ou RAW completo, com rotação e espelhamento;
+- testes unitários com Vitest para parser, estrutura, workspace, eventos e clipboard.
 
-Arquitetura sugerida:
-- React + TypeScript + Vite.
-- Componentes separados para TopToolbar, TilePalette, MapCanvas, Inspector, StatusBar, ValidationPanel.
-- Módulo lib/emeraldMap.ts para parse/export/bit masks.
-- Estado central simples (Zustand se fizer sentido).
-- Evite dependências pesadas; Canvas 2D pode ser usado para o mapa.
+## Fluxo recomendado no Chromebook
 
-Aceitação da primeira entrega:
-- Eu consigo abrir o preview, criar mapa 20x20, selecionar um metatile demo e pintar várias células.
-- Undo/redo funciona.
-- Importar um arquivo binário de 800 bytes funciona.
-- Exportar gera 800 bytes.
-- Pintar preserva physical bits.
-- Proteger progressão bloqueia as células demo marcadas.
-- Validação mostra PASS/FAIL com motivos.
+1. Abra o Arauna Map Studio no Chrome.
+2. Entre em **Workspace**.
+3. Use **Abrir pasta R/W** e selecione a raiz local de `pokemon-juramento-de-arauna` ou diretamente `data/`.
+4. Escolha um mapa.
+5. Edite Visual, Colisão, Elevação ou eventos.
+6. Use **Validar**.
+7. Use **Salvar pasta** para gravar `map.bin` e/ou `map.json` diretamente.
+8. Para mudar dimensões ou `border.bin`, abra **Estrutura**.
 
-Implemente diretamente. Quando terminar, liste brevemente o que está funcional e qualquer limitação real do MVP.
+O editor não grava na ROM. O alvo é sempre o projeto decomp.
 
-This project was built with [Lovable](https://lovable.dev).
+## Clipboard e carimbo multi-metatile
 
-**Live app**: https://arauna-map-studio.lovable.app
+Com a ferramenta de seleção (`M`), marque uma região do mapa. O clipboard interno pode guardar somente a camada ativa ou todos os bits da célula.
 
-## Build with Lovable
+Atalhos:
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/377c10fd-30f6-45b1-9ad2-881b6bc41a72).
+- `Ctrl/Cmd + C`: copiar a camada ativa;
+- `Ctrl/Cmd + X`: recortar a camada ativa;
+- `Ctrl/Cmd + V`: colar usando a célula/seleção atual como canto superior esquerdo;
+- `Ctrl/Cmd + Shift + C`: copiar RAW completo (metatile + colisão + elevação);
+- `Ctrl/Cmd + Shift + X`: recortar RAW completo;
+- `V`: ativar/desativar o carimbo multi-metatile;
+- `Esc`: sair do carimbo ou limpar a seleção;
+- `B`: lápis;
+- `I`: conta-gotas;
+- `G`: bucket fill;
+- `M`: seleção;
+- `Ctrl/Cmd + Z`: desfazer;
+- `Ctrl/Cmd + Shift + Z` ou `Ctrl/Cmd + Y`: refazer;
+- `+` / `-`: zoom.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+Copiar uma camada preserva as outras propriedades físicas no destino. O modo RAW substitui metatile, colisão e elevação em conjunto. Células protegidas continuam bloqueadas enquanto **Proteger progressão** estiver ligado.
 
-## Development
+## Formato Emerald usado
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Cada célula de `map.bin` é um `uint16` little-endian:
+
+```text
+bits 0–9   0x03FF  metatile ID
+bits 10–11 0x0C00  collision
+bits 12–15 0xF000  elevation
+```
+
+O tamanho esperado do arquivo é:
+
+```text
+width × height × 2 bytes
+```
+
+O `border.bin` usado pelos layouts atuais do projeto é tratado como uma grade 2×2 com o mesmo formato de célula.
+
+## Desenvolvimento
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+npm install
 npm run dev
 ```
+
+Validações locais disponíveis:
+
+```sh
+npm test
+npm run build
+npm run lint
+```
+
+Não é necessário GitHub Actions ou Codespaces para desenvolver o Studio.
+
+## Estrutura principal
+
+- `src/lib/emeraldMap.ts` — parser/exportador e máscaras de bits;
+- `src/lib/editorStore.ts` — estado e histórico do editor;
+- `src/lib/repoWorkspace.ts` — leitura do Workspace Arauna;
+- `src/lib/fileSystemWorkspace.ts` — acesso R/W à pasta local;
+- `src/lib/layoutStructure.ts` — resize e `border.bin`;
+- `src/lib/structuralWorkspace.ts` — alterações estruturais multi-arquivo;
+- `src/lib/mapClipboard.ts` — captura e transformações de regiões;
+- `src/lib/clipboardStore.ts` — copiar/recortar/colar e carimbo;
+- `src/components/studio/MapCanvas.tsx` — canvas principal;
+- `src/components/studio/StampOverlay.tsx` — carimbo multi-metatile;
+- `src/routes/workspace.tsx` — seletor de mapas;
+- `src/routes/structure.tsx` — edição estrutural;
+- `src/routes/map-settings.tsx` — propriedades e conexões.
+
+## Origem
+
+O primeiro protótipo do projeto foi criado no Lovable e depois passou a ser desenvolvido diretamente pelo GitHub para não depender de créditos do ambiente. O código e o fluxo atual são específicos para o Juramento de Arauna.
