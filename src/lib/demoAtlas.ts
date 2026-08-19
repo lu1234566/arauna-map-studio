@@ -32,7 +32,7 @@ export const DEMO_METATILES: DemoMetatile[] = [];
 export const METATILE_BY_ID = new Map<number, DemoMetatile>();
 
 /** Mantido só para compatibilidade de imports antigos; não desenha arte falsa. */
-export function drawMetatile(ctx: CanvasRenderingContext2D) {
+export function drawMetatile(ctx: CanvasRenderingContext2D, _tile?: DemoMetatile) {
   ctx.clearRect(0, 0, TILE_PX, TILE_PX);
   ctx.fillStyle = "#161b18";
   ctx.fillRect(0, 0, TILE_PX, TILE_PX);
