@@ -46,9 +46,11 @@ describe("layoutStructure", () => {
       bg_events: [],
     }));
     const shifted = shiftMapJsonForResize(document, 3, 4, 20, 20);
-    expect((shifted.document.object_events as Array<Record<string, unknown>>)[0]).toMatchObject({ x: 7, y: 9 });
-    expect((shifted.document.connections as Array<Record<string, unknown>>)[0].offset).toBe(5);
-    expect((shifted.document.connections as Array<Record<string, unknown>>)[1].offset).toBe(3);
+    const objects = shifted.document["object_events"] as Array<Record<string, unknown>>;
+    const connections = shifted.document["connections"] as Array<Record<string, unknown>>;
+    expect(objects[0]).toMatchObject({ x: 7, y: 9 });
+    expect(connections[0]?.["offset"]).toBe(5);
+    expect(connections[1]?.["offset"]).toBe(3);
     expect(shifted.outOfBounds).toHaveLength(0);
     expect(shifted.adjustedConnections).toBe(2);
   });
@@ -75,7 +77,10 @@ describe("layoutStructure", () => {
         { id: "LAYOUT_B", width: 30, height: 40 },
       ],
     });
-    const updated = JSON.parse(updateLayoutDimensionsSource(source, "LAYOUT_A", 25, 18));
+    const updated = JSON.parse(updateLayoutDimensionsSource(source, "LAYOUT_A", 25, 18)) as {
+      layouts: Array<Record<string, unknown>>;
+      extra: { keep: boolean };
+    };
     expect(updated.layouts[0]).toMatchObject({ width: 25, height: 18, custom: "keep" });
     expect(updated.layouts[1]).toMatchObject({ width: 30, height: 40 });
     expect(updated.extra.keep).toBe(true);
@@ -85,7 +90,7 @@ describe("layoutStructure", () => {
     const original = createEmptyMap(2, 2, 0);
     original.metatiles[0] = 0x155;
     original.physical[0] = 0xb400;
-    const parsed = parseEmeraldBorder(exportMapBin(original).buffer);
+    const parsed = parseEmeraldBorder(exportMapBin(original).buffer as ArrayBuffer);
     expect(borderCellRaw(parsed, 0)).toBe(0xb555);
     const edited = setBorderRaw(parsed, 1, 0x7c22);
     expect(describeRawCell(borderCellRaw(edited, 1))).toEqual({
