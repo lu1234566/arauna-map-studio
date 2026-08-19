@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
+import { Gen3LibraryLauncher } from "@/components/studio/Gen3LibraryLauncher";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapBlueprintDock } from "@/components/studio/MapBlueprintDock";
 import { MapCanvas } from "@/components/studio/MapCanvas";
@@ -24,12 +25,31 @@ import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { patternLibraryStore } from "@/lib/patternLibraryStore";
+import { ensureAuthenticEmeraldPreviewAtlas } from "@/lib/pretEmeraldBootstrap";
+import { realAtlasStore } from "@/lib/realAtlasStore";
 import { smartPathStore } from "@/lib/smartPathStore";
 
 export const Route = createFileRoute("/")({ component: Index });
 
 function Index() {
   const state = useEditor();
+
+  useEffect(() => {
+    // A prévia vazia do Lovable/Chrome deve mostrar o Emerald real, nunca
+    // quadrados procedurais. Workspaces locais continuam tendo prioridade.
+    if (realAtlasStore.ensureHydrated()) return;
+    void ensureAuthenticEmeraldPreviewAtlas()
+      .then((atlas) => {
+        editorStore.setMessage(
+          `Atlas GBA real carregado: ${atlas.primary} + ${atlas.secondary} (pret/pokeemerald). Abra Workspace para usar exatamente os tilesets do mapa Arauna.`,
+        );
+      })
+      .catch((error) => {
+        editorStore.setMessage(
+          `Não foi possível buscar o atlas Emerald real pela internet: ${error instanceof Error ? error.message : String(error)} Abra Workspace para carregar os tilesets locais.`,
+        );
+      });
+  }, []);
 
   useEffect(() => {
     if (state.tool !== "pencil" && smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
@@ -129,6 +149,7 @@ function Index() {
           <MapBlueprintDock />
           <ClipboardDock />
           <ProceduralGeneratorLauncher />
+          <Gen3LibraryLauncher />
         </main>
         <Inspector />
         {state.validation && <ValidationPanel report={state.validation} onClose={() => editorStore.clearValidation()} />}

@@ -11,10 +11,19 @@ export interface SavedAtlasRecord extends AtlasRecord {
   slot: number;
 }
 
+export interface SaveAtlasMetadata {
+  primary?: string;
+  secondary?: string;
+  origin?: string;
+  game?: string;
+}
+
 export interface SavedRealAtlas {
   format: "arauna-real-atlas-v2";
   primary: string;
   secondary: string;
+  origin?: string;
+  game?: string;
   columns: number;
   tileSize: number;
   width: number;
@@ -72,8 +81,6 @@ class RealAtlasStore {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) {
-        // O formato v1 usava PNG data URL e não podia ser reconstruído de forma
-        // síncrona pelo MapCanvas. Removemos silenciosamente o cache antigo.
         localStorage.removeItem(LEGACY_KEY);
         return;
       }
@@ -81,6 +88,8 @@ class RealAtlasStore {
       const expectedBytes = parsed.width * parsed.height * 4;
       const valid =
         parsed?.format === "arauna-real-atlas-v2" &&
+        typeof parsed.primary === "string" &&
+        typeof parsed.secondary === "string" &&
         typeof parsed.rgbaBase64 === "string" &&
         Array.isArray(parsed.records) &&
         Number.isInteger(parsed.columns) &&
@@ -110,7 +119,11 @@ class RealAtlasStore {
     return this.atlas;
   };
 
-  savePair = (pair: RenderTilesetPair, columns = 16): SavedRealAtlas => {
+  savePair = (
+    pair: RenderTilesetPair,
+    columns = 16,
+    metadata: SaveAtlasMetadata = {},
+  ): SavedRealAtlas => {
     if (typeof window === "undefined") throw new Error("O atlas real só pode ser salvo no navegador.");
     const canvas = renderAtlasCanvas(pair, columns);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -119,8 +132,10 @@ class RealAtlasStore {
     const records = atlasRecords(pair).map((record, slot) => ({ ...record, slot }));
     const atlas: SavedRealAtlas = {
       format: "arauna-real-atlas-v2",
-      primary: "gTileset_General",
-      secondary: "gTileset_Petalburg",
+      primary: metadata.primary ?? "gTileset_General",
+      secondary: metadata.secondary ?? "gTileset_Petalburg",
+      ...(metadata.origin ? { origin: metadata.origin } : {}),
+      ...(metadata.game ? { game: metadata.game } : {}),
       columns,
       tileSize: METATILE_SIZE,
       width: canvas.width,
@@ -179,10 +194,7 @@ class RealAtlasStore {
     return canvas;
   };
 
-  /**
-   * Compatibilidade com o MapCanvas legado: cria um atlas de uma única linha,
-   * em que cada slot ocupa exatamente 16 px e pode ser acessado por slot*16.
-   */
+  /** Compatibilidade com o MapCanvas: atlas de uma única linha, 16 px por slot. */
   getSingleRowCanvas = (atlas = this.ensureHydrated()): HTMLCanvasElement | null => {
     if (!atlas || typeof document === "undefined") return null;
     if (this.rowCache?.createdAt === atlas.createdAt) return this.rowCache.canvas;
