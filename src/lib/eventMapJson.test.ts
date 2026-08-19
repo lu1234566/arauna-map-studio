@@ -1,19 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
+  addConnection,
   addEvent,
+  connectionRecord,
   eventRecord,
   moveEvent,
   parseEditableMapJson,
+  removeConnection,
   removeEvent,
   stringifyMapJson,
+  updateConnectionField,
   updateEventField,
+  updateMapField,
 } from "./eventMapJson";
 
 const SOURCE = JSON.stringify({
   id: "MAP_TEST",
   name: "Test",
   layout: "LAYOUT_TEST",
+  music: "MUS_ROUTE101",
+  weather: "WEATHER_SUNNY",
+  requires_flash: false,
+  allow_cycling: true,
+  allow_escaping: false,
+  allow_running: true,
+  show_map_name: true,
   custom_field: { keep: true },
+  connections: [
+    { map: "MAP_ROUTE101", offset: 0, direction: "up", extra: "keep" },
+  ],
   warp_events: [
     { x: 1, y: 2, elevation: 0, dest_map: "MAP_ROUTE101", dest_warp_id: "0", extra: "preserve" },
   ],
@@ -55,6 +70,36 @@ describe("eventMapJson", () => {
     expect(eventRecord(added.document, added.id)?.record.type).toBe("sign");
     const removed = removeEvent(added.document, added.id);
     expect(eventRecord(removed, added.id)).toBeNull();
+  });
+
+  it("updates top-level map settings with their original types", () => {
+    const original = parseEditableMapJson(SOURCE);
+    const weather = updateMapField(original, "weather", "WEATHER_RAIN");
+    const flash = updateMapField(weather, "requires_flash", true);
+    expect(flash.weather).toBe("WEATHER_RAIN");
+    expect(flash.requires_flash).toBe(true);
+    expect(typeof flash.requires_flash).toBe("boolean");
+    expect(original.requires_flash).toBe(false);
+  });
+
+  it("updates, adds and removes connections without losing extra fields", () => {
+    const original = parseEditableMapJson(SOURCE);
+    let next = updateConnectionField(original, 0, "offset", "-3");
+    next = updateConnectionField(next, 0, "direction", "left");
+    expect(connectionRecord(next, 0)?.offset).toBe(-3);
+    expect(connectionRecord(next, 0)?.direction).toBe("left");
+    expect(connectionRecord(next, 0)?.extra).toBe("keep");
+
+    const added = addConnection(next, "right");
+    expect(added.index).toBe(1);
+    expect(connectionRecord(added.document, 1)).toEqual({
+      map: "MAP_TEST",
+      offset: 0,
+      direction: "right",
+    });
+
+    const removed = removeConnection(added.document, 0);
+    expect(connectionRecord(removed, 0)?.direction).toBe("right");
   });
 
   it("serializes a valid indented map.json with a trailing newline", () => {
