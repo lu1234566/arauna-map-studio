@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useEditor } from "@/lib/editorStore";
+import { type TemplatePoint } from "@/lib/mapTemplate";
 import { mapTemplateStore, useMapTemplates } from "@/lib/mapTemplateStore";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
@@ -47,23 +48,26 @@ function SmallButton({
   );
 }
 
-function parsePoints(source: string) {
-  const points = source
-    .split(";")
-    .map((chunk) => chunk.trim())
-    .filter(Boolean)
-    .map((chunk) => {
-      const [x, y] = chunk.split(",").map((value) => Number(value.trim()));
-      if (!Number.isInteger(x) || !Number.isInteger(y)) throw new Error(`Ponto inválido: “${chunk}”. Use x,y; x,y.`);
-      return { x, y };
-    });
-  if (!points.length) throw new Error("Informe pelo menos um ponto.");
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1]!;
-    const b = points[i]!;
-    if (a.x !== b.x && a.y !== b.y) throw new Error(`Segmento ${i}→${i + 1} precisa ser horizontal ou vertical.`);
+function parsePoints(source: string): TemplatePoint[] {
+  const result: TemplatePoint[] = [];
+  for (const chunk of source.split(";").map((value) => value.trim()).filter(Boolean)) {
+    const values = chunk.split(",").map((value) => Number(value.trim()));
+    const x = values[0];
+    const y = values[1];
+    if (typeof x !== "number" || typeof y !== "number" || !Number.isInteger(x) || !Number.isInteger(y)) {
+      throw new Error(`Ponto inválido: “${chunk}”. Use x,y; x,y.`);
+    }
+    result.push({ x, y });
   }
-  return points;
+  if (!result.length) throw new Error("Informe pelo menos um ponto.");
+  for (let i = 1; i < result.length; i++) {
+    const a = result[i - 1]!;
+    const b = result[i]!;
+    if (a.x !== b.x && a.y !== b.y) {
+      throw new Error(`Segmento ${i}→${i + 1} precisa ser horizontal ou vertical.`);
+    }
+  }
+  return result;
 }
 
 export function MapTemplateDock() {
@@ -76,6 +80,7 @@ export function MapTemplateDock() {
   const [patternX, setPatternX] = useState(0);
   const [patternY, setPatternY] = useState(0);
   const [pathPoints, setPathPoints] = useState("2,2; 2,8; 8,8");
+
   const active = state.templates.find((template) => template.id === state.activeTemplateId) ?? null;
   const activePattern = patterns.patterns.find((pattern) => pattern.id === patterns.activePatternId) ?? null;
   const activePath = smartPaths.presets.find((preset) => preset.id === smartPaths.activePresetId) ?? null;
@@ -123,7 +128,9 @@ export function MapTemplateDock() {
             onChange={(event) => mapTemplateStore.selectTemplate(event.target.value)}
             className="h-7 max-w-44 rounded border border-border bg-canvas px-1.5 text-[10px] outline-none focus:border-primary/60"
           >
-            {state.templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+            {state.templates.map((template) => (
+              <option key={template.id} value={template.id}>{template.name}</option>
+            ))}
           </select>
         )}
 
@@ -255,10 +262,10 @@ export function MapTemplateDock() {
           {active && (
             <div className="space-y-3 p-2.5">
               <section className="rounded border border-border bg-canvas p-2">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide">Adicionar padrão</p>
-                    <p className="text-[9px] text-muted-foreground">Usa o padrão atualmente selecionado na Biblioteca.</p>
+                    <p className="text-[9px] text-muted-foreground">Usa o padrão selecionado na Biblioteca.</p>
                   </div>
                   <span className="max-w-40 truncate text-[9px] text-primary">{activePattern?.name ?? "nenhum selecionado"}</span>
                 </div>
@@ -272,10 +279,10 @@ export function MapTemplateDock() {
               </section>
 
               <section className="rounded border border-border bg-canvas p-2">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide">Adicionar Smart Path</p>
-                    <p className="text-[9px] text-muted-foreground">Waypoints ortogonais relativos ao template: x,y; x,y; x,y</p>
+                    <p className="text-[9px] text-muted-foreground">Waypoints: x,y; x,y; x,y</p>
                   </div>
                   <span className="max-w-40 truncate text-[9px] text-primary">{activePath?.name ?? "nenhum selecionado"}</span>
                 </div>
@@ -303,11 +310,11 @@ export function MapTemplateDock() {
               <section>
                 <div className="mb-1.5 flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-wide">Composição · {active.elements.length} elemento(s)</p>
-                  <span className="text-[8px] text-muted-foreground">coordenadas relativas à origem</span>
+                  <span className="text-[8px] text-muted-foreground">coordenadas relativas</span>
                 </div>
                 {!active.elements.length ? (
                   <div className="rounded border border-dashed border-border p-3 text-center text-[9px] text-muted-foreground">
-                    Adicione padrões e caminhos. O template não duplica pixels: ele referencia as peças verificadas das bibliotecas atuais.
+                    Adicione padrões e caminhos. O template referencia peças verificadas; não armazena screenshots.
                   </div>
                 ) : (
                   <div className="space-y-1">
@@ -319,11 +326,7 @@ export function MapTemplateDock() {
                             ? `${patternNames.get(element.patternId) ?? element.patternId} @ (${element.x},${element.y})`
                             : `${pathNames.get(element.presetId) ?? element.presetId} · ${element.points.map((point) => `${point.x},${point.y}`).join(" → ")}`}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => mapTemplateStore.removeElement(index)}
-                          className="text-[9px] text-muted-foreground hover:text-destructive"
-                        >
+                        <button type="button" onClick={() => mapTemplateStore.removeElement(index)} className="text-[9px] text-muted-foreground hover:text-destructive">
                           remover
                         </button>
                       </div>
@@ -333,7 +336,7 @@ export function MapTemplateDock() {
               </section>
 
               <div className="rounded border border-primary/20 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-                <b className="text-foreground">Objetivo:</b> templates são a camada de composição acima dos metatiles. Uma vila pode referenciar Casa_Rural, Praça_Fogueira e Grupo_Árvores e ligá-los com Estrada_Terra, sem inventar nenhum ID de GBA. <b className="text-foreground">T</b> liga/desliga a aplicação.
+                <b className="text-foreground">Templates</b> formam o vocabulário de composição para uma futura geração por instrução: casas, praças e vegetação vêm da Biblioteca; conexões vêm dos Smart Paths. <b className="text-foreground">T</b> liga/desliga.
               </div>
             </div>
           )}
