@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LITTLEROOT_MAP_JSON, littlerootMapBinBuffer } from "@/data/littlerootSnapshot";
 import {
   MapJsonParseError,
   metadataOutOfBounds,
@@ -63,6 +64,16 @@ describe("parsePokeemeraldMapJson", () => {
   });
 
   it("rejeita JSON sem os campos fundamentais", () => {
-    expect(() => parsePokeemeraldMapJson("{}")) .toThrow(MapJsonParseError);
+    expect(() => parsePokeemeraldMapJson("{}")).toThrow(MapJsonParseError);
+  });
+
+  it("mantém o snapshot real de Littleroot em 20x20 / 800 bytes", () => {
+    const bytes = littlerootMapBinBuffer();
+    const metadata = parsePokeemeraldMapJson(LITTLEROOT_MAP_JSON);
+
+    expect(bytes.byteLength).toBe(800);
+    expect(metadata.id).toBe("MAP_LITTLEROOT_TOWN");
+    expect(metadata.counts).toEqual({ warps: 3, objects: 8, coordEvents: 9, bgEvents: 4 });
+    expect(metadataOutOfBounds(metadata, 20, 20)).toHaveLength(0);
   });
 });
