@@ -17,6 +17,15 @@ const NUMERIC_FIELDS = new Set([
   "elevation",
   "movement_range_x",
   "movement_range_y",
+  "offset",
+]);
+
+const BOOLEAN_FIELDS = new Set([
+  "requires_flash",
+  "allow_cycling",
+  "allow_escaping",
+  "allow_running",
+  "show_map_name",
 ]);
 
 export class EventMapJsonError extends Error {}
@@ -94,13 +103,23 @@ function normalizeFieldValue(key: string, value: unknown, current: unknown): unk
     }
     return number;
   }
-  if (typeof current === "boolean") {
+  if (BOOLEAN_FIELDS.has(key) || typeof current === "boolean") {
     if (typeof value === "boolean") return value;
     if (String(value).toLowerCase() === "true") return true;
     if (String(value).toLowerCase() === "false") return false;
     throw new EventMapJsonError(`${key} precisa ser true ou false.`);
   }
   return value;
+}
+
+export function updateMapField(
+  document: EditableMapJson,
+  key: string,
+  value: unknown,
+): EditableMapJson {
+  const next = cloneMapJson(document);
+  next[key] = normalizeFieldValue(key, value, next[key]);
+  return next;
 }
 
 export function updateEventField(
@@ -212,6 +231,66 @@ export function removeEvent(document: EditableMapJson, id: string): EditableMapJ
     throw new EventMapJsonError(`Evento não encontrado: ${id}`);
   }
   array.splice(parsed.index, 1);
+  return next;
+}
+
+function rawConnections(document: EditableMapJson): unknown[] {
+  return Array.isArray(document.connections) ? document.connections : [];
+}
+
+function requireConnections(document: EditableMapJson): unknown[] {
+  if (document.connections == null) {
+    const created: unknown[] = [];
+    document.connections = created;
+    return created;
+  }
+  if (!Array.isArray(document.connections)) {
+    throw new EventMapJsonError("connections não é uma lista.");
+  }
+  return document.connections;
+}
+
+export function connectionRecord(
+  document: EditableMapJson,
+  index: number,
+): EditableJsonRecord | null {
+  if (!Number.isInteger(index) || index < 0) return null;
+  const raw = rawConnections(document)[index];
+  return isRecord(raw) ? raw : null;
+}
+
+export function updateConnectionField(
+  document: EditableMapJson,
+  index: number,
+  key: "map" | "direction" | "offset",
+  value: unknown,
+): EditableMapJson {
+  const next = cloneMapJson(document);
+  const array = requireConnections(next);
+  const raw = array[index];
+  if (!isRecord(raw)) throw new EventMapJsonError(`Conexão ${index} não encontrada.`);
+  raw[key] = normalizeFieldValue(key, value, raw[key]);
+  return next;
+}
+
+export function addConnection(
+  document: EditableMapJson,
+  direction: "up" | "down" | "left" | "right" = "up",
+): { document: EditableMapJson; index: number } {
+  const next = cloneMapJson(document);
+  const array = requireConnections(next);
+  const currentMapId = typeof next.id === "string" ? next.id : "MAP_LITTLEROOT_TOWN";
+  array.push({ map: currentMapId, offset: 0, direction });
+  return { document: next, index: array.length - 1 };
+}
+
+export function removeConnection(document: EditableMapJson, index: number): EditableMapJson {
+  const next = cloneMapJson(document);
+  const array = requireConnections(next);
+  if (!Number.isInteger(index) || index < 0 || index >= array.length || !isRecord(array[index])) {
+    throw new EventMapJsonError(`Conexão ${index} não encontrada.`);
+  }
+  array.splice(index, 1);
   return next;
 }
 
