@@ -123,7 +123,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     editorStore.setMessage(
       atlas
         ? `Vila Amanhecer/LittlerootTown carregada do snapshot. Atlas ativo: ${atlas.primary} + ${atlas.secondary}.`
-        : "Vila Amanhecer/LittlerootTown carregada do snapshot. Abra Workspace ou Tilesets para carregar os gráficos reais; enquanto isso o fallback DEMO permanece.",
+        : "Vila Amanhecer/LittlerootTown carregada do snapshot. Os gráficos reais de Emerald ainda estão carregando; nenhum atlas geométrico será usado.",
     );
   };
 
