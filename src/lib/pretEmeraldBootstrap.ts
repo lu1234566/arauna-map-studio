@@ -63,9 +63,9 @@ async function buildPretEmeraldGeneralPetalburg(): Promise<RenderTilesetPair> {
 }
 
 /**
- * Fresh Lovable/browser previews now receive real Emerald metatiles immediately.
- * Nothing is bundled or redrawn: the browser reads the canonical pokeemerald
- * decomp artifacts and reconstructs the same 16×16 metatiles used by the game.
+ * Fresh Lovable/browser previews receive real Emerald metatiles immediately.
+ * Nothing is procedurally imitated: the browser reads the canonical pokeemerald
+ * artifacts and reconstructs the same 16×16 metatiles used by the game.
  * A local Arauna Workspace always wins if it already installed an atlas.
  */
 export async function ensureAuthenticEmeraldPreviewAtlas(): Promise<SavedRealAtlas> {
@@ -74,7 +74,12 @@ export async function ensureAuthenticEmeraldPreviewAtlas(): Promise<SavedRealAtl
   if (bootstrapPromise) return bootstrapPromise;
 
   bootstrapPromise = buildPretEmeraldGeneralPetalburg()
-    .then((pair) => realAtlasStore.savePair(pair, 16))
+    .then((pair) => realAtlasStore.savePair(pair, 16, {
+      primary: "gTileset_General",
+      secondary: "gTileset_Petalburg",
+      origin: "pret/pokeemerald@master",
+      game: "Pokémon Emerald",
+    }))
     .catch((error) => {
       bootstrapPromise = null;
       throw error;
