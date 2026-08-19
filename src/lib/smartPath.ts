@@ -161,6 +161,13 @@ export function planSmartPath(
   }
 
   const family = smartPathFamily(preset);
+  const targetCurrent = (map.metatiles[idx(targetX, targetY, map.width)] ?? 0) & METATILE_MASK;
+  // "Apagar" só remove uma célula que já pertence a esta família. Isso impede
+  // um clique acidental de substituir casa/água/árvore por eraseMetatile.
+  if (mode === "erase" && !family.has(targetCurrent)) {
+    return { updates: [], skippedProtected: [], mode, target: { x: targetX, y: targetY } };
+  }
+
   const override = { x: targetX, y: targetY, member: mode === "add" };
   const positions = [
     { x: targetX, y: targetY, reason: "target" as const },
