@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { editorStore, useEditor, type DemoEvent, type ViewMode } from "@/lib/editorStore";
 import { METATILE_BY_ID, TILE_PX, getAtlasCanvas, getAtlasSlot } from "@/lib/demoAtlas";
 import { getCollision, getElevation, idx } from "@/lib/emeraldMap";
+import { realAtlasStore, useRealAtlas } from "@/lib/realAtlasStore";
 
 const BASE = TILE_PX;
 
@@ -35,8 +36,13 @@ function eventColor(event: DemoEvent) {
   return "#67c9c0";
 }
 
+function visualEditingBlocked(viewMode: ViewMode) {
+  return viewMode === "visual" && realAtlasStore.ensureHydrated()?.compatibility === "reference";
+}
+
 export function MapCanvas() {
   const state = useEditor();
+  const activeAtlas = useRealAtlas();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(state);
@@ -221,7 +227,7 @@ export function MapCanvas() {
     }
   }, []);
 
-  useEffect(() => draw(), [draw, state]);
+  useEffect(() => draw(), [draw, state, activeAtlas]);
 
   useEffect(() => {
     const onResize = () => draw();
@@ -253,8 +259,16 @@ export function MapCanvas() {
     return { x, y };
   };
 
+  const blockReferencePaint = () => {
+    const s = stateRef.current;
+    if (!visualEditingBlocked(s.viewMode)) return false;
+    editorStore.setMessage("Este tileset é referência de Ruby/Sapphire ou FRLG. Volte para um pack Emerald para pintar o map.bin de Arauna.");
+    return true;
+  };
+
   const applyTool = (x: number, y: number, continuous: boolean) => {
     const s = stateRef.current;
+    if ((s.tool === "pencil" || s.tool === "fill") && blockReferencePaint()) return;
     if (s.tool === "pencil") editorStore.paint(x, y, continuous);
     else if (s.tool === "picker") editorStore.pick(x, y);
     else if (s.tool === "fill" && !continuous) editorStore.fill(x, y);
@@ -308,6 +322,7 @@ export function MapCanvas() {
       return;
     }
     if (s.tool === "pencil") {
+      if (blockReferencePaint()) return;
       editorStore.beginStroke();
       dragRef.current = { mode: "paint", sx: 0, sy: 0, ox: 0, oy: 0 };
       editorStore.paint(cell.x, cell.y, true);
@@ -339,7 +354,7 @@ export function MapCanvas() {
         h: Math.abs(cell.y - drag.sy) + 1,
       });
     } else if (drag.mode === "paint") {
-      editorStore.paint(cell.x, cell.y, true);
+      if (!blockReferencePaint()) editorStore.paint(cell.x, cell.y, true);
     } else if (drag.mode === "event" && (cell.x !== drag.lastX || cell.y !== drag.lastY)) {
       if (!drag.historyStarted) editorStore.beginStroke();
       editorStore.moveEvent(drag.eventId, cell.x, cell.y, true);
@@ -405,6 +420,7 @@ export function MapCanvas() {
             : hoverTile?.name ?? `id ${hoverId}`;
   const eventView = isEventView(state.viewMode);
   const draggingEvent = dragRef.current?.mode === "event";
+  const referenceOnly = activeAtlas?.compatibility === "reference";
 
   return (
     <div className="relative min-w-0 flex-1 bg-canvas">
@@ -416,9 +432,11 @@ export function MapCanvas() {
             ? draggingEvent
               ? "grabbing"
               : "grab"
-            : state.tool === "picker"
-              ? "crosshair"
-              : "default",
+            : referenceOnly && state.viewMode === "visual"
+              ? "not-allowed"
+              : state.tool === "picker"
+                ? "crosshair"
+                : "default",
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -439,6 +457,12 @@ export function MapCanvas() {
         {"  ·  "}
         {cellSize.toFixed(0)}px/tile · Shift/botão direito: pan
       </div>
+
+      {referenceOnly && state.viewMode === "visual" && (
+        <div className="pointer-events-none absolute right-2 top-4 rounded border border-warning/40 bg-warning/15 px-2 py-1 text-[10px] font-medium text-warning">
+          Referência GBA · somente leitura · volte ao Emerald para pintar
+        </div>
+      )}
 
       {(state.viewMode === "collision" || state.viewMode === "elevation") && (
         <div className="pointer-events-none absolute right-2 top-4 rounded border border-success/40 bg-success/15 px-2 py-1 text-[10px] font-medium text-success">
