@@ -53,6 +53,15 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
     };
   }, [busy, open, pairs.length]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return pairs;
@@ -85,6 +94,7 @@ export function TilesetQuickPicker({ atlas }: { atlas: SavedRealAtlas | null }) 
       editorStore.setMessage(
         `Tileset ativo: ${installed.primary} + ${installed.secondary} — metatiles reais de Pokémon Emerald.`,
       );
+      window.dispatchEvent(new Event("resize"));
       setOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
