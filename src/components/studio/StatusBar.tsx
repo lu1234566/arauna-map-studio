@@ -1,5 +1,6 @@
 import { useEditor } from "@/lib/editorStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
+import { useWorkspaceSession } from "@/lib/workspaceSession";
 
 const TOOL_LABEL: Record<string, string> = {
   pencil: "Lápis",
@@ -11,6 +12,7 @@ const TOOL_LABEL: Record<string, string> = {
 export function StatusBar() {
   const state = useEditor();
   const atlas = useRealAtlas();
+  const session = useWorkspaceSession();
   const width = state.map.width;
   const hover = state.hoverCell != null
     ? `X ${state.hoverCell % width} · Y ${Math.floor(state.hoverCell / width)}`
@@ -38,6 +40,7 @@ export function StatusBar() {
       <span className={state.sourceFile ? "shrink-0 text-success" : "shrink-0 text-warning"}>BIN {state.sourceFile ? "✓" : "—"}</span>
       <span className={state.mapMetadata ? "shrink-0 text-success" : "shrink-0 text-warning"}>JSON {state.mapMetadata ? "✓" : "—"}</span>
       <span className={atlas ? "shrink-0 text-success" : "shrink-0 text-warning"}>ATLAS {atlas ? "REAL ✓" : "DEMO"}</span>
+      {session && <span className="shrink-0 text-success" title={session.label}>WORKSPACE ✓</span>}
       <span className="ml-auto truncate text-foreground/80">{state.lastMessage}</span>
     </footer>
   );
