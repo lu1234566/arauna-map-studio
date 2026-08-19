@@ -223,6 +223,12 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           </TB>
           <Divider />
           <Link
+            to="/tilesets"
+            className="inline-flex h-7 items-center gap-1.5 rounded border border-transparent px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-surface hover:text-foreground"
+          >
+            <Map className="size-3.5" /> Tilesets
+          </Link>
+          <Link
             to="/formato"
             className="inline-flex h-7 items-center gap-1.5 rounded border border-transparent px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-surface hover:text-foreground"
           >
