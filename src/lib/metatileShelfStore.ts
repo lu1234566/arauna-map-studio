@@ -13,6 +13,7 @@ interface ShelfState {
 const STORAGE_KEY = "arauna.metatileShelf.v1";
 const MAX_RECENT = 16;
 const EMPTY_SHELF: MetatileShelf = { favorites: [], recent: [] };
+const SERVER_STATE: ShelfState = { shelves: {} };
 
 type Listener = () => void;
 
@@ -33,7 +34,7 @@ class MetatileShelfStore {
   private listeners = new Set<Listener>();
 
   getSnapshot = () => this.state;
-  getServerSnapshot = () => ({ shelves: {} } as ShelfState);
+  getServerSnapshot = () => SERVER_STATE;
 
   subscribe = (listener: Listener) => {
     this.listeners.add(listener);
