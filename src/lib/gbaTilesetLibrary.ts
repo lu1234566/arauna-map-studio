@@ -197,6 +197,7 @@ export async function activateGbaPack(packOrId: GbaCatalogPack | string): Promis
       records: recordsForPack(pack),
     });
     emit({ phase: "ready", activatingPackId: null, error: null });
+    window.dispatchEvent(new Event("resize"));
     return atlas;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
