@@ -66,7 +66,7 @@ export function TilePalette() {
   useEffect(() => {
     if (!atlas || !selectedReal) return;
     metatileShelfStore.touch(atlas, selectedReal.id);
-  }, [atlas?.createdAt, selectedReal?.id]);
+  }, [atlas, selectedReal]);
 
   const recentRecords = useMemo(() => {
     if (!atlas) return [];
