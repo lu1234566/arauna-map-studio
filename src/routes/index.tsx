@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { BlueprintGeneratorLauncher } from "@/components/studio/BlueprintGeneratorLauncher";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
 import { Inspector } from "@/components/studio/Inspector";
@@ -125,6 +126,7 @@ function Index() {
           <PatternLibraryDock />
           <MapTemplateDock />
           <ClipboardDock />
+          <BlueprintGeneratorLauncher />
         </main>
         <Inspector />
         {state.validation && <ValidationPanel report={state.validation} onClose={() => editorStore.clearValidation()} />}
