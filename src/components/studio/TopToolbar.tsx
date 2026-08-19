@@ -125,22 +125,37 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     );
   };
 
+  const writableSource = Boolean(session?.writeAccess && session.lastMapPath);
+
   const handleExportBin = () => {
     const bytes = editorStore.exportBytes();
     downloadBlob(
       new Blob([bytes.slice().buffer as ArrayBuffer], { type: "application/octet-stream" }),
       "map.bin",
     );
-    editorStore.markBinExported();
-    editorStore.setMessage(`Exportado map.bin — ${bytes.byteLength} bytes.`);
+    if (writableSource) {
+      editorStore.setMessage(
+        `map.bin baixado (${bytes.byteLength} bytes). A origem local continua marcada como alterada até usar “Salvar pasta”.`,
+      );
+    } else {
+      editorStore.markBinExported();
+      editorStore.setMessage(`Exportado map.bin — ${bytes.byteLength} bytes.`);
+    }
   };
 
   const handleExportJson = () => {
     const source = editorStore.exportMapJsonSource();
     if (!source) return;
+    const byteLength = new TextEncoder().encode(source).byteLength;
     downloadBlob(new Blob([source], { type: "application/json;charset=utf-8" }), "map.json");
-    editorStore.markMapJsonExported();
-    editorStore.setMessage(`Exportado map.json — ${new TextEncoder().encode(source).byteLength} bytes.`);
+    if (writableSource) {
+      editorStore.setMessage(
+        `map.json baixado (${byteLength} bytes). A origem local continua marcada como alterada até usar “Salvar pasta”.`,
+      );
+    } else {
+      editorStore.markMapJsonExported();
+      editorStore.setMessage(`Exportado map.json — ${byteLength} bytes.`);
+    }
   };
 
   const handleSaveWorkspace = async () => {
@@ -225,15 +240,19 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           </TB>
         )}
 
-        <TB title="Baixar map.bin atual" onClick={handleExportBin}>
+        <TB title={writableSource ? "Baixar uma cópia do map.bin; não salva a origem local" : "Baixar map.bin atual"} onClick={handleExportBin}>
           <Download className="size-3.5" /> BIN
           {state.dirty && <span className="text-[9px] text-warning">*</span>}
         </TB>
-        <TB title="Baixar map.json com eventos editados" onClick={handleExportJson} disabled={!state.mapJsonDocument}>
+        <TB
+          title={writableSource ? "Baixar uma cópia do map.json; não salva a origem local" : "Baixar map.json com eventos editados"}
+          onClick={handleExportJson}
+          disabled={!state.mapJsonDocument}
+        >
           <Braces className="size-3.5" /> JSON
           {state.mapJsonDirty && <span className="text-[9px] text-warning">*</span>}
         </TB>
-        <TB title="Validar layout, bits físicos e eventos" onClick={onValidate}>
+        <TB title="Validar layout, bits físicos, eventos e conexões" onClick={onValidate}>
           <CheckCircle2 className="size-3.5" /> Validar
         </TB>
         <input
@@ -262,7 +281,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
         <Divider />
 
         <TB
-          title="Desfazer (Ctrl+Z) — inclui mapa, colisão, elevação e eventos"
+          title="Desfazer (Ctrl+Z) — inclui mapa, colisão, elevação, eventos e configurações JSON"
           onClick={editorStore.undo}
           disabled={state.undoDepth === 0}
         >
