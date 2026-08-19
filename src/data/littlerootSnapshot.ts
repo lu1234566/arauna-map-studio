@@ -1,0 +1,60 @@
+/**
+ * Snapshot de data/layouts/LittlerootTown/map.bin + data/maps/LittlerootTown/map.json
+ * do repositório Pokémon Juramento de Arauna.
+ *
+ * Serve para testar o editor no navegador sem precisar baixar os dois arquivos
+ * manualmente. O atlas visual ainda é DEMO; os IDs/binário e eventos abaixo são
+ * dados reais do projeto no momento em que este snapshot foi criado.
+ */
+
+export const LITTLEROOT_MAP_BIN_BASE64 =
+  "1AXVBdQF1QXUBdUF1AXVBdQF1TUBMgEy1AXVBdQF1QXUBdUF1AXVBdwFMgbcBecFFwYVBuQF1gXlBecFATIBMuYFFQYYBhUGOgYaBhUG3QXUBRUGATABMAEwATABMAEwATABMAEyATIBMAEwATABMAEwATARBtUF5AUZBgEwBDAEMAEwATABMAEwATABMgEyATABMAEwATAEMAQwGQblBQEwATABMAQwATAEMAEwCjIBMAEwATIBMgEwATABMA0yBDABMAEwATABMAEwGgbcBRkG5QXUBQEwATAEMAEyATIBMBkGEAYWBhgGFAbPMQEwATABMBUGEAY6BuQF5AUEMM4xATABMgEyATARBuUFFAblBeQFATABMAEwCTIiBhEGMAZABiEGATABMAEwATIBMgEwIAZABjEG5QUjBgEwBDAEMAEwKgYSBjgGSAYpBgM0ATABMAEyATIDNCgGSAY5BuQFKwYBMAEwATAEMAEwATABMAEyATIBMgEyATIBMgEyATIBMgEyATABMAEwATAEMAQwATAB8AgyCDIBMAEyATIBMgEyATIBMgEwATABMAEwBDAEMAEwATABMAEwBDAEMAEwzzEBMgEwATIBMgEyATIBMgEyBDABMAQwBDABMAEwATAJMgQwDDJCMkMyATIBMgEyATIBMgEyATIBMgEwATABMAQwATABMAEwDTIBMBEGSgZLBg8G3QUSBhYGATIBMgEyATIBMgMEATABMAEwATABMAEwATDkBRUGDwbWBdQF5gUVBgEyATIBMAQwCTIBMAEwBDABMAEwATAEMAQwHgbVBREGLAZBBi0GHwYBMgEyATABMAEwATABMM4xATDPMQEwCTIBMCYGMgYZBjQGSQY1BicGATIBMgEwATABMAEwBDAKMtUF1QXOMQQwATABMAEwATADBAEyATIBMgEyATIBMAEwATABMA0yATDlBd0F1AXXBQQwBDAEMAEwATABMAEwCTIJMgEwBDAEMAQwATARBhcGGQbVBdwF3QXOMc8xzjHPMc4xzzHOMc8xzjHPMc4xzzHOMc8x3AXdBdwF3QU=";
+
+export const LITTLEROOT_MAP_JSON = JSON.stringify({
+  id: "MAP_LITTLEROOT_TOWN",
+  name: "LittlerootTown",
+  layout: "LAYOUT_LITTLEROOT_TOWN",
+  music: "MUS_LITTLEROOT",
+  region_map_section: "MAPSEC_LITTLEROOT_TOWN",
+  map_type: "MAP_TYPE_TOWN",
+  connections: [{ map: "MAP_ROUTE101", offset: 0, direction: "up" }],
+  object_events: [
+    { local_id: "LOCALID_LITTLEROOT_TWIN", graphics_id: "OBJ_EVENT_GFX_TWIN", x: 16, y: 10, elevation: 3, movement_type: "MOVEMENT_TYPE_WANDER_AROUND", script: "LittlerootTown_EventScript_Twin", flag: "0" },
+    { graphics_id: "OBJ_EVENT_GFX_FAT_MAN", x: 12, y: 13, elevation: 3, movement_type: "MOVEMENT_TYPE_WANDER_AROUND", script: "LittlerootTown_EventScript_FatMan", flag: "FLAG_HIDE_LITTLEROOT_TOWN_FAT_MAN" },
+    { graphics_id: "OBJ_EVENT_GFX_BOY_2", x: 14, y: 17, elevation: 3, movement_type: "MOVEMENT_TYPE_WANDER_AROUND", script: "LittlerootTown_EventScript_Boy", flag: "0" },
+    { local_id: "LOCALID_LITTLEROOT_MOM", graphics_id: "OBJ_EVENT_GFX_MOM", x: 5, y: 8, elevation: 3, movement_type: "MOVEMENT_TYPE_FACE_UP", script: "LittlerootTown_EventScript_Mom", flag: "FLAG_HIDE_LITTLEROOT_TOWN_MOM_OUTSIDE" },
+    { graphics_id: "OBJ_EVENT_GFX_TRUCK", x: 2, y: 10, elevation: 4, movement_type: "MOVEMENT_TYPE_FACE_RIGHT", script: "0x0", flag: "FLAG_HIDE_LITTLEROOT_TOWN_BRENDANS_HOUSE_TRUCK" },
+    { graphics_id: "OBJ_EVENT_GFX_TRUCK", x: 11, y: 10, elevation: 4, movement_type: "MOVEMENT_TYPE_FACE_RIGHT", script: "0x0", flag: "FLAG_HIDE_LITTLEROOT_TOWN_MAYS_HOUSE_TRUCK" },
+    { local_id: "LOCALID_LITTLEROOT_RIVAL", graphics_id: "OBJ_EVENT_GFX_VAR_0", x: 13, y: 10, elevation: 3, movement_type: "MOVEMENT_TYPE_FACE_UP", script: "0x0", flag: "FLAG_HIDE_LITTLEROOT_TOWN_RIVAL" },
+    { local_id: "LOCALID_LITTLEROOT_BIRCH", graphics_id: "OBJ_EVENT_GFX_PROF_BIRCH", x: 14, y: 10, elevation: 3, movement_type: "MOVEMENT_TYPE_FACE_UP", script: "0x0", flag: "FLAG_HIDE_LITTLEROOT_TOWN_BIRCH" },
+  ],
+  warp_events: [
+    { x: 14, y: 8, elevation: 0, dest_map: "MAP_LITTLEROOT_TOWN_MAYS_HOUSE_1F", dest_warp_id: "1" },
+    { x: 5, y: 8, elevation: 0, dest_map: "MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F", dest_warp_id: "1" },
+    { x: 7, y: 16, elevation: 0, dest_map: "MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB", dest_warp_id: "0" },
+  ],
+  coord_events: [
+    { type: "trigger", x: 10, y: 1, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "0", script: "LittlerootTown_EventScript_NeedPokemonTriggerLeft" },
+    { type: "trigger", x: 11, y: 1, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "0", script: "LittlerootTown_EventScript_NeedPokemonTriggerRight" },
+    { type: "trigger", x: 11, y: 1, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "1", script: "LittlerootTown_EventScript_GoSaveBirchTrigger" },
+    { type: "trigger", x: 8, y: 9, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "3", script: "LittlerootTown_EventScript_GiveRunningShoesTrigger4" },
+    { type: "trigger", x: 9, y: 9, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "3", script: "LittlerootTown_EventScript_GiveRunningShoesTrigger5" },
+    { type: "trigger", x: 10, y: 9, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "3", script: "LittlerootTown_EventScript_GiveRunningShoesTrigger2" },
+    { type: "trigger", x: 11, y: 9, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "3", script: "LittlerootTown_EventScript_GiveRunningShoesTrigger3" },
+    { type: "trigger", x: 10, y: 2, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "3", script: "LittlerootTown_EventScript_GiveRunningShoesTrigger0" },
+    { type: "trigger", x: 11, y: 2, elevation: 3, var: "VAR_LITTLEROOT_TOWN_STATE", var_value: "3", script: "LittlerootTown_EventScript_GiveRunningShoesTrigger1" },
+  ],
+  bg_events: [
+    { type: "sign", x: 15, y: 13, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: "LittlerootTown_EventScript_TownSign" },
+    { type: "sign", x: 6, y: 17, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: "LittlerootTown_EventScript_BirchsLabSign" },
+    { type: "sign", x: 7, y: 8, elevation: 3, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: "LittlerootTown_EventScript_BrendansHouseSign" },
+    { type: "sign", x: 12, y: 8, elevation: 3, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: "LittlerootTown_EventScript_MaysHouseSign" },
+  ],
+});
+
+export function littlerootMapBinBuffer(): ArrayBuffer {
+  const binary = atob(LITTLEROOT_MAP_BIN_BASE64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}

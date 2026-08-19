@@ -13,7 +13,9 @@ function Row({ label, value, mono = true }: { label: string; value: string; mono
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5">
       <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className={mono ? "font-mono text-[11px]" : "text-[11px]"}>{value}</span>
+      <span className={mono ? "max-w-[170px] truncate font-mono text-[11px]" : "max-w-[170px] truncate text-[11px]"} title={value}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -29,6 +31,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function Inspector() {
   const state = useEditor();
+  const metadata = state.mapMetadata;
   const i = state.selectedCell;
   const width = state.map.width;
   const x = i != null ? i % width : null;
@@ -37,9 +40,9 @@ export function Inspector() {
   const phys = i != null ? (state.map.physical[i] ?? 0) : 0;
   const raw = i != null ? rawValue(state.map, i) : 0;
   const tile = id != null ? METATILE_BY_ID.get(id) : undefined;
-  const prot = x != null && y != null ? state.protectedCells.find((c) => c.x === x && c.y === y) : undefined;
+  const prot = x != null && y != null ? state.protectedCells.find((cell) => cell.x === x && cell.y === y) : undefined;
   const cellEvents =
-    x != null && y != null ? state.events.filter((e) => e.x === x && e.y === y) : [];
+    x != null && y != null ? state.events.filter((event) => event.x === x && event.y === y) : [];
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border bg-panel">
@@ -52,8 +55,36 @@ export function Inspector() {
         <Row label="Dimensão" value={`${state.map.width} × ${state.map.height}`} />
         <Row label="Células" value={String(state.map.metatiles.length)} />
         <Row label="Bytes ao exportar" value={`${state.map.metatiles.length * 2}`} />
-        <Row label="Origem" value={state.sourceFile ?? "novo (sem arquivo)"} mono={false} />
+        <Row label="map.bin" value={state.sourceFile ?? "não importado"} mono={false} />
+        <Row label="map.json" value={state.mapJsonSource ?? "não importado"} mono={false} />
         <Row label="Alterações" value={state.dirty ? "não salvas" : "nenhuma"} mono={false} />
+      </Section>
+
+      <Section title="Metadados pokeemerald">
+        {!metadata ? (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Importe <b>data/maps/.../map.json</b> para carregar warps, NPCs, triggers, BG events e conexões reais.
+          </p>
+        ) : (
+          <>
+            <Row label="Map ID" value={metadata.id} />
+            <Row label="Name" value={metadata.name} />
+            <Row label="Layout" value={metadata.layout} />
+            <Row label="Music" value={metadata.music ?? "—"} />
+            <Row label="Map type" value={metadata.mapType ?? "—"} />
+            <Row label="Region" value={metadata.regionMapSection ?? "—"} />
+            <Row label="Warps" value={String(metadata.counts.warps)} />
+            <Row label="NPCs" value={String(metadata.counts.objects)} />
+            <Row label="Coord events" value={String(metadata.counts.coordEvents)} />
+            <Row label="BG events" value={String(metadata.counts.bgEvents)} />
+            <Row label="Conexões" value={String(metadata.connections.length)} />
+            {metadata.connections.map((connection, index) => (
+              <div key={`${connection.direction}-${connection.map}-${index}`} className="mt-1 rounded-sm bg-surface px-1.5 py-1 font-mono text-[9px] text-muted-foreground">
+                {connection.direction} → {connection.map} · offset {connection.offset}
+              </div>
+            ))}
+          </>
+        )}
       </Section>
 
       <Section title="Célula selecionada">
@@ -67,7 +98,7 @@ export function Inspector() {
             <Row label="Y" value={String(y)} />
             <Row label="Índice" value={String(i)} />
             <Row label="Metatile ID" value={`${id} · ${hex(id ?? 0, 3)}`} />
-            <Row label="Nome (demo)" value={tile?.name ?? "—"} mono={false} />
+            <Row label="Nome (atlas demo)" value={tile?.name ?? "—"} mono={false} />
             <Row label="Valor bruto" value={hex(raw)} />
             <Row label="Bits físicos" value={hex(phys)} />
             <Row label="Colisão" value={`${getCollision(phys)}`} />
@@ -85,7 +116,9 @@ export function Inspector() {
 
       <Section title="Proteção de progressão">
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[11px] text-muted-foreground">Toggle</span>
+          <span className="text-[11px] text-muted-foreground">
+            {metadata ? "derivada do map.json" : "sem map.json"}
+          </span>
           <button
             type="button"
             onClick={editorStore.toggleProtect}
@@ -99,35 +132,40 @@ export function Inspector() {
             {state.protectProgression ? "LIGADO" : "DESLIGADO"}
           </button>
         </div>
-        <ul className="space-y-0.5">
-          {state.protectedCells.map((c) => (
-            <li
-              key={`${c.x},${c.y}`}
-              className={
-                "flex items-baseline justify-between gap-2 rounded-sm px-1 py-0.5 " +
-                (prot && prot.x === c.x && prot.y === c.y ? "bg-surface" : "")
-              }
-            >
-              <span className="font-mono text-[11px]">
-                ({c.x},{c.y})
-              </span>
-              <span className="truncate text-[10px] text-muted-foreground">{c.reason}</span>
-            </li>
-          ))}
-        </ul>
+        {state.protectedCells.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">Nenhuma célula protegida carregada.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {state.protectedCells.map((cell) => (
+              <li
+                key={`${cell.x},${cell.y}`}
+                className={
+                  "flex items-baseline justify-between gap-2 rounded-sm px-1 py-0.5 " +
+                  (prot && prot.x === cell.x && prot.y === cell.y ? "bg-surface" : "")
+                }
+                title={cell.reason}
+              >
+                <span className="font-mono text-[11px]">
+                  ({cell.x},{cell.y})
+                </span>
+                <span className="truncate text-[10px] text-muted-foreground">{cell.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
-      <Section title="Eventos nesta célula (demo)">
+      <Section title="Eventos nesta célula">
         {cellEvents.length === 0 ? (
           <p className="text-[11px] text-muted-foreground">Nenhum evento.</p>
         ) : (
           <ul className="space-y-1">
-            {cellEvents.map((e) => (
-              <li key={e.label} className="rounded-sm bg-surface px-1.5 py-1">
+            {cellEvents.map((event, eventIndex) => (
+              <li key={`${event.label}-${eventIndex}`} className="rounded-sm bg-surface px-1.5 py-1">
                 <p className="font-mono text-[10px] text-primary">
-                  {e.label} · {e.kind}
+                  {event.label} · {event.source ?? event.kind}
                 </p>
-                <p className="text-[10px] text-muted-foreground">{e.detail}</p>
+                <p className="break-words text-[10px] leading-relaxed text-muted-foreground">{event.detail}</p>
               </li>
             ))}
           </ul>

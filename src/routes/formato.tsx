@@ -17,7 +17,7 @@ function FormatPage() {
         </Link>
         <div>
           <h1 className="text-sm font-semibold">Formato de mapa — Emerald decomp</h1>
-          <p className="text-[10px] text-muted-foreground">Referência curta usada pelo MVP do Arauna Map Studio</p>
+          <p className="text-[10px] text-muted-foreground">Referência curta usada pelo Arauna Map Studio</p>
         </div>
       </header>
 
@@ -38,18 +38,28 @@ function FormatPage() {
             <p>physicalBits = raw &amp; 0xFC00</p>
             <p>raw = physicalBits | metatileId</p>
           </div>
-          <p className="mt-3 text-muted-foreground">No modo Visual o editor altera apenas o ID do metatile e mantém os bits físicos da célula intactos.</p>
+          <p className="mt-3 text-muted-foreground">No modo Visual o editor altera apenas o ID do metatile e mantém colisão/elevação da célula intactas.</p>
+        </InfoCard>
+
+        <InfoCard icon={Layers3} title="map.json">
+          <p><b>data/maps/.../map.json</b> complementa o layout binário com o mapa lógico do pokeemerald.</p>
+          <p className="mt-2 text-muted-foreground">O Studio já lê ID, layout, música, conexões, warps, object events/NPCs, coord events e BG events.</p>
         </InfoCard>
 
         <InfoCard icon={ShieldCheck} title="Proteção de progressão">
-          <p>O MVP pode bloquear coordenadas sensíveis para impedir alterações acidentais durante a pintura visual.</p>
-          <p className="mt-2 text-muted-foreground">Na fase seguinte essas posições serão carregadas do mapa real e validadas contra warps, triggers, NPCs e conexões.</p>
+          <p>Ao importar map.json, o editor deriva automaticamente células protegidas de <b>warps, coord events e BG events</b>.</p>
+          <p className="mt-2 text-muted-foreground">NPCs aparecem no overlay e no inspetor, mas não bloqueiam a pintura do terreno por padrão.</p>
+        </InfoCard>
+
+        <InfoCard icon={HardDrive} title="Teste sem downloads">
+          <p>O botão <b>Vila real</b> carrega um snapshot de LittlerootTown retirado do repositório Juramento de Arauna.</p>
+          <p className="mt-2 text-muted-foreground">Isso permite testar de imediato o map.bin real e todos os eventos reais. O snapshot não substitui a importação dos arquivos mais novos quando o mapa mudar.</p>
         </InfoCard>
 
         <section className="rounded-md border border-warning/40 bg-warning/5 p-4 md:col-span-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-warning">Atlas atual</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-warning">Limitação atual: atlas gráfico</h2>
           <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-            Os gráficos disponíveis neste MVP são placeholders originais. Eles existem apenas para provar o fluxo de edição. O próximo marco do projeto é gerar um atlas a partir dos tilesets/metatiles reais do repositório Pokémon Juramento de Arauna e associar cada preview ao ID que o GBA realmente usa.
+            O Studio já entende o binário e o map.json reais, mas os previews de metatiles ainda são placeholders. IDs que não existem no atlas DEMO aparecem como blocos neutros. O próximo marco é renderizar os tilesets/metatiles reais <b>gTileset_General + gTileset_Petalburg</b> para que o canvas corresponda visualmente ao GBA.
           </p>
         </section>
       </main>
