@@ -21,6 +21,7 @@ import {
   Map,
   FolderOpen,
   Braces,
+  Settings2,
 } from "lucide-react";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
 import { saveEditorToWritableWorkspace } from "@/lib/fileSystemWorkspace";
@@ -125,7 +126,12 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     );
   };
 
-  const writableSource = Boolean(session?.writeAccess && session.lastMapPath);
+  const binSourceWritable = Boolean(
+    session?.writeAccess && state.sourceFile?.startsWith("data/"),
+  );
+  const jsonSourceWritable = Boolean(
+    session?.writeAccess && state.mapJsonSource?.startsWith("data/"),
+  );
 
   const handleExportBin = () => {
     const bytes = editorStore.exportBytes();
@@ -133,7 +139,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
       new Blob([bytes.slice().buffer as ArrayBuffer], { type: "application/octet-stream" }),
       "map.bin",
     );
-    if (writableSource) {
+    if (binSourceWritable) {
       editorStore.setMessage(
         `map.bin baixado (${bytes.byteLength} bytes). A origem local continua marcada como alterada até usar “Salvar pasta”.`,
       );
@@ -148,7 +154,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     if (!source) return;
     const byteLength = new TextEncoder().encode(source).byteLength;
     downloadBlob(new Blob([source], { type: "application/json;charset=utf-8" }), "map.json");
-    if (writableSource) {
+    if (jsonSourceWritable) {
       editorStore.setMessage(
         `map.json baixado (${byteLength} bytes). A origem local continua marcada como alterada até usar “Salvar pasta”.`,
       );
@@ -240,12 +246,12 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           </TB>
         )}
 
-        <TB title={writableSource ? "Baixar uma cópia do map.bin; não salva a origem local" : "Baixar map.bin atual"} onClick={handleExportBin}>
+        <TB title={binSourceWritable ? "Baixar uma cópia do map.bin; não salva a origem local" : "Baixar map.bin atual"} onClick={handleExportBin}>
           <Download className="size-3.5" /> BIN
           {state.dirty && <span className="text-[9px] text-warning">*</span>}
         </TB>
         <TB
-          title={writableSource ? "Baixar uma cópia do map.json; não salva a origem local" : "Baixar map.json com eventos editados"}
+          title={jsonSourceWritable ? "Baixar uma cópia do map.json; não salva a origem local" : "Baixar map.json com eventos editados"}
           onClick={handleExportJson}
           disabled={!state.mapJsonDocument}
         >
@@ -328,6 +334,14 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
             title="Abra a pasta data/ e escolha qualquer mapa"
           >
             <FolderOpen className="size-3.5" /> Workspace
+          </Link>
+          <Link
+            to="/map-settings"
+            className="inline-flex h-7 items-center gap-1.5 rounded border border-transparent px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-surface hover:text-foreground"
+            title="Editar propriedades gerais e conexões do map.json"
+          >
+            <Settings2 className="size-3.5" /> Config. mapa
+            {state.mapJsonDirty && <span className="text-warning">*</span>}
           </Link>
           <Link
             to="/tilesets"
