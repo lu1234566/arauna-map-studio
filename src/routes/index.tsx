@@ -16,8 +16,6 @@ function Index() {
   const state = useEditor();
 
   useEffect(() => {
-    editorStore.hydrate();
-
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing =
