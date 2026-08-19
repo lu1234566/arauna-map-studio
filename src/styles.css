@@ -148,6 +148,33 @@
   color: var(--color-muted-foreground);
 }
 
+@utility field-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+@utility input-compact {
+  height: 1.75rem;
+  border-width: 1px;
+  border-color: var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-canvas);
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  font-size: 10px;
+  color: var(--color-foreground);
+  outline: none;
+}
+
+.input-compact:focus {
+  border-color: color-mix(in oklch, var(--color-primary) 65%, transparent);
+}
+
 @utility hairline {
   border-color: var(--color-border);
 }
