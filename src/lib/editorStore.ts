@@ -187,7 +187,6 @@ class EditorStore {
         };
       }
 
-      // v2 inclui metadados de map.json. Se não existir, tenta recuperar o mapa v1.
       const rawMap = localStorage.getItem(STORAGE_MAP) ?? localStorage.getItem("arauna.map.v1");
       if (rawMap) {
         const saved = JSON.parse(rawMap) as Record<string, unknown>;
@@ -230,7 +229,6 @@ class EditorStore {
     }
   }
 
-  // ---- histórico do layout binário ----
   private pushHistory() {
     this.undoStack.push(cloneMap(this.state.map));
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
@@ -259,12 +257,9 @@ class EditorStore {
     this.syncHistoryDepths({ map: next, dirty: true, lastMessage: "Refeito." });
   };
 
-  // ---- helpers ----
   isProtected = (x: number, y: number) =>
     this.state.protectProgression && this.state.protectedCells.some((cell) => cell.x === x && cell.y === y);
 
-  // ---- edição visual ----
-  /** Pinta uma célula. `continuous` agrupa o traço num único passo de undo. */
   paint = (x: number, y: number, continuous = false) => {
     const s = this.state;
     if (s.viewMode !== "visual") return;
@@ -282,7 +277,7 @@ class EditorStore {
     if (s.map.metatiles[i] === id) return;
     if (!continuous) this.pushHistory();
     const map = cloneMap(s.map);
-    map.metatiles[i] = id; // preserva physical bits intocados
+    map.metatiles[i] = id;
     this.syncHistoryDepths({ map, dirty: true, selectedCell: i });
   };
 
@@ -374,9 +369,15 @@ class EditorStore {
     });
   };
 
-  importBuffer = (buffer: ArrayBuffer, fileName: string) => {
+  importBuffer = (buffer: ArrayBuffer, fileName: string) =>
+    this.importBufferSized(buffer, fileName, 20, 20);
+
+  importBufferSized = (buffer: ArrayBuffer, fileName: string, width: number, height: number) => {
     try {
-      const map = parseMapBin(buffer, 20, 20);
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        throw new Error(`Dimensão inválida: ${width}×${height}.`);
+      }
+      const map = parseMapBin(buffer, width, height);
       this.pushHistory();
       this.syncHistoryDepths({
         map,
@@ -384,7 +385,8 @@ class EditorStore {
         dirty: false,
         validation: null,
         selection: null,
-        lastMessage: `Importado ${fileName} — ${buffer.byteLength} bytes, 400 células.`,
+        selectedCell: null,
+        lastMessage: `Importado ${fileName} — ${buffer.byteLength} bytes, ${width}×${height} (${width * height} células).`,
       });
       return { ok: true as const };
     } catch (error) {
