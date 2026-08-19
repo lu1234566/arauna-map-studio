@@ -51,9 +51,9 @@ describe("Arauna repository workspace helpers", () => {
     }));
 
     expect(layouts).toHaveLength(2);
-    expect(layouts[0].width).toBe(20);
-    expect(layouts[1].height).toBe(100);
-    expect(layouts[1].blockdata_filepath).toBe("data/layouts/Route110/map.bin");
+    expect(layouts[0]?.width).toBe(20);
+    expect(layouts[1]?.height).toBe(100);
+    expect(layouts[1]?.blockdata_filepath).toBe("data/layouts/Route110/map.bin");
   });
 
   it("calcula tamanho exato de map.bin para qualquer dimensão", () => {
