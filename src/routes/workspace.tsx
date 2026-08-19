@@ -10,23 +10,31 @@ import {
   Loader2,
   Map as MapIcon,
   Search,
+  X,
 } from "lucide-react";
 import {
   loadAraunaWorkspace,
   openWorkspaceMap,
-  type AraunaWorkspace,
   type WorkspaceMap,
 } from "@/lib/repoWorkspace";
+import {
+  inferWorkspaceLabel,
+  useWorkspaceSession,
+  workspaceSessionStore,
+} from "@/lib/workspaceSession";
 
 export const Route = createFileRoute("/workspace")({ component: WorkspaceRoute });
 
 function WorkspaceRoute() {
   const navigate = useNavigate();
   const directoryRef = useRef<HTMLInputElement>(null);
-  const [workspace, setWorkspace] = useState<AraunaWorkspace | null>(null);
+  const session = useWorkspaceSession();
+  const workspace = session?.workspace ?? null;
   const [query, setQuery] = useState("");
-  const [message, setMessage] = useState(
-    "Selecione a raiz do repositório Pokémon Juramento de Arauna ou diretamente a pasta data/.",
+  const [message, setMessage] = useState(() =>
+    session
+      ? `Workspace ${session.label} continua ativo nesta sessão. Escolha outro mapa sem selecionar a pasta novamente.`
+      : "Selecione a raiz do repositório Pokémon Juramento de Arauna ou diretamente a pasta data/.",
   );
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
@@ -61,13 +69,13 @@ function WorkspaceRoute() {
     if (!files?.length) return;
     setLoadingWorkspace(true);
     setError(null);
-    setWorkspace(null);
     setMessage(`Indexando ${files.length} arquivos localmente…`);
     try {
       const next = await loadAraunaWorkspace(files);
-      setWorkspace(next);
+      const label = inferWorkspaceLabel(files);
+      workspaceSessionStore.open(next, label);
       setMessage(
-        `Workspace pronto: ${next.maps.length} mapas, ${next.layouts.size} layouts e ${next.tilesets.length} diretórios de tileset detectados.`,
+        `Workspace ${label} pronto: ${next.maps.length} mapas, ${next.layouts.size} layouts e ${next.tilesets.length} diretórios de tileset detectados.`,
       );
     } catch (cause) {
       const text = cause instanceof Error ? cause.message : String(cause);
@@ -86,6 +94,7 @@ function WorkspaceRoute() {
     setMessage(`Abrindo ${map.name}: mapa, metadados e tilesets…`);
     try {
       const result = await openWorkspaceMap(workspace, map);
+      workspaceSessionStore.setLastMap(map.path);
       setMessage(
         `${result.map.name} pronto — ${result.layout.width}×${result.layout.height}, ` +
           `${result.layout.primary_tileset} + ${result.layout.secondary_tileset}.`,
@@ -98,6 +107,13 @@ function WorkspaceRoute() {
     } finally {
       setOpeningPath(null);
     }
+  };
+
+  const closeWorkspace = () => {
+    workspaceSessionStore.clear();
+    setQuery("");
+    setError(null);
+    setMessage("Workspace fechado. Selecione a pasta data/ para iniciar outra sessão.");
   };
 
   return (
@@ -116,10 +132,23 @@ function WorkspaceRoute() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {workspace && (
-            <span className="rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
-              <CheckCircle2 className="mr-1 inline size-3" /> Workspace ativo
+          {session && (
+            <span
+              className="max-w-56 truncate rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success"
+              title={session.label}
+            >
+              <CheckCircle2 className="mr-1 inline size-3" /> {session.label}
             </span>
+          )}
+          {workspace && (
+            <button
+              type="button"
+              onClick={closeWorkspace}
+              disabled={Boolean(openingPath)}
+              className="inline-flex h-8 items-center gap-1 rounded border border-border px-2 text-[10px] text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-50"
+            >
+              <X className="size-3" /> Fechar
+            </button>
           )}
           <button
             type="button"
@@ -144,7 +173,7 @@ function WorkspaceRoute() {
         <aside className="w-72 shrink-0 overflow-y-auto border-r border-border bg-panel p-3">
           <h2 className="panel-title mb-2">Como usar</h2>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Selecione uma única vez a pasta <b className="text-foreground">data/</b> do clone local do projeto, ou a raiz inteira do repositório. O navegador apenas lê os arquivos locais; nada é enviado para servidor.
+            Selecione uma vez a pasta <b className="text-foreground">data/</b> do clone local ou a raiz inteira do repositório. O workspace permanece ativo enquanto esta aba do Studio estiver aberta, inclusive ao voltar ao editor e retornar aqui.
           </p>
 
           <div className="mt-3 rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed text-muted-foreground">
@@ -207,6 +236,7 @@ function WorkspaceRoute() {
                     map={map}
                     busy={openingPath === map.path}
                     disabled={Boolean(openingPath)}
+                    recent={session?.lastMapPath === map.path}
                     onOpen={() => void handleOpenMap(map)}
                   />
                 ))}
@@ -234,11 +264,13 @@ function MapRow({
   map,
   busy,
   disabled,
+  recent,
   onOpen,
 }: {
   map: WorkspaceMap;
   busy: boolean;
   disabled: boolean;
+  recent: boolean;
   onOpen: () => void;
 }) {
   const layout = map.layout;
@@ -248,7 +280,10 @@ function MapRow({
       onClick={onOpen}
       disabled={disabled || Boolean(map.error)}
       title={map.error ?? `Abrir ${map.name}`}
-      className="group flex min-h-24 items-start gap-3 rounded border border-border bg-panel/70 p-2.5 text-left transition-colors hover:border-primary/40 hover:bg-surface disabled:cursor-not-allowed disabled:opacity-45"
+      className={
+        "group flex min-h-24 items-start gap-3 rounded border bg-panel/70 p-2.5 text-left transition-colors hover:border-primary/40 hover:bg-surface disabled:cursor-not-allowed disabled:opacity-45 " +
+        (recent ? "border-primary/50" : "border-border")
+      }
     >
       <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded border border-border bg-canvas">
         {busy ? <Loader2 className="size-4 animate-spin text-primary" /> : <MapIcon className="size-4 text-primary" />}
@@ -256,6 +291,7 @@ function MapRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="truncate text-xs font-semibold">{map.name}</span>
+          {recent && <span className="shrink-0 text-[8px] uppercase tracking-wide text-primary">último</span>}
           {layout && (
             <span className="ml-auto shrink-0 font-mono text-[9px] text-muted-foreground">
               {layout.width}×{layout.height}
