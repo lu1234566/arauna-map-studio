@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { METATILE_BY_ID } from "@/lib/demoAtlas";
 import {
@@ -8,6 +9,11 @@ import {
   hex,
   rawValue,
 } from "@/lib/emeraldMap";
+import {
+  eventRecord,
+  eventSourceLabel,
+  type EditableEventSource,
+} from "@/lib/eventMapJson";
 import { realAtlasStore, useRealAtlas } from "@/lib/realAtlasStore";
 
 function Row({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
@@ -33,6 +39,106 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function EventField({
+  eventId,
+  field,
+  label,
+  value,
+}: {
+  eventId: string;
+  field: string;
+  label: string;
+  value: unknown;
+}) {
+  const textValue = value == null ? "" : String(value);
+  const [draft, setDraft] = useState(textValue);
+  useEffect(() => setDraft(textValue), [textValue]);
+
+  const commit = () => {
+    if (draft === textValue) return;
+    editorStore.updateEventField(eventId, field, draft);
+  };
+
+  return (
+    <label className="block py-0.5">
+      <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <input
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+            event.currentTarget.blur();
+          }
+        }}
+        className="h-7 w-full rounded-sm border border-border bg-canvas px-1.5 font-mono text-[10px] outline-none focus:border-primary/60"
+      />
+    </label>
+  );
+}
+
+const EVENT_FIELDS: Record<EditableEventSource, Array<{ key: string; label: string }>> = {
+  warp: [
+    { key: "x", label: "X" },
+    { key: "y", label: "Y" },
+    { key: "elevation", label: "Elevation" },
+    { key: "dest_map", label: "Destination map" },
+    { key: "dest_warp_id", label: "Destination warp" },
+  ],
+  object: [
+    { key: "local_id", label: "Local ID" },
+    { key: "graphics_id", label: "Graphics ID" },
+    { key: "x", label: "X" },
+    { key: "y", label: "Y" },
+    { key: "elevation", label: "Elevation" },
+    { key: "movement_type", label: "Movement type" },
+    { key: "movement_range_x", label: "Movement range X" },
+    { key: "movement_range_y", label: "Movement range Y" },
+    { key: "trainer_type", label: "Trainer type" },
+    { key: "trainer_sight_or_berry_tree_id", label: "Trainer/Berry ID" },
+    { key: "script", label: "Script" },
+    { key: "flag", label: "Flag" },
+  ],
+  coord: [
+    { key: "type", label: "Type" },
+    { key: "x", label: "X" },
+    { key: "y", label: "Y" },
+    { key: "elevation", label: "Elevation" },
+    { key: "var", label: "Variable" },
+    { key: "var_value", label: "Variable value" },
+    { key: "script", label: "Script" },
+  ],
+  bg: [
+    { key: "type", label: "Type" },
+    { key: "x", label: "X" },
+    { key: "y", label: "Y" },
+    { key: "elevation", label: "Elevation" },
+    { key: "player_facing_dir", label: "Player facing" },
+    { key: "script", label: "Script" },
+  ],
+};
+
+function AddEventButtons({ viewMode }: { viewMode: string }) {
+  const buttonClass =
+    "rounded-sm border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] text-primary hover:bg-primary/15";
+  if (viewMode === "warps") {
+    return <button type="button" className={buttonClass} onClick={() => editorStore.createEvent("warp")}>+ Warp</button>;
+  }
+  if (viewMode === "npcs") {
+    return <button type="button" className={buttonClass} onClick={() => editorStore.createEvent("object")}>+ NPC/Objeto</button>;
+  }
+  if (viewMode === "triggers") {
+    return (
+      <>
+        <button type="button" className={buttonClass} onClick={() => editorStore.createEvent("coord")}>+ Trigger</button>
+        <button type="button" className={buttonClass} onClick={() => editorStore.createEvent("bg")}>+ BG event</button>
+      </>
+    );
+  }
+  return null;
+}
+
 export function Inspector() {
   const state = useEditor();
   const atlas = useRealAtlas();
@@ -52,8 +158,13 @@ export function Inspector() {
   const cellEvents = x != null && y != null
     ? state.events.filter((event) => event.x === x && event.y === y)
     : [];
+  const eventLayer =
+    state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers";
   const editableLayer =
-    state.viewMode === "visual" || state.viewMode === "collision" || state.viewMode === "elevation";
+    state.viewMode === "visual" ||
+    state.viewMode === "collision" ||
+    state.viewMode === "elevation" ||
+    (eventLayer && Boolean(state.mapJsonDocument));
 
   const selectionFillLabel =
     state.viewMode === "collision"
@@ -61,6 +172,14 @@ export function Inspector() {
       : state.viewMode === "elevation"
         ? `Aplicar elevação ${state.selectedElevation}`
         : "Aplicar metatile";
+
+  const selectedEntry =
+    state.mapJsonDocument && state.selectedEventId
+      ? eventRecord(state.mapJsonDocument, state.selectedEventId)
+      : null;
+  const selectedEvent = state.selectedEventId
+    ? state.events.find((event) => event.id === state.selectedEventId)
+    : undefined;
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border bg-panel">
@@ -76,16 +195,92 @@ export function Inspector() {
         <Row label="map.bin" value={state.sourceFile ?? "não importado"} mono={false} />
         <Row label="map.json" value={state.mapJsonSource ?? "não importado"} mono={false} />
         <Row label="Atlas gráfico" value={atlas ? `${atlas.primary} + ${atlas.secondary}` : "DEMO"} mono={false} />
-        <Row label="Alterações" value={state.dirty ? "não salvas" : "nenhuma"} mono={false} />
+        <Row label="map.bin alterado" value={state.dirty ? "SIM" : "não"} mono={false} />
+        <Row label="map.json alterado" value={state.mapJsonDirty ? "SIM" : "não"} mono={false} />
       </Section>
 
       <Section title="Edição atual">
         <Row label="Camada" value={state.viewMode} mono={false} />
         <Row label="Modo" value={editableLayer ? "editável" : "somente leitura"} mono={false} />
-        {state.viewMode === "visual" && <Row label="Metatile ativo" value={`${state.selectedMetatile} · ${hex(state.selectedMetatile, 3)}`} />}
+        {state.viewMode === "visual" && (
+          <Row label="Metatile ativo" value={`${state.selectedMetatile} · ${hex(state.selectedMetatile, 3)}`} />
+        )}
         {state.viewMode === "collision" && <Row label="Colisão ativa" value={String(state.selectedCollision)} />}
         {state.viewMode === "elevation" && <Row label="Elevação ativa" value={String(state.selectedElevation)} />}
+        {eventLayer && (
+          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+            Clique num evento para selecionar. Arraste no canvas para mover. Use os campos abaixo para editar o map.json.
+          </p>
+        )}
       </Section>
+
+      {eventLayer && (
+        <Section title="Editor de eventos">
+          {!state.mapJsonDocument ? (
+            <p className="text-[10px] leading-relaxed text-warning">
+              Abra um map.json real pelo Workspace para habilitar criação e edição.
+            </p>
+          ) : (
+            <>
+              <div className="mb-2 flex flex-wrap gap-1">
+                <AddEventButtons viewMode={state.viewMode} />
+              </div>
+              {selectedEntry && selectedEvent ? (
+                <div className="rounded border border-primary/30 bg-primary/5 p-2">
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-[10px] font-semibold text-primary">
+                        {selectedEvent.label} · {selectedEntry.source}:{selectedEntry.index}
+                      </p>
+                      <p className="text-[9px] text-muted-foreground">
+                        {eventSourceLabel(selectedEntry.source)} · ({selectedEvent.x},{selectedEvent.y})
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => editorStore.removeEvent(selectedEvent.id)}
+                      className="shrink-0 rounded-sm border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[9px] text-destructive hover:bg-destructive/15"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    {EVENT_FIELDS[selectedEntry.source].map((field) => (
+                      <EventField
+                        key={`${selectedEvent.id}-${field.key}`}
+                        eventId={selectedEvent.id}
+                        field={field.key}
+                        label={field.label}
+                        value={selectedEntry.record[field.key]}
+                      />
+                    ))}
+                  </div>
+
+                  {Object.entries(selectedEntry.record).some(
+                    ([key]) => !EVENT_FIELDS[selectedEntry.source].some((field) => field.key === key),
+                  ) && (
+                    <details className="mt-2 rounded-sm border border-border bg-canvas p-1.5">
+                      <summary className="cursor-pointer text-[9px] text-muted-foreground">Campos extras preservados</summary>
+                      <div className="mt-1 space-y-0.5">
+                        {Object.entries(selectedEntry.record)
+                          .filter(([key]) => !EVENT_FIELDS[selectedEntry.source].some((field) => field.key === key))
+                          .map(([key, value]) => (
+                            <Row key={key} label={key} value={typeof value === "string" ? value : JSON.stringify(value)} />
+                          ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  Nenhum evento selecionado. Você também pode clicar em uma célula vazia e criar um novo evento nela.
+                </p>
+              )}
+            </>
+          )}
+        </Section>
+      )}
 
       <Section title="Metadados pokeemerald">
         {!metadata ? (
@@ -145,6 +340,32 @@ export function Inspector() {
         )}
       </Section>
 
+      <Section title="Eventos nesta célula">
+        {cellEvents.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">Nenhum evento.</p>
+        ) : (
+          <ul className="space-y-1">
+            {cellEvents.map((event) => (
+              <li key={event.id}>
+                <button
+                  type="button"
+                  onClick={() => editorStore.selectEvent(event.id)}
+                  className={
+                    "w-full rounded-sm border px-1.5 py-1 text-left " +
+                    (state.selectedEventId === event.id
+                      ? "border-primary/40 bg-primary/10"
+                      : "border-transparent bg-surface hover:border-border")
+                  }
+                >
+                  <p className="font-mono text-[10px] text-primary">{event.label} · {event.source}</p>
+                  <p className="break-words text-[10px] leading-relaxed text-muted-foreground">{event.detail}</p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section title="Máscaras">
         <Row label="Metatile" value={hex(METATILE_MASK)} />
         <Row label="Físico" value={hex(PHYSICAL_MASK)} />
@@ -192,22 +413,7 @@ export function Inspector() {
         )}
       </Section>
 
-      <Section title="Eventos nesta célula">
-        {cellEvents.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground">Nenhum evento.</p>
-        ) : (
-          <ul className="space-y-1">
-            {cellEvents.map((event, eventIndex) => (
-              <li key={`${event.label}-${eventIndex}`} className="rounded-sm bg-surface px-1.5 py-1">
-                <p className="font-mono text-[10px] text-primary">{event.label} · {event.source ?? event.kind}</p>
-                <p className="break-words text-[10px] leading-relaxed text-muted-foreground">{event.detail}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      {state.selection && (
+      {state.selection && !eventLayer && (
         <Section title="Seleção">
           <Row
             label="Retângulo"
