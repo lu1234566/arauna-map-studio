@@ -65,6 +65,19 @@ function parsePreset(value: unknown): SmartPathPreset | null {
   return validateSmartPathPreset(preset).valid ? preset : null;
 }
 
+function uniqueImportedId(base: string, reserved: Set<string>) {
+  if (!reserved.has(base)) {
+    reserved.add(base);
+    return base;
+  }
+  let candidate = "";
+  do {
+    candidate = `smart-path-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  } while (reserved.has(candidate));
+  reserved.add(candidate);
+  return candidate;
+}
+
 class SmartPathStore {
   private state: SmartPathState = {
     presets: [],
@@ -147,13 +160,14 @@ class SmartPathStore {
       currentAtlasScope(),
     );
     const presets = [...this.state.presets, preset];
+    const message = `Preset “${preset.name}” criado a partir do metatile ${selected}. Configure os 16 masks.`;
     this.set({
       presets,
       activePresetId: preset.id,
       panelOpen: true,
-      lastMessage: `Preset “${preset.name}” criado a partir do metatile ${selected}. Configure os 16 masks.`,
+      lastMessage: message,
     });
-    editorStore.setMessage(this.state.lastMessage);
+    editorStore.setMessage(message);
     return preset.id;
   };
 
@@ -187,7 +201,7 @@ class SmartPathStore {
 
   selectPreset = (id: string) => {
     if (!this.state.presets.some((preset) => preset.id === id)) return;
-    this.set({ activePresetId: id });
+    this.set({ activePresetId: id, enabled: false });
   };
 
   private updateActive(mutator: (preset: SmartPathPreset) => SmartPathPreset) {
@@ -195,7 +209,10 @@ class SmartPathStore {
     if (!active) return;
     const next = mutator(clonePreset(active));
     next.updatedAt = new Date().toISOString();
-    this.set({ presets: this.state.presets.map((preset) => preset.id === next.id ? next : preset) });
+    this.set({
+      presets: this.state.presets.map((preset) => preset.id === next.id ? next : preset),
+      enabled: this.state.enabled && validateSmartPathPreset(next).valid,
+    });
   }
 
   renameActive = (name: string) => this.updateActive((preset) => ({ ...preset, name }));
@@ -230,9 +247,36 @@ class SmartPathStore {
 
   setEraseFromSelected = () => this.setEraseMetatile(editorStore.getState().selectedMetatile);
 
+  bindScopeToCurrentAtlas = () => {
+    const scope = currentAtlasScope();
+    if (!scope) {
+      editorStore.setMessage("Carregue um atlas real pelo Workspace/Tilesets antes de vincular o Smart Path.");
+      return false;
+    }
+    this.updateActive((preset) => ({ ...preset, scope }));
+    const message = `Smart Path vinculado a ${scope.primary} + ${scope.secondary}.`;
+    this.set({ lastMessage: message }, false);
+    editorStore.setMessage(message);
+    return true;
+  };
+
   setMode = (mode: SmartPathMode) => this.set({ mode });
   toggleMode = () => this.set({ mode: this.state.mode === "add" ? "erase" : "add" });
   setPanelOpen = (panelOpen: boolean) => this.set({ panelOpen }, false);
+
+  scopeStatus = () => {
+    const preset = this.activePreset();
+    if (!preset?.scope) return { matches: true, message: "Preset sem vínculo de tileset." };
+    const scope = currentAtlasScope();
+    if (!scope) return { matches: false, message: "Atlas real não carregado." };
+    const matches = preset.scope.primary === scope.primary && preset.scope.secondary === scope.secondary;
+    return {
+      matches,
+      message: matches
+        ? `${scope.primary} + ${scope.secondary}`
+        : `Preset: ${preset.scope.primary} + ${preset.scope.secondary}; atlas: ${scope.primary} + ${scope.secondary}`,
+    };
+  };
 
   setEnabled = (enabled: boolean) => {
     this.hydrate();
@@ -249,6 +293,13 @@ class SmartPathStore {
         this.set({ panelOpen: true, enabled: false }, false);
         return false;
       }
+      const scopeStatus = this.scopeStatus();
+      if (preset.scope && !scopeStatus.matches) {
+        editorStore.setMessage(`Smart Path não ativado: ${scopeStatus.message} Reabra o mapa correto ou use “Vincular atlas atual”.`);
+        this.set({ panelOpen: true, enabled: false }, false);
+        return false;
+      }
+      editorStore.setTool("pencil");
       if (editorStore.getState().viewMode !== "visual") editorStore.setViewMode("visual");
       if (clipboardStore.getState().stampMode) clipboardStore.toggleStampMode(false);
     }
@@ -262,20 +313,6 @@ class SmartPathStore {
   };
 
   toggleEnabled = () => this.setEnabled(!this.state.enabled);
-
-  scopeStatus = () => {
-    const preset = this.activePreset();
-    if (!preset?.scope) return { matches: true, message: "Preset sem vínculo de tileset." };
-    const scope = currentAtlasScope();
-    if (!scope) return { matches: false, message: "Atlas real não carregado." };
-    const matches = preset.scope.primary === scope.primary && preset.scope.secondary === scope.secondary;
-    return {
-      matches,
-      message: matches
-        ? `${scope.primary} + ${scope.secondary}`
-        : `Preset: ${preset.scope.primary} + ${preset.scope.secondary}; atlas: ${scope.primary} + ${scope.secondary}`,
-    };
-  };
 
   applyAt = (x: number, y: number, continuous = false) => {
     if (!this.state.enabled) return 0;
@@ -331,19 +368,18 @@ class SmartPathStore {
   };
 
   importJson = (source: string) => {
+    this.hydrate();
     try {
       const parsed = JSON.parse(source) as unknown;
       const rawPresets = Array.isArray(parsed) ? parsed : [parsed];
+      const reserved = new Set(this.state.presets.map((preset) => preset.id));
       const imported = rawPresets.map((value) => {
         const preset = parsePreset(value);
         if (!preset) throw new Error("Preset inválido ou incompleto.");
-        const now = new Date().toISOString();
         return {
           ...preset,
-          id: this.state.presets.some((existing) => existing.id === preset.id)
-            ? `smart-path-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-            : preset.id,
-          updatedAt: now,
+          id: uniqueImportedId(preset.id, reserved),
+          updatedAt: new Date().toISOString(),
         } satisfies SmartPathPreset;
       });
       const presets = [...this.state.presets, ...imported];
@@ -351,6 +387,7 @@ class SmartPathStore {
         presets,
         activePresetId: imported[0]?.id ?? this.state.activePresetId,
         panelOpen: true,
+        enabled: false,
         lastMessage: `${imported.length} preset(s) Smart Path importado(s).`,
       });
       editorStore.setMessage(`${imported.length} preset(s) Smart Path importado(s).`);
