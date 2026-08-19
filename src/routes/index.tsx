@@ -16,13 +16,12 @@ function Index() {
   const state = useEditor();
 
   useEffect(() => {
-    editorStore.hydrate();
-
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing =
         target?.tagName === "INPUT" ||
         target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
         target?.isContentEditable;
       if (typing) return;
 

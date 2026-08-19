@@ -20,14 +20,18 @@ import {
   type PhysicalLayer,
 } from "./physicalMap";
 import {
+  addConnection as addEditableConnection,
   addEvent as addEditableEvent,
   cloneMapJson,
   eventRecord,
   moveEvent as moveEditableEvent,
   parseEditableMapJson,
+  removeConnection as removeEditableConnection,
   removeEvent as removeEditableEvent,
   stringifyMapJson,
+  updateConnectionField as updateEditableConnectionField,
   updateEventField as updateEditableEventField,
+  updateMapField as updateEditableMapField,
   type EditableEventSource,
   type EditableMapJson,
 } from "./eventMapJson";
@@ -40,6 +44,7 @@ import {
 
 export type Tool = "pencil" | "picker" | "fill" | "select";
 export type ViewMode = "visual" | "collision" | "elevation" | "warps" | "npcs" | "triggers";
+export type ConnectionDirection = "up" | "down" | "left" | "right";
 
 export interface ProtectedCell {
   x: number;
@@ -107,6 +112,7 @@ interface EditorSnapshot {
 const STORAGE_MAP = "arauna.map.v3";
 const STORAGE_PREFS = "arauna.prefs.v1";
 const MAX_HISTORY = 100;
+const VALID_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right"]);
 
 function defaultMap(): MapData {
   return createEmptyMap(20, 20, 0x000);
@@ -520,10 +526,7 @@ class EditorStore {
     });
   };
 
-  private applyMapJsonDocument(
-    document: EditableMapJson,
-    patch: Partial<EditorState>,
-  ) {
+  private applyMapJsonDocument(document: EditableMapJson, patch: Partial<EditorState>) {
     const derived = deriveMapJson(document);
     this.syncHistoryDepths({
       mapJsonDocument: document,
@@ -646,6 +649,79 @@ class EditorStore {
     }
   };
 
+  updateMapSetting = (key: string, value: unknown) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) return false;
+    if (Object.is(s.mapJsonDocument[key], value)) return true;
+    try {
+      this.pushHistory();
+      const document = updateEditableMapField(s.mapJsonDocument, key, value);
+      this.applyMapJsonDocument(document, {
+        mapJsonDirty: true,
+        lastMessage: `Propriedade ${key} atualizada.`,
+      });
+      return true;
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao editar ${key}: ${error instanceof Error ? error.message : String(error)}` }, false);
+      return false;
+    }
+  };
+
+  updateConnection = (index: number, key: "map" | "direction" | "offset", value: unknown) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) return false;
+    if (key === "direction" && !VALID_CONNECTION_DIRECTIONS.has(String(value))) {
+      this.set({ lastMessage: `Direção inválida: ${String(value)}.` }, false);
+      return false;
+    }
+    try {
+      this.pushHistory();
+      const document = updateEditableConnectionField(s.mapJsonDocument, index, key, value);
+      this.applyMapJsonDocument(document, {
+        mapJsonDirty: true,
+        lastMessage: `Conexão ${index} atualizada: ${key}.`,
+      });
+      return true;
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao editar conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      return false;
+    }
+  };
+
+  createConnection = (direction: ConnectionDirection) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) return null;
+    try {
+      this.pushHistory();
+      const result = addEditableConnection(s.mapJsonDocument, direction);
+      this.applyMapJsonDocument(result.document, {
+        mapJsonDirty: true,
+        lastMessage: `Conexão ${direction} criada. Defina o mapa de destino e o offset.`,
+      });
+      return result.index;
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao criar conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      return null;
+    }
+  };
+
+  removeConnection = (index: number) => {
+    const s = this.state;
+    if (!s.mapJsonDocument) return false;
+    try {
+      this.pushHistory();
+      const document = removeEditableConnection(s.mapJsonDocument, index);
+      this.applyMapJsonDocument(document, {
+        mapJsonDirty: true,
+        lastMessage: `Conexão ${index} removida.`,
+      });
+      return true;
+    } catch (error) {
+      this.set({ lastMessage: `Falha ao remover conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      return false;
+    }
+  };
+
   setSelection = (selection: Selection | null) => this.set({ selection }, false);
   setHover = (hoverCell: number | null) => this.set({ hoverCell }, false);
   selectCell = (i: number | null) => this.set({ selectedCell: i }, false);
@@ -702,10 +778,17 @@ class EditorStore {
         map,
         sourceFile: fileName,
         dirty: false,
+        mapJsonSource: null,
+        mapJsonDocument: null,
+        mapJsonDirty: false,
+        mapMetadata: null,
+        events: [],
+        protectedCells: [],
+        selectedEventId: null,
         validation: null,
         selection: null,
         selectedCell: null,
-        lastMessage: `Importado ${fileName} — ${buffer.byteLength} bytes, ${width}×${height} (${width * height} células).`,
+        lastMessage: `Importado ${fileName} — ${buffer.byteLength} bytes, ${width}×${height} (${width * height} células). Aguardando map.json deste mapa.`,
       });
       return { ok: true as const };
     } catch (error) {
@@ -784,6 +867,36 @@ class EditorStore {
           message: `Todos os ${metadata.events.length} evento(s) do map.json estão dentro dos limites.`,
         });
       }
+
+      const document = this.state.mapJsonDocument;
+      if (document && Array.isArray(document.connections)) {
+        const seen = new Set<string>();
+        document.connections.forEach((value, index) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) {
+            issues.push({ level: "error" as const, message: `Conexão ${index} não é um objeto válido.` });
+            return;
+          }
+          const connection = value as Record<string, unknown>;
+          const direction = connection.direction;
+          const map = connection.map;
+          const offset = connection.offset;
+          if (typeof direction !== "string" || !VALID_CONNECTION_DIRECTIONS.has(direction)) {
+            issues.push({ level: "error" as const, message: `Conexão ${index}: direção inválida (${String(direction)}).` });
+          }
+          if (typeof map !== "string" || !map.startsWith("MAP_")) {
+            issues.push({ level: "warn" as const, message: `Conexão ${index}: destino ${String(map)} não parece um MAP_* válido.` });
+          }
+          if (!Number.isInteger(offset)) {
+            issues.push({ level: "error" as const, message: `Conexão ${index}: offset precisa ser inteiro.` });
+          }
+          const signature = `${String(direction)}|${String(map)}|${String(offset)}`;
+          if (seen.has(signature)) {
+            issues.push({ level: "warn" as const, message: `Conexão ${index} duplica exatamente direção, destino e offset de outra conexão.` });
+          }
+          seen.add(signature);
+        });
+      }
+
       issues.push({
         level: "info" as const,
         message: `Layout declarado: ${metadata.layout}. Conexões: ${metadata.connections.length}. Células protegidas derivadas: ${metadata.protectedCells.length}.`,
@@ -791,7 +904,7 @@ class EditorStore {
       if (this.state.mapJsonDirty) {
         issues.push({
           level: "info" as const,
-          message: "map.json contém alterações ainda não exportadas.",
+          message: "map.json contém alterações ainda não exportadas/salvas na origem.",
         });
       }
     }
