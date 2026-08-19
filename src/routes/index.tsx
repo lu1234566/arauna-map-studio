@@ -3,6 +3,9 @@ import { useEffect } from "react";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapCanvas } from "@/components/studio/MapCanvas";
+import { PatternLibraryDock } from "@/components/studio/PatternLibraryDock";
+import { PatternOverlay } from "@/components/studio/PatternOverlay";
+import { PatternScopeGuard } from "@/components/studio/PatternScopeGuard";
 import { SmartPathDock } from "@/components/studio/SmartPathDock";
 import { SmartPathOverlay } from "@/components/studio/SmartPathOverlay";
 import { SmartPathScopeGuard } from "@/components/studio/SmartPathScopeGuard";
@@ -13,6 +16,7 @@ import { TopToolbar } from "@/components/studio/TopToolbar";
 import { ValidationPanel } from "@/components/studio/ValidationPanel";
 import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore, useEditor } from "@/lib/editorStore";
+import { patternLibraryStore } from "@/lib/patternLibraryStore";
 import { smartPathStore } from "@/lib/smartPathStore";
 
 export const Route = createFileRoute("/")({
@@ -22,11 +26,13 @@ export const Route = createFileRoute("/")({
 function Index() {
   const state = useEditor();
 
-  // Smart Paths assume a dedicated visual brush. If the normal toolbar changes
-  // to picker/fill/selection, hand control back to MapCanvas automatically.
+  // Dedicated paint overlays should yield when the regular tool mode changes.
   useEffect(() => {
     if (state.tool !== "pencil" && smartPathStore.getState().enabled) {
       smartPathStore.setEnabled(false);
+    }
+    if (state.tool !== "pencil" && patternLibraryStore.getState().enabled) {
+      patternLibraryStore.setEnabled(false);
     }
   }, [state.tool]);
 
@@ -76,7 +82,10 @@ function Index() {
       }
 
       if (key === "escape") {
-        if (smartPathStore.getState().enabled) {
+        if (patternLibraryStore.getState().enabled) {
+          event.preventDefault();
+          patternLibraryStore.setEnabled(false);
+        } else if (smartPathStore.getState().enabled) {
           event.preventDefault();
           smartPathStore.setEnabled(false);
         } else if (clipboardStore.getState().stampMode) {
@@ -88,8 +97,16 @@ function Index() {
         return;
       }
 
+      if (key === "l") {
+        event.preventDefault();
+        if (!patternLibraryStore.getState().enabled) editorStore.setTool("pencil");
+        patternLibraryStore.toggleEnabled();
+        return;
+      }
+
       if (key === "p") {
         event.preventDefault();
+        if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
         if (!smartPathStore.getState().enabled) editorStore.setTool("pencil");
         smartPathStore.toggleEnabled();
         return;
@@ -103,12 +120,14 @@ function Index() {
 
       if (key === "v") {
         event.preventDefault();
+        if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
         if (smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
         clipboardStore.toggleStampMode();
         return;
       }
 
       if (key === "b" || key === "i" || key === "g" || key === "m") {
+        if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
         if (smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
         if (clipboardStore.getState().stampMode) clipboardStore.toggleStampMode(false);
       }
@@ -135,8 +154,11 @@ function Index() {
           <MapCanvas />
           <StampOverlay />
           <SmartPathOverlay />
+          <PatternOverlay />
           <SmartPathScopeGuard />
+          <PatternScopeGuard />
           <SmartPathDock />
+          <PatternLibraryDock />
           <ClipboardDock />
         </main>
         <Inspector />
