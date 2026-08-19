@@ -1,4 +1,5 @@
 import { useEditor } from "@/lib/editorStore";
+import { useRealAtlas } from "@/lib/realAtlasStore";
 
 const TOOL_LABEL: Record<string, string> = {
   pencil: "Lápis",
@@ -9,11 +10,11 @@ const TOOL_LABEL: Record<string, string> = {
 
 export function StatusBar() {
   const state = useEditor();
+  const atlas = useRealAtlas();
   const width = state.map.width;
-  const hover =
-    state.hoverCell != null
-      ? `X ${state.hoverCell % width} · Y ${Math.floor(state.hoverCell / width)}`
-      : "X — · Y —";
+  const hover = state.hoverCell != null
+    ? `X ${state.hoverCell % width} · Y ${Math.floor(state.hoverCell / width)}`
+    : "X — · Y —";
 
   return (
     <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-toolbar px-3 font-mono text-[11px] text-muted-foreground">
@@ -29,12 +30,9 @@ export function StatusBar() {
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">{state.map.metatiles.length * 2} bytes</span>
       <span className="h-4 w-px shrink-0 bg-border" />
-      <span className={state.sourceFile ? "shrink-0 text-success" : "shrink-0 text-warning"}>
-        BIN {state.sourceFile ? "✓" : "—"}
-      </span>
-      <span className={state.mapMetadata ? "shrink-0 text-success" : "shrink-0 text-warning"}>
-        JSON {state.mapMetadata ? "✓" : "—"}
-      </span>
+      <span className={state.sourceFile ? "shrink-0 text-success" : "shrink-0 text-warning"}>BIN {state.sourceFile ? "✓" : "—"}</span>
+      <span className={state.mapMetadata ? "shrink-0 text-success" : "shrink-0 text-warning"}>JSON {state.mapMetadata ? "✓" : "—"}</span>
+      <span className={atlas ? "shrink-0 text-success" : "shrink-0 text-warning"}>ATLAS {atlas ? "REAL ✓" : "DEMO"}</span>
       <span className="ml-auto truncate text-foreground/80">{state.lastMessage}</span>
     </footer>
   );
