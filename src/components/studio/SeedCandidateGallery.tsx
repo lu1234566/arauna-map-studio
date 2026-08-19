@@ -1,4 +1,4 @@
-import { Award, Check, Route, Sparkles, Trees } from "lucide-react";
+import { Award, Check, Package, Route, Sparkles } from "lucide-react";
 import type { ProceduralSeedCandidate } from "@/lib/proceduralCandidates";
 import { cn } from "@/lib/utils";
 
@@ -79,7 +79,7 @@ export function SeedCandidateGallery({
 
               <div className="mt-1.5 grid grid-cols-5 gap-0.5 text-center font-mono text-[7px] text-muted-foreground">
                 <Metric icon={<Sparkles className="size-2.5" />} value={candidate.score.landmarks} title="Marcos /30" />
-                <Metric icon={<Trees className="size-2.5" />} value={candidate.score.fillers} title="Fillers /20" />
+                <Metric icon={<Package className="size-2.5" />} value={candidate.score.fillers} title="Fillers /20" />
                 <Metric icon={<Route className="size-2.5" />} value={candidate.score.landmarkConnections} title="Conexões /20" />
                 <Metric icon={<Check className="size-2.5" />} value={candidate.score.exits} title="Saídas /20" />
                 <Metric icon={<Award className="size-2.5" />} value={candidate.score.cleanRun} title="Limpeza /10" />
