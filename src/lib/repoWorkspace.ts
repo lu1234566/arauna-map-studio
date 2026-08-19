@@ -203,19 +203,20 @@ export async function loadAraunaWorkspace(files: FileList | File[]): Promise<Ara
       const name = typeof raw.name === "string" ? raw.name : match[1];
       const layoutId = typeof raw.layout === "string" ? raw.layout : "";
       const layout = layouts.get(layoutId);
-      maps.push({
+      const mapEntry: WorkspaceMap = {
         path,
         directory: match[1],
         id,
         name,
         layoutId,
-        layout,
-        error: !layoutId
-          ? "map.json sem campo layout"
+        ...(layout ? { layout } : {}),
+        ...(!layoutId
+          ? { error: "map.json sem campo layout" }
           : !layout
-            ? `Layout ${layoutId} não encontrado em layouts.json`
-            : undefined,
-      });
+            ? { error: `Layout ${layoutId} não encontrado em layouts.json` }
+            : {}),
+      };
+      maps.push(mapEntry);
     } catch (error) {
       maps.push({
         path,
@@ -293,7 +294,8 @@ function relabelSavedAtlas(primary: string, secondary: string) {
   atlas.primary = primary;
   atlas.secondary = secondary;
   try {
-    localStorage.setItem("arauna.realAtlas.v1", JSON.stringify(atlas));
+    localStorage.setItem("arauna.realAtlas.v2", JSON.stringify(atlas));
+    localStorage.removeItem("arauna.realAtlas.v1");
   } catch {
     /* storage opcional */
   }
