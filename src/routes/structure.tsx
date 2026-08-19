@@ -11,7 +11,6 @@ import {
   Save,
 } from "lucide-react";
 import { editorStore, useEditor } from "@/lib/editorStore";
-import { exportMapBin } from "@/lib/emeraldMap";
 import {
   borderCellRaw,
   describeRawCell,
@@ -95,10 +94,11 @@ function StructurePage() {
       try {
         const next = await loadStructuralSource(workspace, currentMap);
         if (cancelled) return;
+        const selectedMetatile = editorStore.getState().selectedMetatile;
         setSource(next);
         setWidth(next.layout.width);
         setHeight(next.layout.height);
-        setFillRaw(`0x${editor.selectedMetatile.toString(16).toUpperCase().padStart(4, "0")}`);
+        setFillRaw(`0x${selectedMetatile.toString(16).toUpperCase().padStart(4, "0")}`);
         setBorderRawValues(
           next.border
             ? [0, 1, 2, 3].map((index) => `0x${borderCellRaw(next.border!, index).toString(16).toUpperCase().padStart(4, "0")}`)
@@ -115,7 +115,7 @@ function StructurePage() {
     };
     void load();
     return () => { cancelled = true; };
-  }, [workspace, currentMap?.path]);
+  }, [workspace, currentMap]);
 
   const computed = useMemo(() => {
     if (!source) return null;
