@@ -95,6 +95,40 @@ class ClipboardStore {
 
   copyRawSelection = () => this.copySelection("raw");
 
+  loadVisualBrush = (width: number, height: number, values: Iterable<number>, activateStamp = true) => {
+    const w = Math.floor(width);
+    const h = Math.floor(height);
+    const sourceValues = Array.from(values);
+    if (w <= 0 || h <= 0 || w > 64 || h > 64 || sourceValues.length !== w * h) {
+      const message = "Brush inválido: a matriz precisa ter entre 1×1 e 64×64 metatiles e tamanho consistente.";
+      this.set({ lastMessage: message });
+      editorStore.setMessage(message);
+      return false;
+    }
+    if (sourceValues.some((value) => !Number.isInteger(value) || value < 0 || value > 0x03ff)) {
+      const message = "Brush inválido: há metatile ID fora do intervalo pokeemerald 0x000–0x3FF.";
+      this.set({ lastMessage: message });
+      editorStore.setMessage(message);
+      return false;
+    }
+    const clipboard: RegionClipboard = {
+      kind: "visual",
+      width: w,
+      height: h,
+      values: Uint16Array.from(sourceValues),
+      source: { x: -1, y: -1 },
+    };
+    const message = activateStamp
+      ? `Brush ${w}×${h} criado da paleta real — mova sobre o mapa e clique/arraste para pintar.`
+      : `Brush ${w}×${h} criado da paleta real.`;
+    this.set({ clipboard, stampMode: activateStamp, lastMessage: message });
+    editorStore.setViewMode("visual");
+    editorStore.setTool("pencil");
+    editorStore.setSelection(null);
+    editorStore.setMessage(message);
+    return true;
+  };
+
   private cellWouldChange(clipboard: RegionClipboard, sourceIndex: number, targetIndex: number) {
     const map = editorStore.getState().map;
     const value = clipboard.values[sourceIndex] ?? 0;
