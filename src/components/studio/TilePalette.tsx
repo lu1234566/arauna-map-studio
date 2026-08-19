@@ -106,26 +106,7 @@ export function TilePalette() {
   }
 
   if (state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers") {
-    const label = state.viewMode === "warps" ? "Warps" : state.viewMode === "npcs" ? "NPCs" : "Triggers/BG";
-    const count = state.events.filter((event) =>
-      state.viewMode === "warps"
-        ? event.kind === "warp"
-        : state.viewMode === "npcs"
-          ? event.kind === "npc"
-          : event.kind === "trigger",
-    ).length;
-    return (
-      <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-panel">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="panel-title">{label}</span>
-          <span className="rounded-sm bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-warning">SOMENTE LEITURA</span>
-        </div>
-        <div className="p-3 text-[11px] leading-relaxed text-muted-foreground">
-          <p><b className="text-foreground">{count}</b> evento(s) visíveis nesta camada.</p>
-          <p className="mt-2">Use o canvas e o inspetor para revisar coordenadas e detalhes. A edição de eventos será uma etapa separada.</p>
-        </div>
-      </aside>
-    );
+    return <EventPalette />;
   }
 
   return (
@@ -257,6 +238,110 @@ export function TilePalette() {
         )}
       </div>
     </aside>
+  );
+}
+
+function EventPalette() {
+  const state = useEditor();
+  const [query, setQuery] = useState("");
+  const label = state.viewMode === "warps" ? "Warps" : state.viewMode === "npcs" ? "NPCs" : "Triggers/BG";
+  const events = state.events.filter((event) => {
+    const layerMatch = state.viewMode === "warps"
+      ? event.source === "warp"
+      : state.viewMode === "npcs"
+        ? event.source === "object"
+        : event.source === "coord" || event.source === "bg";
+    if (!layerMatch) return false;
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [event.label, event.source, event.detail, event.id, String(event.x), String(event.y)]
+      .some((value) => value.toLowerCase().includes(q));
+  });
+
+  const addAtSelection = (source: "warp" | "object" | "coord" | "bg") => editorStore.createEvent(source);
+
+  return (
+    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-panel">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <span className="panel-title">{label}</span>
+        <span className={cn(
+          "rounded-sm px-1.5 py-0.5 text-[9px] font-bold tracking-wider",
+          state.mapJsonDocument ? "bg-success/15 text-success" : "bg-warning/15 text-warning",
+        )}>
+          {state.mapJsonDocument ? "EDITÁVEL" : "JSON AUSENTE"}
+        </span>
+      </div>
+
+      <div className="space-y-2 border-b border-border p-2">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Buscar label, script, ID…"
+          className="h-7 w-full rounded border border-border bg-canvas px-2 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+        />
+        {state.mapJsonDocument && (
+          <div className="flex flex-wrap gap-1">
+            {state.viewMode === "warps" && <SmallAdd onClick={() => addAtSelection("warp")}>+ Warp</SmallAdd>}
+            {state.viewMode === "npcs" && <SmallAdd onClick={() => addAtSelection("object")}>+ NPC</SmallAdd>}
+            {state.viewMode === "triggers" && (
+              <>
+                <SmallAdd onClick={() => addAtSelection("coord")}>+ Trigger</SmallAdd>
+                <SmallAdd onClick={() => addAtSelection("bg")}>+ BG</SmallAdd>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="space-y-1">
+          {events.map((event) => (
+            <button
+              key={event.id}
+              type="button"
+              onClick={() => editorStore.selectEvent(event.id)}
+              className={cn(
+                "w-full rounded border p-2 text-left transition-colors",
+                state.selectedEventId === event.id
+                  ? "border-primary/50 bg-primary/10"
+                  : "border-border bg-canvas hover:bg-surface",
+              )}
+            >
+              <div className="flex items-baseline gap-1">
+                <span className="font-mono text-[10px] font-semibold text-primary">{event.label}</span>
+                <span className="text-[8px] uppercase tracking-wide text-muted-foreground">{event.source}</span>
+                <span className="ml-auto font-mono text-[9px] text-muted-foreground">{event.x},{event.y}</span>
+              </div>
+              <p className="mt-0.5 line-clamp-2 text-[9px] leading-relaxed text-muted-foreground">{event.detail || "sem detalhe"}</p>
+            </button>
+          ))}
+        </div>
+        {events.length === 0 && <p className="p-3 text-center text-xs text-muted-foreground">Nenhum evento nesta camada.</p>}
+      </div>
+
+      <div className="border-t border-border p-3 text-[10px] leading-relaxed text-muted-foreground">
+        {state.mapJsonDocument ? (
+          <>
+            <p><b className="text-foreground">{events.length}</b> evento(s) visíveis.</p>
+            <p className="mt-1">Clique para selecionar; arraste no mapa para mover. Campos completos ficam no inspetor.</p>
+          </>
+        ) : (
+          <p>Abra o mapa pelo <b className="text-foreground">Workspace</b> ou importe map.json para editar.</p>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function SmallAdd({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-sm border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[9px] text-primary hover:bg-primary/15"
+    >
+      {children}
+    </button>
   );
 }
 
