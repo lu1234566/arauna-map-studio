@@ -48,31 +48,40 @@
 
 :root {
   --radius: 0.375rem;
+
   --background: oklch(0.184 0.008 150);
   --foreground: oklch(0.925 0.008 140);
+
   --canvas: oklch(0.145 0.008 150);
   --panel: oklch(0.216 0.008 150);
   --panel-foreground: oklch(0.925 0.008 140);
   --toolbar: oklch(0.238 0.009 150);
   --surface: oklch(0.262 0.009 150);
+
   --card: oklch(0.216 0.008 150);
   --card-foreground: oklch(0.925 0.008 140);
   --popover: oklch(0.238 0.009 150);
   --popover-foreground: oklch(0.925 0.008 140);
+
   --primary: oklch(0.66 0.135 148);
   --primary-foreground: oklch(0.16 0.02 150);
+
   --secondary: oklch(0.288 0.009 150);
   --secondary-foreground: oklch(0.9 0.008 140);
+
   --muted: oklch(0.268 0.008 150);
   --muted-foreground: oklch(0.655 0.012 145);
+
   --accent: oklch(0.315 0.02 150);
   --accent-foreground: oklch(0.93 0.01 140);
+
   --destructive: oklch(0.6 0.17 25);
   --destructive-foreground: oklch(0.97 0.01 140);
   --success: oklch(0.7 0.14 150);
   --success-foreground: oklch(0.16 0.02 150);
   --warning: oklch(0.76 0.13 78);
   --warning-foreground: oklch(0.18 0.02 80);
+
   --border: oklch(0.295 0.008 150);
   --border-strong: oklch(0.375 0.01 150);
   --input: oklch(0.288 0.009 150);
@@ -84,24 +93,46 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html, body, #root { height: 100%; }
+  * {
+    border-color: var(--color-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
   }
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: var(--color-canvas); }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-canvas);
+  }
   ::-webkit-scrollbar-thumb {
     background: var(--color-surface);
     border-radius: 6px;
     border: 2px solid var(--color-canvas);
   }
-  ::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-strong);
+  }
 }
 
 @utility pixelated {
