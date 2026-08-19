@@ -34,7 +34,7 @@ export function StatusBar() {
       <span className="shrink-0">{eventView ? "Selecionar/arrastar evento" : TOOL_LABEL[state.tool]}</span>
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">Camada: {state.viewMode}{layerValue}</span>
-      {selectedEvent && (
+      {eventView && selectedEvent && (
         <>
           <span className="h-4 w-px shrink-0 bg-border" />
           <span className="shrink-0 text-primary">{selectedEvent.label} · {selectedEvent.source}</span>
@@ -54,7 +54,14 @@ export function StatusBar() {
         JSON {state.mapMetadata ? "✓" : "—"}{state.mapJsonDirty ? "*" : ""}
       </span>
       <span className={atlas ? "shrink-0 text-success" : "shrink-0 text-warning"}>ATLAS {atlas ? "REAL ✓" : "DEMO"}</span>
-      {session && <span className="shrink-0 text-success" title={session.label}>WORKSPACE ✓</span>}
+      {session && (
+        <span
+          className={session.writeAccess ? "shrink-0 text-success" : "shrink-0 text-warning"}
+          title={`${session.label} · ${session.writeAccess ? "leitura + escrita" : "somente leitura"}`}
+        >
+          WORKSPACE {session.writeAccess ? "R/W ✓" : "RO"}
+        </span>
+      )}
       <span className="ml-auto truncate text-foreground/80">{state.lastMessage}</span>
     </footer>
   );
