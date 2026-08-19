@@ -49,6 +49,37 @@ describe("clipboardStore", () => {
     expect(getElevation(map.physical[idx(6, 5, map.width)] ?? 0)).toBe(4);
   });
 
+  it("creates a visual brush directly from metatile ids and preserves physical bits when stamping", () => {
+    paintPhysical(8, 8, 3, 10);
+    paintPhysical(9, 8, 2, 4);
+    paintPhysical(8, 9, 1, 7);
+    paintPhysical(9, 9, 0, 5);
+
+    expect(clipboardStore.loadVisualBrush(2, 2, [101, 102, 103, 104])).toBe(true);
+    const clipboard = clipboardStore.getState().clipboard;
+    expect(clipboard?.kind).toBe("visual");
+    expect(clipboardStore.getState().stampMode).toBe(true);
+    expect(Array.from(clipboard?.values ?? [])).toEqual([101, 102, 103, 104]);
+
+    expect(clipboardStore.stampAt(8, 8)).toBeGreaterThan(0);
+    const map = editorStore.getState().map;
+    expect(map.metatiles[idx(8, 8, map.width)]).toBe(101);
+    expect(map.metatiles[idx(9, 8, map.width)]).toBe(102);
+    expect(map.metatiles[idx(8, 9, map.width)]).toBe(103);
+    expect(map.metatiles[idx(9, 9, map.width)]).toBe(104);
+    expect(getCollision(map.physical[idx(8, 8, map.width)] ?? 0)).toBe(3);
+    expect(getElevation(map.physical[idx(8, 8, map.width)] ?? 0)).toBe(10);
+    expect(getCollision(map.physical[idx(9, 9, map.width)] ?? 0)).toBe(0);
+    expect(getElevation(map.physical[idx(9, 9, map.width)] ?? 0)).toBe(5);
+  });
+
+  it("rejects malformed palette brushes", () => {
+    expect(clipboardStore.loadVisualBrush(2, 2, [1, 2, 3])).toBe(false);
+    expect(clipboardStore.getState().clipboard).toBeNull();
+    expect(clipboardStore.loadVisualBrush(1, 1, [0x400])).toBe(false);
+    expect(clipboardStore.getState().clipboard).toBeNull();
+  });
+
   it("RAW copy/paste transfers metatile, collision and elevation together", () => {
     paintVisual(1, 1, 77);
     paintPhysical(1, 1, 3, 9);
