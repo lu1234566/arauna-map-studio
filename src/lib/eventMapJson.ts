@@ -51,13 +51,16 @@ export function parseEventId(id: string): { source: EditableEventSource; index: 
   return { source: match[1] as EditableEventSource, index: Number(match[2]) };
 }
 
+function rawEventArray(document: EditableMapJson, source: EditableEventSource): unknown[] {
+  const value = document[EVENT_ARRAY_KEY[source]];
+  return Array.isArray(value) ? value : [];
+}
+
 export function eventArray(
   document: EditableMapJson,
   source: EditableEventSource,
 ): EditableJsonRecord[] {
-  const value = document[EVENT_ARRAY_KEY[source]];
-  if (!Array.isArray(value)) return [];
-  return value.filter(isRecord);
+  return rawEventArray(document, source).filter(isRecord);
 }
 
 export function eventRecord(
@@ -66,22 +69,21 @@ export function eventRecord(
 ): { source: EditableEventSource; index: number; record: EditableJsonRecord } | null {
   const parsed = parseEventId(id);
   if (!parsed) return null;
-  const array = eventArray(document, parsed.source);
-  const record = array[parsed.index];
-  if (!record) return null;
-  return { ...parsed, record };
+  const raw = rawEventArray(document, parsed.source)[parsed.index];
+  if (!isRecord(raw)) return null;
+  return { ...parsed, record: raw };
 }
 
-function requireEventArray(document: EditableMapJson, source: EditableEventSource): EditableJsonRecord[] {
+function requireEventArray(document: EditableMapJson, source: EditableEventSource): unknown[] {
   const key = EVENT_ARRAY_KEY[source];
   const value = document[key];
   if (value == null) {
-    const created: EditableJsonRecord[] = [];
+    const created: unknown[] = [];
     document[key] = created;
     return created;
   }
   if (!Array.isArray(value)) throw new EventMapJsonError(`${key} não é uma lista.`);
-  return value as EditableJsonRecord[];
+  return value;
 }
 
 function normalizeFieldValue(key: string, value: unknown, current: unknown): unknown {
@@ -111,9 +113,9 @@ export function updateEventField(
   const parsed = parseEventId(id);
   if (!parsed) throw new EventMapJsonError(`ID de evento inválido: ${id}`);
   const array = requireEventArray(next, parsed.source);
-  const record = array[parsed.index];
-  if (!isRecord(record)) throw new EventMapJsonError(`Evento não encontrado: ${id}`);
-  record[key] = normalizeFieldValue(key, value, record[key]);
+  const raw = array[parsed.index];
+  if (!isRecord(raw)) throw new EventMapJsonError(`Evento não encontrado: ${id}`);
+  raw[key] = normalizeFieldValue(key, value, raw[key]);
   return next;
 }
 
@@ -131,10 +133,15 @@ export function moveEvent(
   return next;
 }
 
-function defaultEvent(source: EditableEventSource, x: number, y: number): EditableJsonRecord {
+function defaultEvent(
+  source: EditableEventSource,
+  x: number,
+  y: number,
+  currentMapId: string,
+): EditableJsonRecord {
   switch (source) {
     case "warp":
-      return { x, y, elevation: 0, dest_map: "MAP_LITTLEROOT_TOWN", dest_warp_id: "0" };
+      return { x, y, elevation: 0, dest_map: currentMapId, dest_warp_id: "0" };
     case "object":
       return {
         graphics_id: "OBJ_EVENT_GFX_BOY_1",
@@ -183,9 +190,15 @@ export function addEvent(
   const next = cloneMapJson(document);
   const array = requireEventArray(next, source);
   const previous = array.length > 0 ? array[array.length - 1] : null;
-  const created = previous && isRecord(previous)
-    ? { ...cloneMapJson(previous), x, y }
-    : defaultEvent(source, x, y);
+  const currentMapId = typeof next.id === "string" ? next.id : "MAP_LITTLEROOT_TOWN";
+  let created: EditableJsonRecord;
+
+  if (source !== "object" && isRecord(previous)) {
+    created = { ...cloneMapJson(previous), x, y };
+  } else {
+    created = defaultEvent(source, x, y, currentMapId);
+  }
+
   array.push(created);
   return { document: next, id: eventId(source, array.length - 1) };
 }
@@ -195,7 +208,7 @@ export function removeEvent(document: EditableMapJson, id: string): EditableMapJ
   if (!parsed) throw new EventMapJsonError(`ID de evento inválido: ${id}`);
   const next = cloneMapJson(document);
   const array = requireEventArray(next, parsed.source);
-  if (parsed.index < 0 || parsed.index >= array.length) {
+  if (parsed.index < 0 || parsed.index >= array.length || !isRecord(array[parsed.index])) {
     throw new EventMapJsonError(`Evento não encontrado: ${id}`);
   }
   array.splice(parsed.index, 1);
