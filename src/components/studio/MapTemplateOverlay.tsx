@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TILE_PX } from "@/lib/demoAtlas";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { mapTemplateStore, useMapTemplates } from "@/lib/mapTemplateStore";
@@ -21,7 +21,11 @@ export function MapTemplateOverlay() {
   const dragRef = useRef<DragState>(null);
   const cellSize = TILE_PX * editor.zoom * 2;
 
-  if (!templates.enabled || !active) return null;
+  useEffect(() => {
+    if (templates.enabled && editor.viewMode !== "visual") mapTemplateStore.setEnabled(false);
+  }, [templates.enabled, editor.viewMode]);
+
+  if (!templates.enabled || !active || editor.viewMode !== "visual") return null;
 
   const cellFromEvent = (event: {
     currentTarget: EventTarget & HTMLDivElement;
