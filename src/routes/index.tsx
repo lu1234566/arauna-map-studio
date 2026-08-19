@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
+import { Gen3LibraryLauncher } from "@/components/studio/Gen3LibraryLauncher";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapBlueprintDock } from "@/components/studio/MapBlueprintDock";
 import { MapCanvas } from "@/components/studio/MapCanvas";
@@ -148,6 +149,7 @@ function Index() {
           <MapBlueprintDock />
           <ClipboardDock />
           <ProceduralGeneratorLauncher />
+          <Gen3LibraryLauncher />
         </main>
         <Inspector />
         {state.validation && <ValidationPanel report={state.validation} onClose={() => editorStore.clearValidation()} />}
