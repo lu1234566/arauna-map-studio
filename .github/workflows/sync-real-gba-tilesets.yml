@@ -7,13 +7,24 @@ on:
     paths:
       - scripts/sync_gba_tilesets.py
       - .github/workflows/sync-real-gba-tilesets.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/sync_gba_tilesets.py
+      - src/lib/gbaTilesetLibrary.ts
+      - src/lib/realAtlasStore.ts
+      - src/lib/demoAtlas.ts
+      - src/components/studio/TilePalette.tsx
+      - src/routes/tilesets.tsx
+      - .github/workflows/sync-real-gba-tilesets.yml
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: real-gba-tilesets-${{ github.ref }}
+  group: real-gba-tilesets-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -76,6 +87,7 @@ jobs:
         run: npm run build
 
       - name: Commit generated library
+        if: github.event_name != 'pull_request'
         run: |
           if [[ -n "$(git status --porcelain public/gba)" ]]; then
             git config user.name "github-actions[bot]"
