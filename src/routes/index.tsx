@@ -4,6 +4,9 @@ import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapCanvas } from "@/components/studio/MapCanvas";
+import { MapTemplateDock } from "@/components/studio/MapTemplateDock";
+import { MapTemplateOverlay } from "@/components/studio/MapTemplateOverlay";
+import { MapTemplateScopeGuard } from "@/components/studio/MapTemplateScopeGuard";
 import { PatternLibraryDock } from "@/components/studio/PatternLibraryDock";
 import { PatternOverlay } from "@/components/studio/PatternOverlay";
 import { PatternScopeGuard } from "@/components/studio/PatternScopeGuard";
@@ -17,6 +20,7 @@ import { TopToolbar } from "@/components/studio/TopToolbar";
 import { ValidationPanel } from "@/components/studio/ValidationPanel";
 import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore, useEditor } from "@/lib/editorStore";
+import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { patternLibraryStore } from "@/lib/patternLibraryStore";
 import { smartPathStore } from "@/lib/smartPathStore";
 
@@ -28,6 +32,7 @@ function Index() {
   useEffect(() => {
     if (state.tool !== "pencil" && smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
     if (state.tool !== "pencil" && patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
+    if (state.tool !== "pencil" && mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
   }, [state.tool]);
 
   useEffect(() => {
@@ -45,19 +50,47 @@ function Index() {
       if (modifier && key === "v") { event.preventDefault(); clipboardStore.pasteAtSelected(); return; }
 
       if (key === "escape") {
-        if (patternLibraryStore.getState().enabled) { event.preventDefault(); patternLibraryStore.setEnabled(false); }
+        if (mapTemplateStore.getState().enabled) { event.preventDefault(); mapTemplateStore.setEnabled(false); }
+        else if (patternLibraryStore.getState().enabled) { event.preventDefault(); patternLibraryStore.setEnabled(false); }
         else if (smartPathStore.getState().enabled) { event.preventDefault(); smartPathStore.setEnabled(false); }
         else if (clipboardStore.getState().stampMode) { event.preventDefault(); clipboardStore.toggleStampMode(false); }
         else editorStore.setSelection(null);
         return;
       }
 
-      if (key === "l") { event.preventDefault(); if (!patternLibraryStore.getState().enabled) editorStore.setTool("pencil"); patternLibraryStore.toggleEnabled(); return; }
-      if (key === "p") { event.preventDefault(); if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false); if (!smartPathStore.getState().enabled) editorStore.setTool("pencil"); smartPathStore.toggleEnabled(); return; }
+      if (key === "t") {
+        event.preventDefault();
+        if (!mapTemplateStore.getState().enabled) editorStore.setTool("pencil");
+        mapTemplateStore.toggleEnabled();
+        return;
+      }
+      if (key === "l") {
+        event.preventDefault();
+        if (mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
+        if (!patternLibraryStore.getState().enabled) editorStore.setTool("pencil");
+        patternLibraryStore.toggleEnabled();
+        return;
+      }
+      if (key === "p") {
+        event.preventDefault();
+        if (mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
+        if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
+        if (!smartPathStore.getState().enabled) editorStore.setTool("pencil");
+        smartPathStore.toggleEnabled();
+        return;
+      }
       if (key === "e" && smartPathStore.getState().enabled) { event.preventDefault(); smartPathStore.toggleMode(); return; }
-      if (key === "v") { event.preventDefault(); if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false); if (smartPathStore.getState().enabled) smartPathStore.setEnabled(false); clipboardStore.toggleStampMode(); return; }
+      if (key === "v") {
+        event.preventDefault();
+        if (mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
+        if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
+        if (smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
+        clipboardStore.toggleStampMode();
+        return;
+      }
 
       if (key === "b" || key === "i" || key === "g" || key === "m") {
+        if (mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
         if (patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
         if (smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
         if (clipboardStore.getState().stampMode) clipboardStore.toggleStampMode(false);
@@ -83,11 +116,14 @@ function Index() {
           <StampOverlay />
           <SmartPathOverlay />
           <PatternOverlay />
+          <MapTemplateOverlay />
           <ExclusivePaintModeGuard />
           <SmartPathScopeGuard />
           <PatternScopeGuard />
+          <MapTemplateScopeGuard />
           <SmartPathDock />
           <PatternLibraryDock />
+          <MapTemplateDock />
           <ClipboardDock />
         </main>
         <Inspector />

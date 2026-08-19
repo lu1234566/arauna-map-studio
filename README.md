@@ -29,8 +29,11 @@ O Studio já suporta:
 - seleção de regiões com clipboard interno, copiar/recortar/colar e carimbo multi-metatile;
 - clipboard por camada ou RAW completo, com rotação e espelhamento;
 - **Smart Paths** com 16 máscaras NESW, presets persistentes e pintura por clique/arraste;
-- importação/exportação de presets Smart Path em JSON, com escopo opcional do par de tilesets;
-- testes unitários com Vitest para parser, estrutura, workspace, eventos, clipboard e Smart Paths.
+- **Biblioteca de Padrões** para salvar casas, praças, lagos, pontes, grupos de árvores e outras regiões aprovadas;
+- **Templates de mapa** que combinam padrões reutilizáveis + Smart Paths em composições maiores;
+- importação/exportação JSON para Smart Paths, padrões e templates;
+- escopo opcional `primary + secondary` para impedir uso acidental em tilesets incompatíveis;
+- testes unitários com Vitest para parser, estrutura, workspace, eventos, clipboard, Smart Paths, padrões e templates.
 
 ## Fluxo recomendado no Chromebook
 
@@ -100,7 +103,75 @@ Atalhos:
 - `Esc`: sair de Smart Paths;
 - `Shift`, `Alt`, botão do meio ou botão direito: mover o canvas durante o modo Smart Path.
 
-Os presets ficam em `localStorage` e podem ser exportados/importados em JSON. Quando criados com um atlas real carregado, também guardam o par `primary + secondary` como referência de escopo; divergências são mostradas como aviso, não corrigidas por adivinhação.
+## Biblioteca de Padrões
+
+A Biblioteca transforma uma região já aprovada do mapa em uma peça reutilizável. Isso é útil para guardar, por exemplo:
+
+- casas rurais;
+- laboratórios;
+- praças e fogueiras;
+- portões;
+- pontes;
+- trechos de lago;
+- grupos de árvores;
+- canteiros e detalhes urbanos.
+
+Um padrão pode guardar apenas **Visual**, apenas **Colisão**, apenas **Elevação** ou **RAW completo**. Padrões Visual preservam colisão/elevação do destino; padrões RAW carregam as três camadas juntas.
+
+Fluxo:
+
+1. selecione uma região (`M`);
+2. copie a camada ou RAW (`Ctrl+C` / `Ctrl+Shift+C`);
+3. abra **Padrões → Biblioteca**;
+4. use **Salvar clipboard**;
+5. dê nome, categoria e tags;
+6. ative o padrão e carimbe em outras posições.
+
+Atalho: `L` liga/desliga o padrão ativo.
+
+## Templates de mapa
+
+Templates são a camada de composição acima da Biblioteca de Padrões. Eles **não** armazenam screenshots nem convertem uma imagem em mapa. Em vez disso, referenciam peças GBA já verificadas e caminhos Smart Path.
+
+Um template pode dizer, por exemplo:
+
+```text
+Vila Rural Arauna 30×24
+  Casa_Rural_01        @ 4,4
+  Laboratorio_Anahi    @ 18,15
+  Praca_Fogueira       @ 10,8
+  Grupo_Arvores_03     @ 2,13
+  Estrada_Terra        6,20 → 6,10 → 13,10 → 13,5
+```
+
+Esse formato é propositalmente declarativo. Ele é a base para uma etapa futura em que um gerador pode transformar uma instrução como “crie uma vila rural com praça central e laboratório ao sul” em uma lista de peças verificadas, em vez de inventar pixels ou IDs de metatile.
+
+Fluxo:
+
+1. crie os padrões reutilizáveis e presets Smart Path necessários;
+2. abra **Templates → Compor**;
+3. crie um template com largura/altura;
+4. adicione o padrão atualmente selecionado com coordenadas relativas;
+5. adicione Smart Paths informando waypoints ortogonais no formato `x,y; x,y; x,y`;
+6. confira o relatório de dependências;
+7. ative Templates e clique no mapa para posicionar a origem da composição.
+
+O template é aplicado como **uma única operação de Undo**. Células protegidas permanecem intactas. Elementos fora dos limites do mapa são ignorados e reportados. Dependências ausentes ou tilesets incompatíveis bloqueiam a aplicação.
+
+Atalho: `T` liga/desliga o template ativo.
+
+## Modos especiais de pintura
+
+Somente um destes modos fica ativo por vez:
+
+```text
+V  Carimbo temporário do clipboard
+P  Smart Paths
+L  Biblioteca de Padrões
+T  Templates
+```
+
+Ativar um modo entrega o controle dos outros. `Esc` sai do modo ativo.
 
 ## Formato Emerald usado
 
@@ -149,10 +220,17 @@ Não é necessário GitHub Actions ou Codespaces para desenvolver o Studio.
 - `src/lib/clipboardStore.ts` — copiar/recortar/colar e carimbo;
 - `src/lib/smartPath.ts` — masks NESW, validação e planejamento do autotile;
 - `src/lib/smartPathStore.ts` — presets persistentes e aplicação no editor;
+- `src/lib/patternLibrary.ts` — formato e serialização de padrões reutilizáveis;
+- `src/lib/patternLibraryStore.ts` — persistência e aplicação dos padrões;
+- `src/lib/mapTemplate.ts` — formato declarativo, dependências e planejamento de templates;
+- `src/lib/mapTemplateStore.ts` — biblioteca persistente e aplicação agrupada de templates;
 - `src/components/studio/MapCanvas.tsx` — canvas principal;
 - `src/components/studio/StampOverlay.tsx` — carimbo multi-metatile;
 - `src/components/studio/SmartPathOverlay.tsx` — pincel Smart Path;
 - `src/components/studio/SmartPathDock.tsx` — editor dos 16 masks;
+- `src/components/studio/PatternLibraryDock.tsx` — biblioteca de estruturas reutilizáveis;
+- `src/components/studio/MapTemplateDock.tsx` — compositor de templates;
+- `src/components/studio/MapTemplateOverlay.tsx` — posicionamento visual dos templates;
 - `src/routes/workspace.tsx` — seletor de mapas;
 - `src/routes/structure.tsx` — edição estrutural;
 - `src/routes/map-settings.tsx` — propriedades e conexões.
