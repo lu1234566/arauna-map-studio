@@ -2,6 +2,8 @@ export type MapEventKind = "warp" | "npc" | "trigger";
 export type MapEventSource = "warp" | "object" | "coord" | "bg";
 
 export interface ParsedMapEvent {
+  id: string;
+  sourceIndex: number;
   x: number;
   y: number;
   kind: MapEventKind;
@@ -93,6 +95,10 @@ function addProtected(
   if (!current.reason.includes(reason)) current.reason += ` | ${reason}`;
 }
 
+function editableId(source: MapEventSource, index: number) {
+  return `${source}:${index}`;
+}
+
 /**
  * Interpreta data/maps/<MapName>/map.json do pokeemerald.
  *
@@ -136,7 +142,15 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
       `warp ${destWarp}`,
       elevation !== null ? `elev ${elevation}` : null,
     ]);
-    events.push({ ...point, kind: "warp", source: "warp", label, detail });
+    events.push({
+      id: editableId("warp", index),
+      sourceIndex: index,
+      ...point,
+      kind: "warp",
+      source: "warp",
+      label,
+      detail,
+    });
     addProtected(protectedByCoord, point.x, point.y, `${label}: ${destMap}`);
   });
 
@@ -157,7 +171,15 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
       script && script !== "0x0" ? `script ${script}` : null,
       flag && flag !== "0" ? `flag ${flag}` : null,
     ]);
-    events.push({ ...point, kind: "npc", source: "object", label, detail });
+    events.push({
+      id: editableId("object", index),
+      sourceIndex: index,
+      ...point,
+      kind: "npc",
+      source: "object",
+      label,
+      detail,
+    });
   });
 
   coordEntries.forEach((raw, index) => {
@@ -173,7 +195,15 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
       variable ? `${variable} = ${value}` : null,
       script ? `script ${script}` : null,
     ]);
-    events.push({ ...point, kind: "trigger", source: "coord", label, detail });
+    events.push({
+      id: editableId("coord", index),
+      sourceIndex: index,
+      ...point,
+      kind: "trigger",
+      source: "coord",
+      label,
+      detail,
+    });
     addProtected(protectedByCoord, point.x, point.y, `${label}: ${script ?? "coord event"}`);
   });
 
@@ -185,15 +215,21 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
     const script = text(entry.script);
     const type = text(entry.type) ?? "bg";
     const facing = text(entry.player_facing_dir);
-    // O MVP ainda não possui uma camada "Signs" separada; BG events aparecem
-    // na camada Triggers, mas mantêm origem/label próprios no inspetor.
     const label = `S${index}`;
     const detail = compact([
       type.toUpperCase(),
       script ? `script ${script}` : null,
       facing,
     ]);
-    events.push({ ...point, kind: "trigger", source: "bg", label, detail });
+    events.push({
+      id: editableId("bg", index),
+      sourceIndex: index,
+      ...point,
+      kind: "trigger",
+      source: "bg",
+      label,
+      detail,
+    });
     addProtected(protectedByCoord, point.x, point.y, `${label}: ${script ?? type}`);
   });
 
