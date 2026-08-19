@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapCanvas } from "@/components/studio/MapCanvas";
+import { StampOverlay } from "@/components/studio/StampOverlay";
 import { StatusBar } from "@/components/studio/StatusBar";
 import { TilePalette } from "@/components/studio/TilePalette";
 import { TopToolbar } from "@/components/studio/TopToolbar";
 import { ValidationPanel } from "@/components/studio/ValidationPanel";
+import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore, useEditor } from "@/lib/editorStore";
 
 export const Route = createFileRoute("/")({
@@ -41,6 +44,41 @@ function Index() {
         return;
       }
 
+      if (modifier && key === "c") {
+        event.preventDefault();
+        if (event.shiftKey) clipboardStore.copyRawSelection();
+        else clipboardStore.copySelection();
+        return;
+      }
+
+      if (modifier && key === "x") {
+        event.preventDefault();
+        clipboardStore.cutSelection(event.shiftKey ? "raw" : undefined);
+        return;
+      }
+
+      if (modifier && key === "v") {
+        event.preventDefault();
+        clipboardStore.pasteAtSelected();
+        return;
+      }
+
+      if (key === "escape") {
+        if (clipboardStore.getState().stampMode) {
+          event.preventDefault();
+          clipboardStore.toggleStampMode(false);
+        } else {
+          editorStore.setSelection(null);
+        }
+        return;
+      }
+
+      if (key === "v") {
+        event.preventDefault();
+        clipboardStore.toggleStampMode();
+        return;
+      }
+
       if (key === "b") editorStore.setTool("pencil");
       else if (key === "i") editorStore.setTool("picker");
       else if (key === "g") editorStore.setTool("fill");
@@ -61,6 +99,8 @@ function Index() {
         <TilePalette />
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <MapCanvas />
+          <StampOverlay />
+          <ClipboardDock />
         </main>
         <Inspector />
 
