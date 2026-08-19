@@ -77,7 +77,7 @@ export const GEN3_PROFILES: Record<Gen3SourceId, Gen3Profile> = {
     primaryTileLimit: 512,
     primaryMetatileLimit: 512,
     primaryPaletteCount: 6,
-    totalPaletteCount: 13,
+    totalPaletteCount: 12,
     attributeBytes: 2,
   },
   "firered-leafgreen": {

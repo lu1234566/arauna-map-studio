@@ -39,10 +39,16 @@ A biblioteca usa os limites corretos de cada família:
 | Família | Primary tiles/metatiles | Secondary | Paletas primary | Paletas secondary | Attributes |
 |---|---:|---:|---:|---:|---:|
 | Emerald | 512 | 512 | 6 | 7 | 2 bytes |
-| Ruby/Sapphire | 512 | 512 | 6 | 7 | 2 bytes |
+| Ruby/Sapphire | 512 | 512 | 6 | 6 | 2 bytes |
 | FireRed/LeafGreen | 640 | 384 | 7 | 6 | 4 bytes |
 
 O navegador baixa os arquivos das fontes no momento em que o usuário abre um par. O repositório do Studio não contém um pacote copiado de PNGs dos jogos.
+
+## Usar os tiles no editor
+
+Pares de **Pokémon Emerald** carregados na Biblioteca Gen III podem ser instalados diretamente como atlas visual ativo do Arauna Map Studio. Assim, o editor deixa de ficar limitado ao par General + Petalburg e pode trabalhar com os demais pares reais de Emerald encontrados nos layouts.
+
+Pares de **Ruby/Sapphire** e **FireRed/LeafGreen** permanecem deliberadamente em modo de referência. Eles não são instalados como IDs do mapa de Arauna porque os espaços de metatiles, paletas e atributos não são equivalentes ao pokeemerald.
 
 ## Regra de compatibilidade
 
