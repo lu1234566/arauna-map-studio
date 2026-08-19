@@ -158,9 +158,10 @@ function detectTilesetDirectories(paths: Iterable<string>): WorkspaceTilesetDire
   const found = new Map<string, WorkspaceTilesetDirectory>();
   for (const path of paths) {
     const match = path.match(/^data\/tilesets\/(primary|secondary)\/([^/]+)\//i);
-    if (!match) continue;
-    const side = match[1].toLowerCase() as TilesetSide;
-    const name = match[2];
+    const sideRaw = match?.[1];
+    const name = match?.[2];
+    if (!sideRaw || !name) continue;
+    const side = sideRaw.toLowerCase() as TilesetSide;
     const dir = `data/tilesets/${side}/${name}`;
     const id = `${side}:${normalizeTilesetKey(name)}`;
     if (!found.has(id)) {
@@ -196,16 +197,17 @@ export async function loadAraunaWorkspace(files: FileList | File[]): Promise<Ara
 
   for (const [path, file] of exact) {
     const match = path.match(/^data\/maps\/([^/]+)\/map\.json$/i);
-    if (!match) continue;
+    const directory = match?.[1];
+    if (!directory) continue;
     try {
       const raw = JSON.parse(await file.text()) as Record<string, unknown>;
-      const id = typeof raw.id === "string" ? raw.id : match[1];
-      const name = typeof raw.name === "string" ? raw.name : match[1];
+      const id = typeof raw.id === "string" ? raw.id : directory;
+      const name = typeof raw.name === "string" ? raw.name : directory;
       const layoutId = typeof raw.layout === "string" ? raw.layout : "";
       const layout = layouts.get(layoutId);
       const mapEntry: WorkspaceMap = {
         path,
-        directory: match[1],
+        directory,
         id,
         name,
         layoutId,
@@ -220,9 +222,9 @@ export async function loadAraunaWorkspace(files: FileList | File[]): Promise<Ara
     } catch (error) {
       maps.push({
         path,
-        directory: match[1],
-        id: match[1],
-        name: match[1],
+        directory,
+        id: directory,
+        name: directory,
         layoutId: "",
         error: error instanceof Error ? error.message : String(error),
       });
@@ -239,8 +241,9 @@ async function readPalettes(workspace: AraunaWorkspace, dir: WorkspaceTilesetDir
   for (const [path, file] of workspace.files) {
     if (!path.toLowerCase().startsWith(prefix)) continue;
     const match = path.match(/\/(\d{2})\.pal$/i);
-    if (!match) continue;
-    palettes.set(Number(match[1]), parseJascPalette(await file.text()));
+    const paletteIndex = match?.[1];
+    if (!paletteIndex) continue;
+    palettes.set(Number(paletteIndex), parseJascPalette(await file.text()));
   }
   return palettes;
 }
