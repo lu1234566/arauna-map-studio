@@ -82,9 +82,12 @@ export function candidateSeed(baseSeed: string, index: number): string {
  * an accidental 24 × 512 × 512 search burst on the browser main thread.
  */
 export function candidateBudget(spec: Pick<ProceduralBlueprintSpec, "width" | "height">, requested: number) {
-  const area = Math.max(1, Math.floor(spec.width)) * Math.max(1, Math.floor(spec.height));
+  const width = Number.isFinite(spec.width) ? Math.max(1, Math.floor(spec.width)) : 30;
+  const height = Number.isFinite(spec.height) ? Math.max(1, Math.floor(spec.height)) : 24;
+  const desired = Number.isFinite(requested) ? Math.max(1, Math.floor(requested)) : 8;
+  const area = width * height;
   const maxForArea = area > 65536 ? 4 : area > 16384 ? 8 : area > 4096 ? 16 : 24;
-  return Math.max(1, Math.min(maxForArea, 24, Math.floor(requested)));
+  return Math.min(maxForArea, 24, desired);
 }
 
 /**
