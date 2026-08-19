@@ -26,6 +26,7 @@ import {
   useWorkspaceSession,
   workspaceSessionStore,
 } from "@/lib/workspaceSession";
+import { prepareWorkspaceTransition } from "@/lib/workspaceSwitchGuard";
 
 export const Route = createFileRoute("/workspace")({ component: WorkspaceRoute });
 
@@ -71,8 +72,25 @@ function WorkspaceRoute() {
     });
   }, [workspace, query]);
 
+  const allowTransition = async () => {
+    const result = await prepareWorkspaceTransition(session);
+    if (!result.proceed) {
+      setMessage(
+        result.reason && result.reason !== "cancelled"
+          ? `Troca cancelada: ${result.reason}`
+          : "Troca cancelada. O mapa atual e suas alterações foram mantidos.",
+      );
+      return false;
+    }
+    return true;
+  };
+
   const handleDirectory = async (files: FileList | null) => {
     if (!files?.length) return;
+    if (!(await allowTransition())) {
+      if (directoryRef.current) directoryRef.current.value = "";
+      return;
+    }
     setLoadingWorkspace(true);
     setError(null);
     setMessage(`Indexando ${files.length} arquivos localmente em modo somente leitura…`);
@@ -95,6 +113,7 @@ function WorkspaceRoute() {
 
   const handleWritableDirectory = async () => {
     if (loadingWorkspace || openingPath) return;
+    if (!(await allowTransition())) return;
     setLoadingWorkspace(true);
     setError(null);
     setMessage("Solicitando acesso de leitura e escrita à pasta…");
@@ -121,6 +140,7 @@ function WorkspaceRoute() {
 
   const handleOpenMap = async (map: WorkspaceMap) => {
     if (!workspace || openingPath) return;
+    if (!(await allowTransition())) return;
     setOpeningPath(map.path);
     setError(null);
     setMessage(`Abrindo ${map.name}: mapa, metadados e tilesets…`);
@@ -141,7 +161,8 @@ function WorkspaceRoute() {
     }
   };
 
-  const closeWorkspace = () => {
+  const closeWorkspace = async () => {
+    if (!(await allowTransition())) return;
     workspaceSessionStore.clear();
     setQuery("");
     setError(null);
@@ -180,7 +201,7 @@ function WorkspaceRoute() {
           {workspace && (
             <button
               type="button"
-              onClick={closeWorkspace}
+              onClick={() => void closeWorkspace()}
               disabled={Boolean(openingPath)}
               className="inline-flex h-8 items-center gap-1 rounded border border-border px-2 text-[10px] text-muted-foreground hover:bg-surface hover:text-foreground disabled:opacity-50"
             >
@@ -226,7 +247,7 @@ function WorkspaceRoute() {
           </p>
 
           <div className="mt-3 rounded border border-success/30 bg-success/5 p-2 text-[10px] leading-relaxed text-muted-foreground">
-            <b className="text-success">R/W:</b> o botão <b className="text-foreground">Salvar pasta</b> do editor grava o map.bin e/ou map.json modificados exatamente nos caminhos de origem. O modo “Somente leitura” continua disponível como fallback e usa download.
+            <b className="text-success">R/W:</b> o botão <b className="text-foreground">Salvar pasta</b> do editor grava o map.bin e/ou map.json modificados exatamente nos caminhos de origem. Antes de trocar de mapa, alterações pendentes nunca são descartadas silenciosamente.
           </div>
 
           <div className="mt-2 rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed text-muted-foreground">
