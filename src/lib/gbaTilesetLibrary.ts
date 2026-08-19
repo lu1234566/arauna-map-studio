@@ -79,6 +79,11 @@ interface LayoutsDocument {
   layouts?: LayoutRecord[];
 }
 
+interface GithubContentEntry {
+  name?: string;
+  type?: string;
+}
+
 interface FamilyProfile {
   primaryTileLimit: number;
   primaryMetatileLimit: number;
@@ -161,7 +166,15 @@ export function useGbaTilesetLibrary() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-function symbolDirectory(symbol: string) {
+function normalized(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function symbolKey(symbol: string) {
+  return normalized(symbol.replace(/^gTileset_/, ""));
+}
+
+function symbolDirectoryFallback(symbol: string) {
   return symbol
     .replace(/^gTileset_/, "")
     .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
@@ -207,9 +220,29 @@ async function sourceRevision(repo: string): Promise<string> {
   }
 }
 
+async function directoryIndex(repo: string, revision: string, kind: "primary" | "secondary") {
+  const index = new Map<string, string>();
+  try {
+    const entries = await fetchJson<GithubContentEntry[]>(
+      `https://api.github.com/repos/${repo}/contents/data/tilesets/${kind}?ref=${revision}`,
+    );
+    for (const entry of entries) {
+      if (entry.type === "dir" && entry.name) index.set(normalized(entry.name), entry.name);
+    }
+  } catch {
+    // Se a API de metadados estiver temporariamente indisponível, ainda
+    // tentamos a convenção de nomes do próprio decomp ao ativar o pack.
+  }
+  return index;
+}
+
 async function catalogForFamily(source: FamilySource) {
   const revision = await sourceRevision(source.repo);
-  const layouts = await fetchJson<LayoutsDocument>(rawUrl(source.repo, revision, "data/layouts/layouts.json"));
+  const [layouts, primaryDirectories, secondaryDirectories] = await Promise.all([
+    fetchJson<LayoutsDocument>(rawUrl(source.repo, revision, "data/layouts/layouts.json")),
+    directoryIndex(source.repo, revision, "primary"),
+    directoryIndex(source.repo, revision, "secondary"),
+  ]);
   const byPair = new Map<string, { primary: string; secondary: string; maps: string[] }>();
 
   for (const layout of layouts.layouts ?? []) {
@@ -236,8 +269,13 @@ async function catalogForFamily(source: FamilySource) {
   };
 
   const packs: GbaCatalogPack[] = [...byPair.values()].map((pair) => {
-    const primaryDirectory = symbolDirectory(pair.primary);
-    const secondaryDirectory = symbolDirectory(pair.secondary);
+    const primaryResolved = primaryDirectories.get(symbolKey(pair.primary));
+    const secondaryResolved = secondaryDirectories.get(symbolKey(pair.secondary));
+    const primaryDirectory = primaryResolved ?? symbolDirectoryFallback(pair.primary);
+    const secondaryDirectory = secondaryResolved ?? symbolDirectoryFallback(pair.secondary);
+    const warnings: string[] = [];
+    if (!primaryResolved && primaryDirectories.size) warnings.push(`Diretório primary de ${pair.primary} não foi confirmado pelo índice do repo.`);
+    if (!secondaryResolved && secondaryDirectories.size) warnings.push(`Diretório secondary de ${pair.secondary} não foi confirmado pelo índice do repo.`);
     return {
       id: `${source.id}:${primaryDirectory}:${secondaryDirectory}`,
       family: source.id,
@@ -257,7 +295,7 @@ async function catalogForFamily(source: FamilySource) {
       tileSize: 16,
       columns: 16,
       maps: [...new Set(pair.maps)].sort(),
-      warnings: [],
+      warnings,
     };
   });
 
@@ -333,7 +371,7 @@ async function optionalAttributes(url: string, profile: FamilyProfile) {
 
 async function loadPalettes(pack: GbaCatalogPack) {
   const palettes: Array<RgbColor[] | undefined> = Array(pack.totalPaletteCount).fill(undefined);
-  const warnings: string[] = [];
+  const warnings = [...pack.warnings];
   await Promise.all(
     Array.from({ length: pack.totalPaletteCount }, async (_, index) => {
       const directory = index < pack.primaryPaletteCount ? pack.primaryDirectory : pack.secondaryDirectory;
