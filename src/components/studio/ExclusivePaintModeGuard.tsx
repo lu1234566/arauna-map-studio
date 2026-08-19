@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import { useClipboard } from "@/lib/clipboardStore";
+import { clipboardStore, useClipboard } from "@/lib/clipboardStore";
 import { mapTemplateStore, useMapTemplates } from "@/lib/mapTemplateStore";
 import { patternLibraryStore, usePatternLibrary } from "@/lib/patternLibraryStore";
-import { useSmartPath } from "@/lib/smartPathStore";
+import { smartPathStore, useSmartPath } from "@/lib/smartPathStore";
 
 /** Dedicated paint overlays share the same pointer surface above MapCanvas. */
 export function ExclusivePaintModeGuard() {
@@ -22,11 +22,20 @@ export function ExclusivePaintModeGuard() {
     // two overlays turning both modes off in the same render.
     if (templateActivated) {
       if (patterns.enabled) patternLibraryStore.setEnabled(false);
+      if (smartPaths.enabled) smartPathStore.setEnabled(false);
+      if (clipboard.stampMode) clipboardStore.toggleStampMode(false);
     } else if (patternActivated) {
       if (templates.enabled) mapTemplateStore.setEnabled(false);
-    } else if (smartActivated || stampActivated) {
+      if (smartPaths.enabled) smartPathStore.setEnabled(false);
+      if (clipboard.stampMode) clipboardStore.toggleStampMode(false);
+    } else if (smartActivated) {
       if (patterns.enabled) patternLibraryStore.setEnabled(false);
       if (templates.enabled) mapTemplateStore.setEnabled(false);
+      if (clipboard.stampMode) clipboardStore.toggleStampMode(false);
+    } else if (stampActivated) {
+      if (patterns.enabled) patternLibraryStore.setEnabled(false);
+      if (templates.enabled) mapTemplateStore.setEnabled(false);
+      if (smartPaths.enabled) smartPathStore.setEnabled(false);
     }
 
     previous.current = {
