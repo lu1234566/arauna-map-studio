@@ -49,6 +49,19 @@ function findHandle(access: WritableWorkspaceAccess, path: string): FileHandleLi
   return access.fileHandles.get(normalized) ?? access.fileHandlesLower.get(normalized.toLowerCase());
 }
 
+async function ensureWritePermission(access: WritableWorkspaceAccess) {
+  const root = access.root;
+  if (root.queryPermission) {
+    const current = await root.queryPermission({ mode: "readwrite" });
+    if (current === "granted") return;
+    if (current === "denied") throw new StructuralWorkspaceError("Permissão de escrita negada para a pasta.");
+  }
+  if (root.requestPermission) {
+    const next = await root.requestPermission({ mode: "readwrite" });
+    if (next !== "granted") throw new StructuralWorkspaceError("Permissão de escrita não concedida para a pasta.");
+  }
+}
+
 async function writeHandle(handle: FileHandleLike, data: string | ArrayBuffer) {
   const writable = await handle.createWritable();
   try {
@@ -124,14 +137,33 @@ export function structuralWrites(source: StructuralSource, draft: StructuralDraf
 }
 
 export async function writeStructuralFiles(workspace: AraunaWorkspace, access: WritableWorkspaceAccess, writes: StructuralWrite[]) {
-  const prepared = writes.map((write) => {
+  if (!writes.length) return [];
+  await ensureWritePermission(access);
+
+  const prepared = await Promise.all(writes.map(async (write) => {
     const path = normalizeWorkspacePath(write.path);
     const handle = findHandle(access, path);
     if (!handle) throw new StructuralWorkspaceError(`Sem acesso de escrita para ${path}.`);
-    return { ...write, path, handle };
-  });
+    const original = await (await handle.getFile()).arrayBuffer();
+    return { ...write, path, handle, original };
+  }));
+
+  const completed: typeof prepared = [];
+  try {
+    for (const item of prepared) {
+      await writeHandle(item.handle, item.data);
+      completed.push(item);
+    }
+  } catch (error) {
+    for (const item of [...completed].reverse()) {
+      try { await writeHandle(item.handle, item.original); } catch { /* best effort rollback */ }
+    }
+    throw new StructuralWorkspaceError(
+      `Falha na gravação estrutural; rollback foi tentado: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
   for (const item of prepared) {
-    await writeHandle(item.handle, item.data);
     const fresh = await item.handle.getFile();
     workspace.files.set(item.path, fresh);
     workspace.filesLower.set(item.path.toLowerCase(), fresh);
