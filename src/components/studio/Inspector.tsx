@@ -14,7 +14,10 @@ function Row({ label, value, mono = true }: { label: string; value: string; mono
   return (
     <div className="flex items-baseline justify-between gap-2 py-0.5">
       <span className="text-[11px] text-muted-foreground">{label}</span>
-      <span className={mono ? "max-w-[170px] truncate font-mono text-[11px]" : "max-w-[170px] truncate text-[11px]"} title={value}>
+      <span
+        className={mono ? "max-w-[170px] truncate font-mono text-[11px]" : "max-w-[170px] truncate text-[11px]"}
+        title={value}
+      >
         {value}
       </span>
     </div>
@@ -22,7 +25,12 @@ function Row({ label, value, mono = true }: { label: string; value: string; mono
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="border-b border-border px-3 py-2"><h3 className="panel-title mb-1">{title}</h3>{children}</section>;
+  return (
+    <section className="border-b border-border px-3 py-2">
+      <h3 className="panel-title mb-1">{title}</h3>
+      {children}
+    </section>
+  );
 }
 
 export function Inspector() {
@@ -38,12 +46,27 @@ export function Inspector() {
   const raw = i != null ? rawValue(state.map, i) : 0;
   const demoTile = id != null ? METATILE_BY_ID.get(id) : undefined;
   const realTile = atlas && id != null ? realAtlasStore.recordFor(id, atlas) : undefined;
-  const prot = x != null && y != null ? state.protectedCells.find((cell) => cell.x === x && cell.y === y) : undefined;
-  const cellEvents = x != null && y != null ? state.events.filter((event) => event.x === x && event.y === y) : [];
+  const prot = x != null && y != null
+    ? state.protectedCells.find((cell) => cell.x === x && cell.y === y)
+    : undefined;
+  const cellEvents = x != null && y != null
+    ? state.events.filter((event) => event.x === x && event.y === y)
+    : [];
+  const editableLayer =
+    state.viewMode === "visual" || state.viewMode === "collision" || state.viewMode === "elevation";
+
+  const selectionFillLabel =
+    state.viewMode === "collision"
+      ? `Aplicar colisão ${state.selectedCollision}`
+      : state.viewMode === "elevation"
+        ? `Aplicar elevação ${state.selectedElevation}`
+        : "Aplicar metatile";
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border bg-panel">
-      <div className="border-b border-border px-3 py-2"><span className="panel-title">Propriedades</span></div>
+      <div className="border-b border-border px-3 py-2">
+        <span className="panel-title">Propriedades</span>
+      </div>
 
       <Section title="Mapa">
         <Row label="Nome" value={state.mapName} mono={false} />
@@ -56,9 +79,19 @@ export function Inspector() {
         <Row label="Alterações" value={state.dirty ? "não salvas" : "nenhuma"} mono={false} />
       </Section>
 
+      <Section title="Edição atual">
+        <Row label="Camada" value={state.viewMode} mono={false} />
+        <Row label="Modo" value={editableLayer ? "editável" : "somente leitura"} mono={false} />
+        {state.viewMode === "visual" && <Row label="Metatile ativo" value={`${state.selectedMetatile} · ${hex(state.selectedMetatile, 3)}`} />}
+        {state.viewMode === "collision" && <Row label="Colisão ativa" value={String(state.selectedCollision)} />}
+        {state.viewMode === "elevation" && <Row label="Elevação ativa" value={String(state.selectedElevation)} />}
+      </Section>
+
       <Section title="Metadados pokeemerald">
         {!metadata ? (
-          <p className="text-[11px] leading-relaxed text-muted-foreground">Importe <b>data/maps/.../map.json</b> para carregar warps, NPCs, triggers, BG events e conexões reais.</p>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Importe <b>data/maps/.../map.json</b> para carregar warps, NPCs, triggers, BG events e conexões reais.
+          </p>
         ) : (
           <>
             <Row label="Map ID" value={metadata.id} />
@@ -72,7 +105,14 @@ export function Inspector() {
             <Row label="Coord events" value={String(metadata.counts.coordEvents)} />
             <Row label="BG events" value={String(metadata.counts.bgEvents)} />
             <Row label="Conexões" value={String(metadata.connections.length)} />
-            {metadata.connections.map((connection, index) => <div key={`${connection.direction}-${connection.map}-${index}`} className="mt-1 rounded-sm bg-surface px-1.5 py-1 font-mono text-[9px] text-muted-foreground">{connection.direction} → {connection.map} · offset {connection.offset}</div>)}
+            {metadata.connections.map((connection, index) => (
+              <div
+                key={`${connection.direction}-${connection.map}-${index}`}
+                className="mt-1 rounded-sm bg-surface px-1.5 py-1 font-mono text-[9px] text-muted-foreground"
+              >
+                {connection.direction} → {connection.map} · offset {connection.offset}
+              </div>
+            ))}
           </>
         )}
       </Section>
@@ -108,19 +148,90 @@ export function Inspector() {
       <Section title="Máscaras">
         <Row label="Metatile" value={hex(METATILE_MASK)} />
         <Row label="Físico" value={hex(PHYSICAL_MASK)} />
+        <Row label="Colisão" value="0x0C00 · bits 10–11" />
+        <Row label="Elevação" value="0xF000 · bits 12–15" />
         <Row label="Ordem" value="uint16 little-endian" mono={false} />
       </Section>
 
       <Section title="Proteção de progressão">
-        <div className="mb-1.5 flex items-center justify-between"><span className="text-[11px] text-muted-foreground">{metadata ? "derivada do map.json" : "sem map.json"}</span><button type="button" onClick={editorStore.toggleProtect} className={"rounded-sm border px-2 py-0.5 text-[10px] font-semibold " + (state.protectProgression ? "border-primary/50 bg-primary/15 text-primary" : "border-border text-muted-foreground")}>{state.protectProgression ? "LIGADO" : "DESLIGADO"}</button></div>
-        {state.protectedCells.length === 0 ? <p className="text-[11px] text-muted-foreground">Nenhuma célula protegida carregada.</p> : <ul className="space-y-0.5">{state.protectedCells.map((cell) => <li key={`${cell.x},${cell.y}`} className={"flex items-baseline justify-between gap-2 rounded-sm px-1 py-0.5 " + (prot && prot.x === cell.x && prot.y === cell.y ? "bg-surface" : "")} title={cell.reason}><span className="font-mono text-[11px]">({cell.x},{cell.y})</span><span className="truncate text-[10px] text-muted-foreground">{cell.reason}</span></li>)}</ul>}
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground">
+            {metadata ? "derivada do map.json" : "sem map.json"}
+          </span>
+          <button
+            type="button"
+            onClick={editorStore.toggleProtect}
+            className={
+              "rounded-sm border px-2 py-0.5 text-[10px] font-semibold " +
+              (state.protectProgression
+                ? "border-primary/50 bg-primary/15 text-primary"
+                : "border-border text-muted-foreground")
+            }
+          >
+            {state.protectProgression ? "LIGADO" : "DESLIGADO"}
+          </button>
+        </div>
+        {state.protectedCells.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">Nenhuma célula protegida carregada.</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {state.protectedCells.map((cell) => (
+              <li
+                key={`${cell.x},${cell.y}`}
+                className={
+                  "flex items-baseline justify-between gap-2 rounded-sm px-1 py-0.5 " +
+                  (prot && prot.x === cell.x && prot.y === cell.y ? "bg-surface" : "")
+                }
+                title={cell.reason}
+              >
+                <span className="font-mono text-[11px]">({cell.x},{cell.y})</span>
+                <span className="truncate text-[10px] text-muted-foreground">{cell.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
       <Section title="Eventos nesta célula">
-        {cellEvents.length === 0 ? <p className="text-[11px] text-muted-foreground">Nenhum evento.</p> : <ul className="space-y-1">{cellEvents.map((event, eventIndex) => <li key={`${event.label}-${eventIndex}`} className="rounded-sm bg-surface px-1.5 py-1"><p className="font-mono text-[10px] text-primary">{event.label} · {event.source ?? event.kind}</p><p className="break-words text-[10px] leading-relaxed text-muted-foreground">{event.detail}</p></li>)}</ul>}
+        {cellEvents.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">Nenhum evento.</p>
+        ) : (
+          <ul className="space-y-1">
+            {cellEvents.map((event, eventIndex) => (
+              <li key={`${event.label}-${eventIndex}`} className="rounded-sm bg-surface px-1.5 py-1">
+                <p className="font-mono text-[10px] text-primary">{event.label} · {event.source ?? event.kind}</p>
+                <p className="break-words text-[10px] leading-relaxed text-muted-foreground">{event.detail}</p>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
-      {state.selection && <Section title="Seleção"><Row label="Retângulo" value={`x${state.selection.x} y${state.selection.y} · ${state.selection.w}×${state.selection.h}`} /><div className="mt-1.5 flex gap-1"><button type="button" onClick={editorStore.fillSelection} className="rounded-sm border border-border px-2 py-0.5 text-[10px] hover:bg-surface">Preencher com metatile</button><button type="button" onClick={() => editorStore.setSelection(null)} className="rounded-sm border border-border px-2 py-0.5 text-[10px] hover:bg-surface">Limpar</button></div></Section>}
+      {state.selection && (
+        <Section title="Seleção">
+          <Row
+            label="Retângulo"
+            value={`x${state.selection.x} y${state.selection.y} · ${state.selection.w}×${state.selection.h}`}
+          />
+          <div className="mt-1.5 flex gap-1">
+            <button
+              type="button"
+              onClick={editorStore.fillSelection}
+              disabled={!editableLayer}
+              className="rounded-sm border border-border px-2 py-0.5 text-[10px] hover:bg-surface disabled:opacity-35"
+            >
+              {selectionFillLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => editorStore.setSelection(null)}
+              className="rounded-sm border border-border px-2 py-0.5 text-[10px] hover:bg-surface"
+            >
+              Limpar
+            </button>
+          </div>
+        </Section>
+      )}
     </aside>
   );
 }
