@@ -1,17 +1,39 @@
 import { useCallback, useEffect, useRef } from "react";
-import { editorStore, useEditor } from "@/lib/editorStore";
+import { editorStore, useEditor, type DemoEvent, type ViewMode } from "@/lib/editorStore";
 import { METATILE_BY_ID, TILE_PX, getAtlasCanvas, getAtlasSlot } from "@/lib/demoAtlas";
 import { getCollision, getElevation, idx } from "@/lib/emeraldMap";
 
 const BASE = TILE_PX;
 
-type DragState = {
-  mode: "paint" | "pan" | "select";
-  sx: number;
-  sy: number;
-  ox: number;
-  oy: number;
-};
+type DragState =
+  | { mode: "paint"; sx: number; sy: number; ox: number; oy: number }
+  | { mode: "pan"; sx: number; sy: number; ox: number; oy: number }
+  | { mode: "select"; sx: number; sy: number; ox: number; oy: number }
+  | {
+      mode: "event";
+      eventId: string;
+      lastX: number;
+      lastY: number;
+      historyStarted: boolean;
+    };
+
+function isEventView(viewMode: ViewMode) {
+  return viewMode === "warps" || viewMode === "npcs" || viewMode === "triggers";
+}
+
+function eventMatchesView(event: DemoEvent, viewMode: ViewMode) {
+  if (viewMode === "warps") return event.source === "warp";
+  if (viewMode === "npcs") return event.source === "object";
+  if (viewMode === "triggers") return event.source === "coord" || event.source === "bg";
+  return false;
+}
+
+function eventColor(event: DemoEvent) {
+  if (event.source === "warp") return "#4f9ad8";
+  if (event.source === "object") return "#e0b155";
+  if (event.source === "coord") return "#c471d8";
+  return "#67c9c0";
+}
 
 export function MapCanvas() {
   const state = useEditor();
@@ -93,20 +115,31 @@ export function MapCanvas() {
       }
     }
 
-    if (s.viewMode === "warps" || s.viewMode === "npcs" || s.viewMode === "triggers") {
-      const kind = s.viewMode === "warps" ? "warp" : s.viewMode === "npcs" ? "npc" : "trigger";
-      ctx.fillStyle = "rgba(10,14,11,0.55)";
+    if (isEventView(s.viewMode)) {
+      ctx.fillStyle = "rgba(10,14,11,0.48)";
       ctx.fillRect(0, 0, width * cs, height * cs);
       ctx.font = `bold ${Math.max(8, Math.min(13, cs * 0.34))}px ui-monospace, monospace`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      for (const event of s.events.filter((entry) => entry.kind === kind)) {
-        const color = kind === "warp" ? "#4f9ad8" : kind === "npc" ? "#e0b155" : "#c471d8";
-        ctx.fillStyle = `${color}55`;
+      for (const event of s.events.filter((entry) => eventMatchesView(entry, s.viewMode))) {
+        const color = eventColor(event);
+        const selected = event.id === s.selectedEventId;
+        ctx.fillStyle = `${color}${selected ? "88" : "55"}`;
         ctx.fillRect(event.x * cs, event.y * cs, cs, cs);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(event.x * cs + 0.75, event.y * cs + 0.75, cs - 1.5, cs - 1.5);
+        ctx.strokeStyle = selected ? "#ffffff" : color;
+        ctx.lineWidth = selected ? 2.5 : 1.5;
+        ctx.strokeRect(
+          event.x * cs + (selected ? 1.25 : 0.75),
+          event.y * cs + (selected ? 1.25 : 0.75),
+          cs - (selected ? 2.5 : 1.5),
+          cs - (selected ? 2.5 : 1.5),
+        );
+        if (selected) {
+          ctx.strokeStyle = color;
+          ctx.setLineDash([3, 2]);
+          ctx.strokeRect(event.x * cs - 2, event.y * cs - 2, cs + 4, cs + 4);
+          ctx.setLineDash([]);
+        }
         if (cs >= 20) {
           ctx.fillStyle = "#ffffff";
           ctx.fillText(event.label, event.x * cs + cs / 2, event.y * cs + cs / 2);
@@ -129,17 +162,19 @@ export function MapCanvas() {
       ctx.stroke();
     }
 
-    for (const cell of s.protectedCells) {
-      const active = s.protectProgression;
-      ctx.fillStyle = active ? "rgba(224,177,85,0.22)" : "rgba(150,150,150,0.10)";
-      ctx.fillRect(cell.x * cs, cell.y * cs, cs, cs);
-      ctx.strokeStyle = active ? "#e0b155" : "rgba(180,180,180,0.45)";
-      ctx.setLineDash([3, 2]);
-      ctx.strokeRect(cell.x * cs + 0.5, cell.y * cs + 0.5, cs - 1, cs - 1);
-      ctx.setLineDash([]);
+    if (!isEventView(s.viewMode)) {
+      for (const cell of s.protectedCells) {
+        const active = s.protectProgression;
+        ctx.fillStyle = active ? "rgba(224,177,85,0.22)" : "rgba(150,150,150,0.10)";
+        ctx.fillRect(cell.x * cs, cell.y * cs, cs, cs);
+        ctx.strokeStyle = active ? "#e0b155" : "rgba(180,180,180,0.45)";
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(cell.x * cs + 0.5, cell.y * cs + 0.5, cs - 1, cs - 1);
+        ctx.setLineDash([]);
+      }
     }
 
-    if (s.selection) {
+    if (s.selection && !isEventView(s.viewMode)) {
       const { x, y, w, h } = s.selection;
       ctx.fillStyle = "rgba(110,220,150,0.14)";
       ctx.fillRect(x * cs, y * cs, w * cs, h * cs);
@@ -157,7 +192,7 @@ export function MapCanvas() {
       ctx.strokeRect(hx * cs + 0.75, hy * cs + 0.75, cs - 1.5, cs - 1.5);
     }
 
-    if (s.selectedCell != null) {
+    if (s.selectedCell != null && !isEventView(s.viewMode)) {
       const sx = s.selectedCell % width;
       const sy = (s.selectedCell / width) | 0;
       ctx.strokeStyle = "#6ee49a";
@@ -243,6 +278,30 @@ export function MapCanvas() {
     if (!cell) return;
     editorStore.selectCell(idx(cell.x, cell.y, s.map.width));
 
+    if (isEventView(s.viewMode)) {
+      const matches = s.events.filter(
+        (entry) => eventMatchesView(entry, s.viewMode) && entry.x === cell.x && entry.y === cell.y,
+      );
+      if (!matches.length) {
+        editorStore.selectEvent(null);
+        return;
+      }
+      let chosen = matches[0]!;
+      if (matches.length > 1 && s.selectedEventId) {
+        const currentIndex = matches.findIndex((entry) => entry.id === s.selectedEventId);
+        if (currentIndex >= 0) chosen = matches[(currentIndex + 1) % matches.length]!;
+      }
+      editorStore.selectEvent(chosen.id);
+      dragRef.current = {
+        mode: "event",
+        eventId: chosen.id,
+        lastX: chosen.x,
+        lastY: chosen.y,
+        historyStarted: false,
+      };
+      return;
+    }
+
     if (s.tool === "select") {
       dragRef.current = { mode: "select", sx: cell.x, sy: cell.y, ox: 0, oy: 0 };
       editorStore.setSelection({ x: cell.x, y: cell.y, w: 1, h: 1 });
@@ -281,6 +340,15 @@ export function MapCanvas() {
       });
     } else if (drag.mode === "paint") {
       editorStore.paint(cell.x, cell.y, true);
+    } else if (drag.mode === "event" && (cell.x !== drag.lastX || cell.y !== drag.lastY)) {
+      if (!drag.historyStarted) editorStore.beginStroke();
+      editorStore.moveEvent(drag.eventId, cell.x, cell.y, true);
+      dragRef.current = {
+        ...drag,
+        lastX: cell.x,
+        lastY: cell.y,
+        historyStarted: true,
+      };
     }
   };
 
@@ -315,6 +383,14 @@ export function MapCanvas() {
   const hoverId = hoverIndex != null ? state.map.metatiles[hoverIndex] ?? 0 : null;
   const hoverTile = hoverId != null ? METATILE_BY_ID.get(hoverId) : undefined;
   const hoverPhysical = hoverIndex != null ? state.map.physical[hoverIndex] ?? 0 : 0;
+  const hoverEvents = hoverIndex != null
+    ? state.events.filter(
+        (entry) =>
+          eventMatchesView(entry, state.viewMode) &&
+          entry.x === hoverIndex % state.map.width &&
+          entry.y === Math.floor(hoverIndex / state.map.width),
+      )
+    : [];
   const hoverDetail =
     hoverIndex == null
       ? "mover o cursor sobre o mapa"
@@ -322,15 +398,28 @@ export function MapCanvas() {
         ? `colisão ${getCollision(hoverPhysical)}`
         : state.viewMode === "elevation"
           ? `elevação ${getElevation(hoverPhysical)}`
-          : hoverTile?.name ?? `id ${hoverId}`;
-  const eventReadOnly = state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers";
+          : isEventView(state.viewMode)
+            ? hoverEvents.length
+              ? hoverEvents.map((event) => `${event.label}/${event.source}`).join(", ")
+              : "sem evento nesta camada"
+            : hoverTile?.name ?? `id ${hoverId}`;
+  const eventView = isEventView(state.viewMode);
+  const draggingEvent = dragRef.current?.mode === "event";
 
   return (
     <div className="relative min-w-0 flex-1 bg-canvas">
       <div
         ref={containerRef}
         className="absolute inset-0 touch-none select-none overflow-hidden"
-        style={{ cursor: state.tool === "picker" ? "crosshair" : "default" }}
+        style={{
+          cursor: eventView
+            ? draggingEvent
+              ? "grabbing"
+              : "grab"
+            : state.tool === "picker"
+              ? "crosshair"
+              : "default",
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
@@ -357,9 +446,9 @@ export function MapCanvas() {
         </div>
       )}
 
-      {eventReadOnly && (
-        <div className="pointer-events-none absolute right-2 top-4 rounded border border-warning/40 bg-warning/15 px-2 py-1 text-[10px] font-medium text-warning">
-          Eventos somente leitura nesta fase
+      {eventView && (
+        <div className="pointer-events-none absolute right-2 top-4 rounded border border-success/40 bg-success/15 px-2 py-1 text-[10px] font-medium text-success">
+          Eventos editáveis · clique para selecionar · arraste para mover
         </div>
       )}
     </div>
