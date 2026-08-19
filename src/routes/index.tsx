@@ -6,6 +6,7 @@ import { Gen3LibraryLauncher } from "@/components/studio/Gen3LibraryLauncher";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapBlueprintDock } from "@/components/studio/MapBlueprintDock";
 import { MapCanvas } from "@/components/studio/MapCanvas";
+import { MapMinimap } from "@/components/studio/MapMinimap";
 import { MapTemplateDock } from "@/components/studio/MapTemplateDock";
 import { MapTemplateOverlay } from "@/components/studio/MapTemplateOverlay";
 import { MapTemplateScopeGuard } from "@/components/studio/MapTemplateScopeGuard";
@@ -135,6 +136,7 @@ function Index() {
         <TilePalette />
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <MapCanvas />
+          <MapMinimap />
           <StampOverlay />
           <SmartPathOverlay />
           <PatternOverlay />
