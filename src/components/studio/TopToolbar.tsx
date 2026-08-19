@@ -18,9 +18,14 @@ import {
   ZoomIn,
   ZoomOut,
   Info,
+  Map,
 } from "lucide-react";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
 import { cn } from "@/lib/utils";
+import {
+  LITTLEROOT_MAP_JSON,
+  littlerootMapBinBuffer,
+} from "@/data/littlerootSnapshot";
 
 const TOOLS: { id: Tool; icon: typeof Brush; label: string; key: string }[] = [
   { id: "pencil", icon: Brush, label: "Lápis", key: "B" },
@@ -86,6 +91,21 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     editorStore.importMapJson(source, file.name);
   };
 
+  const loadRealLittleroot = () => {
+    const binaryResult = editorStore.importBuffer(
+      littlerootMapBinBuffer(),
+      "LittlerootTown/map.bin (snapshot Arauna)",
+    );
+    if (!binaryResult.ok) return;
+    editorStore.importMapJson(
+      LITTLEROOT_MAP_JSON,
+      "LittlerootTown/map.json (snapshot Arauna)",
+    );
+    editorStore.setMessage(
+      "Vila Amanhecer/LittlerootTown real carregada. IDs e eventos são do repositório Arauna; previews gráficos ainda usam o atlas DEMO.",
+    );
+  };
+
   const handleExport = () => {
     const bytes = editorStore.exportBytes();
     const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: "application/octet-stream" });
@@ -117,6 +137,12 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
 
         <TB title="Novo mapa 20×20" onClick={editorStore.newMap}>
           <FilePlus2 className="size-3.5" /> Novo 20×20
+        </TB>
+        <TB
+          title="Carregar snapshot real da Vila Amanhecer/LittlerootTown do repositório Arauna"
+          onClick={loadRealLittleroot}
+        >
+          <Map className="size-3.5" /> Vila real
         </TB>
         <TB title="Importar map.bin (800 bytes)" onClick={() => binRef.current?.click()}>
           <Upload className="size-3.5" /> map.bin
