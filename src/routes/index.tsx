@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { Settings2 } from "lucide-react";
 import { Inspector } from "@/components/studio/Inspector";
 import { MapCanvas } from "@/components/studio/MapCanvas";
 import { StatusBar } from "@/components/studio/StatusBar";
@@ -23,6 +24,7 @@ function Index() {
       const typing =
         target?.tagName === "INPUT" ||
         target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
         target?.isContentEditable;
       if (typing) return;
 
@@ -62,6 +64,14 @@ function Index() {
         <TilePalette />
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <MapCanvas />
+          <Link
+            to="/map-settings"
+            className="absolute right-2 top-4 z-20 inline-flex h-7 items-center gap-1.5 rounded border border-border bg-panel/95 px-2 text-[10px] font-medium text-foreground/80 shadow-sm hover:border-primary/40 hover:bg-surface hover:text-foreground"
+            title="Editar propriedades gerais e conexões do map.json"
+          >
+            <Settings2 className="size-3.5" /> Config. mapa
+            {state.mapJsonDirty && <span className="text-warning">*</span>}
+          </Link>
         </main>
         <Inspector />
 
