@@ -1,24 +1,24 @@
 import { useEffect } from "react";
 import { useClipboard } from "@/lib/clipboardStore";
+import { mapTemplateStore, useMapTemplates } from "@/lib/mapTemplateStore";
 import { patternLibraryStore, usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useSmartPath } from "@/lib/smartPathStore";
 
-/**
- * The dedicated overlays all sit above MapCanvas. PatternLibrary already turns
- * the others off when it activates; this guard covers the inverse direction
- * (e.g. user clicks Smart Paths or Carimbo while a Pattern is active).
- */
+/** Dedicated overlays share the same pointer surface above MapCanvas. */
 export function ExclusivePaintModeGuard() {
   const patterns = usePatternLibrary();
+  const templates = useMapTemplates();
   const smartPaths = useSmartPath();
   const clipboard = useClipboard();
 
   useEffect(() => {
-    if (!patterns.enabled) return;
-    if (smartPaths.enabled || clipboard.stampMode) {
+    if (patterns.enabled && (templates.enabled || smartPaths.enabled || clipboard.stampMode)) {
       patternLibraryStore.setEnabled(false);
     }
-  }, [patterns.enabled, smartPaths.enabled, clipboard.stampMode]);
+    if (templates.enabled && (patterns.enabled || smartPaths.enabled || clipboard.stampMode)) {
+      mapTemplateStore.setEnabled(false);
+    }
+  }, [patterns.enabled, templates.enabled, smartPaths.enabled, clipboard.stampMode]);
 
   return null;
 }
