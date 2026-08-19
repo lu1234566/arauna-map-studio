@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { hex } from "@/lib/emeraldMap";
+import { useRealAtlas } from "@/lib/realAtlasStore";
 import {
   SMART_PATH_MASK_ORDER,
   maskLabel,
@@ -66,10 +67,22 @@ function TinyButton({
 export function SmartPathDock() {
   const state = useSmartPath();
   const editor = useEditor();
+  const atlas = useRealAtlas();
   const fileRef = useRef<HTMLInputElement>(null);
   const preset = state.presets.find((item) => item.id === state.activePresetId) ?? null;
   const validation = preset ? validateSmartPathPreset(preset) : null;
-  const scope = preset ? smartPathStore.scopeStatus() : null;
+  const scope = !preset
+    ? null
+    : !preset.scope
+      ? { matches: true, message: "Preset sem vínculo de tileset." }
+      : !atlas
+        ? { matches: false, message: "Atlas real não carregado." }
+        : preset.scope.primary === atlas.primary && preset.scope.secondary === atlas.secondary
+          ? { matches: true, message: `${atlas.primary} + ${atlas.secondary}` }
+          : {
+              matches: false,
+              message: `Preset: ${preset.scope.primary} + ${preset.scope.secondary}; atlas: ${atlas.primary} + ${atlas.secondary}`,
+            };
 
   const importFile = async (file: File) => {
     smartPathStore.importJson(await file.text());
@@ -214,12 +227,21 @@ export function SmartPathDock() {
 
                 {scope && (
                   <div className={cn(
-                    "rounded border px-2 py-1.5 text-[9px]",
+                    "flex items-center gap-2 rounded border px-2 py-1.5 text-[9px]",
                     scope.matches
                       ? "border-border bg-canvas text-muted-foreground"
                       : "border-warning/40 bg-warning/10 text-warning",
                   )}>
-                    Tileset: {scope.message}
+                    <span className="min-w-0 flex-1">Tileset: {scope.message}</span>
+                    {(!preset.scope || !scope.matches) && (
+                      <TinyButton
+                        disabled={!atlas}
+                        title="Substitui o vínculo de tileset do preset pelo atlas real atualmente carregado"
+                        onClick={() => smartPathStore.bindScopeToCurrentAtlas()}
+                      >
+                        Vincular atlas atual
+                      </TinyButton>
+                    )}
                   </div>
                 )}
               </>
@@ -275,7 +297,7 @@ export function SmartPathDock() {
           )}
 
           <div className="border-t border-border px-2.5 py-2 text-[9px] leading-relaxed text-muted-foreground">
-            Um Smart Path reconhece como parte do caminho qualquer metatile usado nos 16 masks. Ao pintar uma célula, só ela e os quatro vizinhos ortogonais são recalculados. Colisão e elevação não são tocadas. <b className="text-foreground">P</b> liga/desliga · <b className="text-foreground">E</b> alterna adicionar/apagar enquanto ativo.
+            Um Smart Path reconhece como parte do caminho qualquer metatile usado nos 16 masks. Ao pintar uma célula, só ela e os quatro vizinhos ortogonais são recalculados. Colisão e elevação não são tocadas. Presets vinculados a outro tileset não podem ser ativados até o vínculo ser corrigido. <b className="text-foreground">P</b> liga/desliga · <b className="text-foreground">E</b> alterna adicionar/apagar enquanto ativo.
           </div>
         </div>
       )}
