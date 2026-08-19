@@ -30,14 +30,32 @@ O gerador não converte screenshots em mapa, não inventa metatile IDs e não cr
 4. Configure um **Smart Path** para estradas/conexões.
 5. Abra **Gerador procedural** pelo botão inferior do canvas.
 6. Escolha dimensões, seed, peça central, marcos, fillers, estrada, saídas, margem e espaçamento.
-7. Clique em **Gerar**.
-8. Confira a prévia.
+7. Clique em **Gerar** para testar a seed atual, ou use **Melhor de N** para comparar várias seeds automaticamente.
+8. Confira a prévia e, quando houver uma galeria, clique em qualquer candidato para alternar entre as versões.
 9. Opcionalmente copie o **Blueprint JSON** — ele é compatível com o painel Blueprint IA.
 10. Use **Salvar como Template** e aplique no Editor com `T`.
 
 ## Determinismo
 
 A mesma combinação de seed, dimensões e vocabulário produz o mesmo arranjo de estruturas e as mesmas rotas. Isso permite comparar seeds e registrar layouts aprovados.
+
+## Melhor de N seeds
+
+O Generator pode avaliar 4, 8, 12, 16 ou 24 seeds de uma vez. A seed digitada é sempre o primeiro candidato; as demais recebem sufixos determinísticos (`-02`, `-03`, ...). Assim, repetir a comparação gera exatamente a mesma galeria enquanto as regras não mudarem.
+
+Cada candidato recebe uma nota de 0 a 100:
+
+```text
+30  cobertura dos marcos obrigatórios
+20  cobertura dos fillers solicitados
+20  cobertura das saídas solicitadas
+20  conexões dos marcos com o hub
+10  execução limpa, sem avisos
+```
+
+Avisos reduzem a parcela de execução limpa. Layouts inválidos recebem zero. A galeria é ordenada por nota, depois por menor quantidade de avisos e, por fim, pela ordem determinística da seed.
+
+O melhor candidato é aberto automaticamente, mas todas as variantes continuam visíveis e podem ser selecionadas manualmente. A pontuação é um auxílio de produtividade, não substitui a revisão visual do mapa.
 
 ## Posicionamento
 
