@@ -22,14 +22,24 @@ export function StatusBar() {
     : state.viewMode === "elevation"
       ? ` · valor ${state.selectedElevation}`
       : "";
+  const eventView = state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers";
+  const selectedEvent = state.selectedEventId
+    ? state.events.find((event) => event.id === state.selectedEventId)
+    : null;
 
   return (
     <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-toolbar px-3 font-mono text-[11px] text-muted-foreground">
       <span className="shrink-0 text-foreground">{hover}</span>
       <span className="h-4 w-px shrink-0 bg-border" />
-      <span className="shrink-0">{TOOL_LABEL[state.tool]}</span>
+      <span className="shrink-0">{eventView ? "Selecionar/arrastar evento" : TOOL_LABEL[state.tool]}</span>
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">Camada: {state.viewMode}{layerValue}</span>
+      {selectedEvent && (
+        <>
+          <span className="h-4 w-px shrink-0 bg-border" />
+          <span className="shrink-0 text-primary">{selectedEvent.label} · {selectedEvent.source}</span>
+        </>
+      )}
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">Zoom {Math.round(state.zoom * 100)}%</span>
       <span className="h-4 w-px shrink-0 bg-border" />
@@ -37,8 +47,12 @@ export function StatusBar() {
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">{state.map.metatiles.length * 2} bytes</span>
       <span className="h-4 w-px shrink-0 bg-border" />
-      <span className={state.sourceFile ? "shrink-0 text-success" : "shrink-0 text-warning"}>BIN {state.sourceFile ? "✓" : "—"}</span>
-      <span className={state.mapMetadata ? "shrink-0 text-success" : "shrink-0 text-warning"}>JSON {state.mapMetadata ? "✓" : "—"}</span>
+      <span className={state.sourceFile ? "shrink-0 text-success" : "shrink-0 text-warning"}>
+        BIN {state.sourceFile ? "✓" : "—"}{state.dirty ? "*" : ""}
+      </span>
+      <span className={state.mapMetadata ? "shrink-0 text-success" : "shrink-0 text-warning"}>
+        JSON {state.mapMetadata ? "✓" : "—"}{state.mapJsonDirty ? "*" : ""}
+      </span>
       <span className={atlas ? "shrink-0 text-success" : "shrink-0 text-warning"}>ATLAS {atlas ? "REAL ✓" : "DEMO"}</span>
       {session && <span className="shrink-0 text-success" title={session.label}>WORKSPACE ✓</span>}
       <span className="ml-auto truncate text-foreground/80">{state.lastMessage}</span>
