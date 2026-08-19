@@ -71,6 +71,16 @@ describe("Smart Path engine", () => {
     expect(map.metatiles[2 * 5 + 1]).toBe(100);
   });
 
+  it("never erases unrelated terrain", () => {
+    const path = preset();
+    const map = createEmptyMap(5, 5, 0);
+    map.metatiles[2 * 5 + 2] = 77;
+    const plan = planSmartPath(map, path, 2, 2, "erase");
+    expect(plan.updates).toHaveLength(0);
+    const next = applySmartPathPlan(map, plan);
+    expect(next.metatiles[2 * 5 + 2]).toBe(77);
+  });
+
   it("does not touch collision/elevation bits", () => {
     const path = preset();
     const map = createEmptyMap(4, 4, 0);
