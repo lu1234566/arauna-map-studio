@@ -101,6 +101,33 @@ export function TilePalette() {
   const selectedDemo = DEMO_METATILES.find((tile) => tile.id === state.selectedMetatile);
   const selectedReal = atlas ? realAtlasStore.recordFor(state.selectedMetatile, atlas) : undefined;
 
+  if (state.viewMode === "collision" || state.viewMode === "elevation") {
+    return <PhysicalPalette mode={state.viewMode} />;
+  }
+
+  if (state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers") {
+    const label = state.viewMode === "warps" ? "Warps" : state.viewMode === "npcs" ? "NPCs" : "Triggers/BG";
+    const count = state.events.filter((event) =>
+      state.viewMode === "warps"
+        ? event.kind === "warp"
+        : state.viewMode === "npcs"
+          ? event.kind === "npc"
+          : event.kind === "trigger",
+    ).length;
+    return (
+      <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-panel">
+        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <span className="panel-title">{label}</span>
+          <span className="rounded-sm bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-warning">SOMENTE LEITURA</span>
+        </div>
+        <div className="p-3 text-[11px] leading-relaxed text-muted-foreground">
+          <p><b className="text-foreground">{count}</b> evento(s) visíveis nesta camada.</p>
+          <p className="mt-2">Use o canvas e o inspetor para revisar coordenadas e detalhes. A edição de eventos será uma etapa separada.</p>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-panel">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
@@ -228,6 +255,57 @@ export function TilePalette() {
             id {state.selectedMetatile} (não existe no atlas ativo)
           </p>
         )}
+      </div>
+    </aside>
+  );
+}
+
+function PhysicalPalette({ mode }: { mode: "collision" | "elevation" }) {
+  const state = useEditor();
+  const values = mode === "collision" ? [0, 1, 2, 3] : Array.from({ length: 16 }, (_, index) => index);
+  const selected = mode === "collision" ? state.selectedCollision : state.selectedElevation;
+  const label = mode === "collision" ? "Colisão" : "Elevação";
+
+  return (
+    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-panel">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <span className="panel-title">{label}</span>
+        <span className="rounded-sm bg-success/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-success">EDITÁVEL</span>
+      </div>
+
+      <div className="border-b border-border p-3 text-[10px] leading-relaxed text-muted-foreground">
+        <p>Escolha um valor e use <b className="text-foreground">Lápis</b>, <b className="text-foreground">Conta-gotas</b>, <b className="text-foreground">Bucket fill</b> ou seleção.</p>
+        <p className="mt-1">A edição altera somente os bits de {label.toLowerCase()}, preservando metatile e {mode === "collision" ? "elevação" : "colisão"}.</p>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className={mode === "collision" ? "grid grid-cols-2 gap-2" : "grid grid-cols-4 gap-1.5"}>
+          {values.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => mode === "collision" ? editorStore.setCollision(value) : editorStore.setElevation(value)}
+              className={cn(
+                "grid min-h-12 place-items-center rounded border font-mono transition-colors",
+                selected === value
+                  ? "border-primary bg-primary/15 text-primary shadow-[0_0_0_1px_var(--color-primary)]"
+                  : "border-border bg-canvas text-foreground/80 hover:bg-surface",
+              )}
+              title={`${label} ${value}`}
+            >
+              <span className="text-sm font-semibold">{value}</span>
+              <span className="text-[8px] text-muted-foreground">0x{value.toString(16).toUpperCase()}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-border p-3">
+        <span className="panel-title">Valor ativo</span>
+        <p className="mt-1 font-mono text-lg text-primary">{selected}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {mode === "collision" ? "bits 10–11 do map.bin" : "bits 12–15 do map.bin"}
+        </p>
       </div>
     </aside>
   );
