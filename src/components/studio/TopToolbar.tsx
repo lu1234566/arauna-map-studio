@@ -22,6 +22,7 @@ import {
   FolderOpen,
   Braces,
   Settings2,
+  Maximize2,
 } from "lucide-react";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
 import { saveEditorToWritableWorkspace } from "@/lib/fileSystemWorkspace";
@@ -334,6 +335,13 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
             title="Abra a pasta data/ e escolha qualquer mapa"
           >
             <FolderOpen className="size-3.5" /> Workspace
+          </Link>
+          <Link
+            to="/structure"
+            className="inline-flex h-7 items-center gap-1.5 rounded border border-transparent px-2 text-xs font-medium text-foreground/80 transition-colors hover:bg-surface hover:text-foreground"
+            title="Redimensionar layout e editar border.bin com proteção de eventos"
+          >
+            <Maximize2 className="size-3.5" /> Estrutura
           </Link>
           <Link
             to="/map-settings"

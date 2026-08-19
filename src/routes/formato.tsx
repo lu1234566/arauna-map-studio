@@ -1,5 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Binary, Braces, FolderOpen, HardDrive, Layers3, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Binary,
+  Braces,
+  FolderOpen,
+  Grid2X2,
+  HardDrive,
+  Layers3,
+  Maximize2,
+  ShieldCheck,
+} from "lucide-react";
 
 export const Route = createFileRoute("/formato")({
   component: FormatPage,
@@ -17,20 +27,36 @@ function FormatPage() {
         </Link>
         <div>
           <h1 className="text-sm font-semibold">Formato de mapa — Emerald decomp</h1>
-          <p className="text-[10px] text-muted-foreground">Referência curta usada pelo Arauna Map Studio</p>
+          <p className="text-[10px] text-muted-foreground">
+            Referência curta usada pelo Arauna Map Studio
+          </p>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-5xl gap-4 p-5 md:grid-cols-2">
         <InfoCard icon={HardDrive} title="Dimensões reais">
-          <p>As dimensões vêm de <b>data/layouts/layouts.json</b>. O Studio não fica limitado a 20×20.</p>
-          <p className="mt-2 text-muted-foreground">LittlerootTown continua sendo o primeiro alvo: 20 × 20 = 400 células.</p>
+          <p>
+            As dimensões vêm de <b>data/layouts/layouts.json</b>. O Studio não fica
+            limitado a 20×20.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Ao redimensionar, o Studio altera em conjunto a dimensão declarada e o
+            tamanho real do map.bin.
+          </p>
         </InfoCard>
 
         <InfoCard icon={Binary} title="map.bin">
-          <p>Cada célula ocupa <b>2 bytes</b>, lidos e escritos como <b>uint16 little-endian</b>.</p>
-          <p className="mt-2 font-mono text-xs text-primary">tamanho = width × height × 2</p>
-          <p className="mt-1 text-muted-foreground">Metatile, colisão e elevação são editáveis e usam um histórico único de undo/redo.</p>
+          <p>
+            Cada célula ocupa <b>2 bytes</b>, lidos e escritos como{" "}
+            <b>uint16 little-endian</b>.
+          </p>
+          <p className="mt-2 font-mono text-xs text-primary">
+            tamanho = width × height × 2
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            Metatile, colisão e elevação são editáveis e usam um histórico único de
+            undo/redo.
+          </p>
         </InfoCard>
 
         <InfoCard icon={Layers3} title="Separação dos bits">
@@ -40,38 +66,102 @@ function FormatPage() {
             <p>elevation = (raw &amp; 0xF000) &gt;&gt; 12</p>
             <p>raw = physicalBits | metatileId</p>
           </div>
-          <p className="mt-3 text-muted-foreground">Cada camada física altera somente a própria máscara e preserva os demais bits.</p>
+          <p className="mt-3 text-muted-foreground">
+            Cada camada física altera somente a própria máscara e preserva os demais
+            bits.
+          </p>
         </InfoCard>
 
         <InfoCard icon={Braces} title="map.json editável">
-          <p><b>data/maps/.../map.json</b> guarda o mapa lógico: warps, object events/NPCs, coord events, BG events e conexões.</p>
-          <p className="mt-2 text-muted-foreground">Warps, NPCs, triggers e BG events podem ser selecionados, arrastados, criados, removidos e editados no inspetor. O botão JSON exporta o documento atualizado preservando campos desconhecidos.</p>
+          <p>
+            <b>data/maps/.../map.json</b> guarda o mapa lógico: warps, object
+            events/NPCs, coord events, BG events e conexões.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Warps, NPCs, triggers e BG events podem ser selecionados, arrastados,
+            criados, removidos e editados no inspetor. Campos desconhecidos são
+            preservados.
+          </p>
         </InfoCard>
 
         <InfoCard icon={ShieldCheck} title="Proteção de progressão">
-          <p>O editor deriva automaticamente células protegidas de <b>warps, coord events e BG events</b>.</p>
-          <p className="mt-2 text-muted-foreground">A proteção bloqueia pintura de terreno/colisão/elevação nessas células. A própria camada de eventos continua editável para permitir corrigir a progressão conscientemente.</p>
+          <p>
+            O editor deriva automaticamente células protegidas de <b>warps, coord events
+            e BG events</b>.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            A proteção bloqueia pintura nessas células. Um resize estrutural também é
+            bloqueado se empurrar qualquer evento para fora dos novos limites.
+          </p>
+        </InfoCard>
+
+        <InfoCard icon={Maximize2} title="Resize estrutural">
+          <p>
+            A tela <b>Estrutura</b> redimensiona o map.bin usando uma das nove âncoras e
+            permite escolher o raw usado nas novas células.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Quando a origem do conteúdo muda, as coordenadas de eventos e os offsets de
+            conexão do mapa atual acompanham o deslocamento. Conexões recíprocas dos
+            mapas vizinhos também são ajustadas; se a simetria não puder ser comprovada,
+            a operação é bloqueada em vez de adivinhar.
+          </p>
+        </InfoCard>
+
+        <InfoCard icon={Grid2X2} title="border.bin">
+          <p>
+            No projeto Emerald atual, o border do layout é <b>2×2</b>, ou 4 células raw
+            no mesmo formato uint16 do map.bin.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            A tela Estrutura permite editar as quatro células mostrando metatile,
+            colisão e elevação decodificados, sem mudar a dimensão do border.
+          </p>
         </InfoCard>
 
         <InfoCard icon={FolderOpen} title="Workspace Arauna">
-          <p>O caminho recomendado é abrir a pasta <b>data/</b> uma única vez no Chrome/Chromebook.</p>
-          <p className="mt-2 text-muted-foreground">O workspace permanece em memória durante a sessão da aba e permite alternar entre mapas sem escolher a pasta novamente.</p>
+          <p>
+            No Chrome/Chromebook, o caminho recomendado é <b>Abrir pasta R/W</b> e
+            selecionar a raiz do repositório ou diretamente <b>data/</b>.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            O workspace permanece em memória durante a sessão da aba e permite alternar
+            entre mapas sem escolher a pasta novamente.
+          </p>
         </InfoCard>
 
-        <InfoCard icon={HardDrive} title="Snapshot da Vila">
-          <p>O botão <b>Vila snapshot</b> continua disponível como teste rápido de LittlerootTown.</p>
-          <p className="mt-2 text-muted-foreground">Ele não substitui o Workspace quando você quiser trabalhar com a versão mais nova dos arquivos locais.</p>
+        <InfoCard icon={HardDrive} title="Gravação na origem">
+          <p>
+            <b>Salvar pasta</b> grava os arquivos editados diretamente nos caminhos
+            originais do clone local.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Alterações estruturais pré-validam os arquivos envolvidos e usam rollback
+            dos arquivos já escritos se uma gravação posterior falhar. O modo somente
+            leitura continua disponível com downloads.
+          </p>
         </InfoCard>
 
         <InfoCard icon={Layers3} title="Atlas gráfico real">
-          <p>O Tileset Lab e o Workspace reconstruem os metatiles reais a partir de <b>tiles.png</b>, <b>metatiles.bin</b>, atributos e paletas.</p>
-          <p className="mt-2 text-muted-foreground">O primary ocupa a faixa base; o secondary é resolvido por layout. O atlas DEMO existe apenas como fallback.</p>
+          <p>
+            O Tileset Lab e o Workspace reconstruem os metatiles reais a partir de{" "}
+            <b>tiles.png</b>, <b>metatiles.bin</b>, atributos e paletas.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            O primary ocupa a faixa base; o secondary é resolvido por layout. O atlas
+            DEMO existe apenas como fallback.
+          </p>
         </InfoCard>
 
         <section className="rounded-md border border-success/40 bg-success/5 p-4 md:col-span-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-success">Fluxo recomendado</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-success">
+            Fluxo recomendado
+          </h2>
           <p className="mt-2 text-sm leading-relaxed text-foreground/90">
-            Abra <b>Workspace</b> → escolha <b>data/</b> → abra um mapa → edite Visual/Colisão/Elevação ou Warps/NPCs/Triggers → valide → exporte <b>BIN</b> e/ou <b>JSON</b>. O asterisco na barra/status indica qual arquivo possui alterações ainda não exportadas.
+            Abra <b>Workspace</b> em R/W → escolha um mapa → edite
+            Visual/Colisão/Elevação, Eventos ou Config. mapa → use <b>Estrutura</b> quando
+            precisar redimensionar/border → valide → <b>Salvar pasta</b>. BIN/JSON
+            continuam disponíveis como cópias de fallback.
           </p>
         </section>
       </main>
