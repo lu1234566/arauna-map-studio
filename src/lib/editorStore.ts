@@ -12,6 +12,14 @@ import {
   validateMap,
 } from "./emeraldMap";
 import {
+  clampCollision,
+  clampElevation,
+  floodFillPhysical,
+  getPhysicalLayerValue,
+  setPhysicalLayerValue,
+  type PhysicalLayer,
+} from "./physicalMap";
+import {
   metadataOutOfBounds,
   parsePokeemeraldMapJson,
   type MapEventSource,
@@ -49,6 +57,8 @@ export interface EditorState {
   tool: Tool;
   viewMode: ViewMode;
   selectedMetatile: number;
+  selectedCollision: number;
+  selectedElevation: number;
   zoom: number;
   pan: { x: number; y: number };
   showGrid: boolean;
@@ -77,6 +87,11 @@ function defaultMap(): MapData {
   return createEmptyMap(20, 20, 0x000);
 }
 
+function editablePhysicalLayer(viewMode: ViewMode): PhysicalLayer | null {
+  if (viewMode === "collision" || viewMode === "elevation") return viewMode;
+  return null;
+}
+
 function initialState(): EditorState {
   return {
     mapName: "Novo mapa 20×20",
@@ -84,6 +99,8 @@ function initialState(): EditorState {
     tool: "pencil",
     viewMode: "visual",
     selectedMetatile: 0x000,
+    selectedCollision: 0,
+    selectedElevation: 3,
     zoom: 2,
     pan: { x: 0, y: 0 },
     showGrid: true,
@@ -98,7 +115,7 @@ function initialState(): EditorState {
     undoDepth: 0,
     redoDepth: 0,
     dirty: false,
-    lastMessage: "Pronto. Importe map.bin e map.json para trabalhar com um mapa real do pokeemerald.",
+    lastMessage: "Pronto. Abra o Workspace Arauna para trabalhar com um mapa real do pokeemerald.",
     validation: null,
     sourceFile: null,
     mapJsonSource: null,
@@ -158,6 +175,8 @@ class EditorStore {
           tool: s.tool,
           viewMode: s.viewMode,
           selectedMetatile: s.selectedMetatile,
+          selectedCollision: s.selectedCollision,
+          selectedElevation: s.selectedElevation,
           zoom: s.zoom,
           showGrid: s.showGrid,
           showCoords: s.showCoords,
@@ -180,6 +199,8 @@ class EditorStore {
           tool: prefs.tool ?? this.state.tool,
           viewMode: prefs.viewMode ?? this.state.viewMode,
           selectedMetatile: prefs.selectedMetatile ?? this.state.selectedMetatile,
+          selectedCollision: clampCollision(prefs.selectedCollision ?? this.state.selectedCollision),
+          selectedElevation: clampElevation(prefs.selectedElevation ?? this.state.selectedElevation),
           zoom: prefs.zoom ?? this.state.zoom,
           showGrid: prefs.showGrid ?? this.state.showGrid,
           showCoords: prefs.showCoords ?? this.state.showCoords,
@@ -262,7 +283,8 @@ class EditorStore {
 
   paint = (x: number, y: number, continuous = false) => {
     const s = this.state;
-    if (s.viewMode !== "visual") return;
+    const physicalLayer = editablePhysicalLayer(s.viewMode);
+    if (s.viewMode !== "visual" && !physicalLayer) return;
     const { width, height } = s.map;
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     if (this.isProtected(x, y)) {
@@ -272,12 +294,21 @@ class EditorStore {
       );
       return;
     }
+
     const i = idx(x, y, width);
-    const id = s.selectedMetatile & METATILE_MASK;
-    if (s.map.metatiles[i] === id) return;
-    if (!continuous) this.pushHistory();
     const map = cloneMap(s.map);
-    map.metatiles[i] = id;
+    if (s.viewMode === "visual") {
+      const id = s.selectedMetatile & METATILE_MASK;
+      if (s.map.metatiles[i] === id) return;
+      map.metatiles[i] = id;
+    } else if (physicalLayer) {
+      const value = physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation;
+      const next = setPhysicalLayerValue(s.map.physical[i] ?? 0, physicalLayer, value);
+      if (next === (s.map.physical[i] ?? 0)) return;
+      map.physical[i] = next;
+    }
+
+    if (!continuous) this.pushHistory();
     this.syncHistoryDepths({ map, dirty: true, selectedCell: i });
   };
 
@@ -285,50 +316,98 @@ class EditorStore {
 
   pick = (x: number, y: number) => {
     const s = this.state;
+    if (x < 0 || y < 0 || x >= s.map.width || y >= s.map.height) return;
     const i = idx(x, y, s.map.width);
-    const id = s.map.metatiles[i] ?? 0;
-    this.set({ selectedMetatile: id, selectedCell: i, lastMessage: `Metatile ${id} selecionado.` });
+    if (s.viewMode === "visual") {
+      const id = s.map.metatiles[i] ?? 0;
+      this.set({ selectedMetatile: id, selectedCell: i, lastMessage: `Metatile ${id} selecionado.` });
+      return;
+    }
+    const physicalLayer = editablePhysicalLayer(s.viewMode);
+    if (physicalLayer) {
+      const value = getPhysicalLayerValue(s.map.physical[i] ?? 0, physicalLayer);
+      this.set({
+        ...(physicalLayer === "collision"
+          ? { selectedCollision: value }
+          : { selectedElevation: value }),
+        selectedCell: i,
+        lastMessage: `${physicalLayer === "collision" ? "Colisão" : "Elevação"} ${value} selecionada.`,
+      });
+      return;
+    }
+    this.set({ selectedCell: i }, false);
   };
 
   fill = (x: number, y: number) => {
     const s = this.state;
-    if (s.viewMode !== "visual") return;
+    const physicalLayer = editablePhysicalLayer(s.viewMode);
+    if (s.viewMode !== "visual" && !physicalLayer) return;
     if (this.isProtected(x, y)) {
       this.set({ lastMessage: `Célula (${x},${y}) protegida.` }, false);
       return;
     }
+
     const map = cloneMap(s.map);
-    const changed = floodFill(map, x, y, s.selectedMetatile, (cx, cy) => this.isProtected(cx, cy));
+    const changed = s.viewMode === "visual"
+      ? floodFill(map, x, y, s.selectedMetatile, (cx, cy) => this.isProtected(cx, cy))
+      : floodFillPhysical(
+          map,
+          x,
+          y,
+          physicalLayer!,
+          physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation,
+          (cx, cy) => this.isProtected(cx, cy),
+        );
+
     if (!changed.length) {
       this.set({ lastMessage: "Nada para preencher." }, false);
       return;
     }
     this.pushHistory();
-    this.syncHistoryDepths({ map, dirty: true, lastMessage: `Bucket fill: ${changed.length} célula(s).` });
+    const layerName = s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
+    this.syncHistoryDepths({
+      map,
+      dirty: true,
+      lastMessage: `Bucket fill ${layerName}: ${changed.length} célula(s).`,
+    });
   };
 
   fillSelection = () => {
     const s = this.state;
     const sel = s.selection;
-    if (!sel || s.viewMode !== "visual") return;
+    const physicalLayer = editablePhysicalLayer(s.viewMode);
+    if (!sel || (s.viewMode !== "visual" && !physicalLayer)) return;
     const map = cloneMap(s.map);
     let changed = 0;
+
     for (let y = sel.y; y < sel.y + sel.h; y++) {
       for (let x = sel.x; x < sel.x + sel.w; x++) {
         if (this.isProtected(x, y)) continue;
         const i = idx(x, y, map.width);
-        if (map.metatiles[i] !== (s.selectedMetatile & METATILE_MASK)) {
-          map.metatiles[i] = s.selectedMetatile & METATILE_MASK;
-          changed++;
+        if (s.viewMode === "visual") {
+          const next = s.selectedMetatile & METATILE_MASK;
+          if (map.metatiles[i] !== next) {
+            map.metatiles[i] = next;
+            changed++;
+          }
+        } else if (physicalLayer) {
+          const value = physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation;
+          const next = setPhysicalLayerValue(map.physical[i] ?? 0, physicalLayer, value);
+          if (map.physical[i] !== next) {
+            map.physical[i] = next;
+            changed++;
+          }
         }
       }
     }
+
     if (!changed) return;
     this.pushHistory();
+    const layerName = s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
-      lastMessage: `Seleção preenchida: ${changed} célula(s).`,
+      lastMessage: `Seleção preenchida em ${layerName}: ${changed} célula(s).`,
     });
   };
 
@@ -339,6 +418,8 @@ class EditorStore {
   setTool = (tool: Tool) => this.set({ tool });
   setViewMode = (viewMode: ViewMode) => this.set({ viewMode });
   setMetatile = (selectedMetatile: number) => this.set({ selectedMetatile });
+  setCollision = (selectedCollision: number) => this.set({ selectedCollision: clampCollision(selectedCollision) });
+  setElevation = (selectedElevation: number) => this.set({ selectedElevation: clampElevation(selectedElevation) });
   setZoom = (zoom: number) => this.set({ zoom: Math.min(8, Math.max(0.5, zoom)) });
   setPan = (pan: { x: number; y: number }) => this.set({ pan }, false);
   toggleGrid = () => this.set({ showGrid: !this.state.showGrid });

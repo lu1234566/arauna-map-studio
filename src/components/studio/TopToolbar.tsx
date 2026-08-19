@@ -215,7 +215,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
             <Grid3x3 className="size-3.5" /> Grid
           </TB>
           <TB
-            title="Bloqueia edição visual em warps, coord events e BG events importados"
+            title="Bloqueia edição em células críticas derivadas de warps, coord events e BG events"
             active={state.protectProgression}
             onClick={editorStore.toggleProtect}
           >
@@ -264,19 +264,20 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
 
         <Divider />
         <span className="panel-title mr-1 shrink-0">Camada</span>
-        {VIEWS.map((view) => (
-          <TB
-            key={view.id}
-            title={view.id === "visual" ? "Camada editável" : "Overlay somente leitura nesta fase"}
-            active={state.viewMode === view.id}
-            onClick={() => editorStore.setViewMode(view.id)}
-          >
-            {view.label}
-            {view.id !== "visual" && (
-              <span className="text-[9px] text-muted-foreground">ro</span>
-            )}
-          </TB>
-        ))}
+        {VIEWS.map((view) => {
+          const editable = view.id === "visual" || view.id === "collision" || view.id === "elevation";
+          return (
+            <TB
+              key={view.id}
+              title={editable ? "Camada editável" : "Overlay somente leitura nesta fase"}
+              active={state.viewMode === view.id}
+              onClick={() => editorStore.setViewMode(view.id)}
+            >
+              {view.label}
+              {!editable && <span className="text-[9px] text-muted-foreground">ro</span>}
+            </TB>
+          );
+        })}
       </div>
     </header>
   );

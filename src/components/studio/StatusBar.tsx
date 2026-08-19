@@ -15,6 +15,11 @@ export function StatusBar() {
   const hover = state.hoverCell != null
     ? `X ${state.hoverCell % width} · Y ${Math.floor(state.hoverCell / width)}`
     : "X — · Y —";
+  const layerValue = state.viewMode === "collision"
+    ? ` · valor ${state.selectedCollision}`
+    : state.viewMode === "elevation"
+      ? ` · valor ${state.selectedElevation}`
+      : "";
 
   return (
     <footer className="flex h-7 shrink-0 items-center gap-3 overflow-hidden border-t border-border bg-toolbar px-3 font-mono text-[11px] text-muted-foreground">
@@ -22,7 +27,7 @@ export function StatusBar() {
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">{TOOL_LABEL[state.tool]}</span>
       <span className="h-4 w-px shrink-0 bg-border" />
-      <span className="shrink-0">Camada: {state.viewMode}</span>
+      <span className="shrink-0">Camada: {state.viewMode}{layerValue}</span>
       <span className="h-4 w-px shrink-0 bg-border" />
       <span className="shrink-0">Zoom {Math.round(state.zoom * 100)}%</span>
       <span className="h-4 w-px shrink-0 bg-border" />
