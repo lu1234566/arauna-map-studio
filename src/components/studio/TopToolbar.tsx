@@ -9,7 +9,6 @@ import {
   Redo2,
   FilePlus2,
   Upload,
-  FileJson2,
   Download,
   ShieldCheck,
   ShieldOff,
@@ -148,7 +147,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           <Upload className="size-3.5" /> map.bin
         </TB>
         <TB title="Importar data/maps/.../map.json" onClick={() => jsonRef.current?.click()}>
-          <FileJson2 className="size-3.5" /> map.json
+          <Upload className="size-3.5" /> map.json
         </TB>
         <TB title="Exportar map.bin" onClick={handleExport}>
           <Download className="size-3.5" /> Exportar
