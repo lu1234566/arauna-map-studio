@@ -10,14 +10,15 @@ import {
   type SavedRealAtlas,
 } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
+import { MetatileGrid } from "./MetatileGrid";
 import { TilesetQuickPicker } from "./TilesetQuickPicker";
 
 type TileDensity = "compact" | "normal" | "large";
 
-const DENSITY: Record<TileDensity, { size: number; grid: string; label: string }> = {
-  compact: { size: 28, grid: "grid-cols-7", label: "C" },
-  normal: { size: 36, grid: "grid-cols-5", label: "N" },
-  large: { size: 48, grid: "grid-cols-4", label: "G" },
+const DENSITY: Record<TileDensity, { size: number; columns: number; label: string }> = {
+  compact: { size: 28, columns: 7, label: "C" },
+  normal: { size: 36, columns: 5, label: "N" },
+  large: { size: 48, columns: 4, label: "G" },
 };
 
 function RealSwatch({
@@ -151,35 +152,14 @@ export function TilePalette() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            <div className={cn("grid gap-1", densityConfig.grid)}>
-              {realTiles.map((record) => (
-                <button
-                  key={record.id}
-                  type="button"
-                  title={`ID ${record.id} (${hex(record.id, 3)}) · ${record.source} local ${record.localId}${record.behavior != null ? ` · behavior 0x${record.behavior.toString(16).padStart(2, "0")}` : ""}${record.layerType != null ? ` · layer ${record.layerType}` : ""}`}
-                  onClick={() => editorStore.setMetatile(record.id)}
-                  className={cn(
-                    "relative grid place-items-center overflow-hidden rounded-sm border p-0 leading-none transition-shadow",
-                    state.selectedMetatile === record.id
-                      ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]"
-                      : record.source === "secondary"
-                        ? "border-border-strong hover:border-primary/50"
-                        : "border-border hover:border-border-strong",
-                  )}
-                >
-                  <RealSwatch atlas={atlas} record={record} size={densityConfig.size} />
-                  <span className={cn(
-                    "absolute bottom-0 right-0 bg-background/85 px-0.5 font-mono text-foreground/80",
-                    density === "compact" ? "text-[6px]" : "text-[7px]",
-                  )}>
-                    {record.id}
-                  </span>
-                  {record.source === "secondary" && (
-                    <span className="absolute left-0 top-0 bg-primary/75 px-0.5 text-[6px] font-bold text-primary-foreground">S</span>
-                  )}
-                </button>
-              ))}
-            </div>
+            <MetatileGrid
+              atlas={atlas}
+              records={realTiles}
+              selectedMetatile={state.selectedMetatile}
+              size={densityConfig.size}
+              columns={densityConfig.columns}
+              densityLabel={densityConfig.label}
+            />
             {realTiles.length === 0 && (
               <p className="p-3 text-center text-xs text-muted-foreground">Nenhum metatile corresponde ao filtro.</p>
             )}
