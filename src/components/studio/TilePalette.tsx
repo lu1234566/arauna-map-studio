@@ -10,6 +10,15 @@ import {
   type SavedRealAtlas,
 } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
+import { TilesetQuickPicker } from "./TilesetQuickPicker";
+
+type TileDensity = "compact" | "normal" | "large";
+
+const DENSITY: Record<TileDensity, { size: number; grid: string; label: string }> = {
+  compact: { size: 28, grid: "grid-cols-7", label: "C" },
+  normal: { size: 36, grid: "grid-cols-5", label: "N" },
+  large: { size: 48, grid: "grid-cols-4", label: "G" },
+};
 
 function RealSwatch({
   atlas,
@@ -42,6 +51,8 @@ export function TilePalette() {
   const atlas = useRealAtlas();
   const [query, setQuery] = useState("");
   const [realCategory, setRealCategory] = useState<"Todos" | "Primary" | "Secondary">("Todos");
+  const [density, setDensity] = useState<TileDensity>("compact");
+  const densityConfig = DENSITY[density];
 
   const realTiles = useMemo(() => {
     if (!atlas) return [];
@@ -54,7 +65,10 @@ export function TilePalette() {
         String(record.id).includes(q) ||
         hex(record.id, 3).toLowerCase().includes(q) ||
         String(record.localId).includes(q) ||
-        (record.behavior != null && `behavior ${record.behavior}`.includes(q))
+        record.source.includes(q) ||
+        (record.behavior != null && `behavior ${record.behavior}`.includes(q)) ||
+        (record.behavior != null && `0x${record.behavior.toString(16)}`.includes(q)) ||
+        (record.layerType != null && `layer ${record.layerType}`.includes(q))
       );
     });
   }, [atlas, query, realCategory]);
@@ -70,9 +84,12 @@ export function TilePalette() {
   }
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-panel">
+    <aside className="relative z-30 flex w-64 shrink-0 flex-col border-r border-border bg-panel">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="panel-title">Metatiles</span>
+        <div className="leading-tight">
+          <span className="panel-title">Metatiles</span>
+          {atlas && <p className="mt-0.5 font-mono text-[8px] text-muted-foreground">{realTiles.length}/{atlas.records.length} visíveis</p>}
+        </div>
         {atlas ? (
           <span className="rounded-sm bg-success/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-success">
             GBA REAL
@@ -87,48 +104,79 @@ export function TilePalette() {
       {atlas ? (
         <>
           <div className="space-y-2 border-b border-border p-2">
+            <TilesetQuickPicker atlas={atlas} />
+
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar ID / hex / behavior…"
-              className="h-7 w-full rounded border border-border bg-canvas px-2 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/60"
+              placeholder="ID, hex, behavior, layer…"
+              className="h-7 w-full rounded border border-border bg-canvas px-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-primary/60"
             />
-            <div className="flex flex-wrap gap-1">
-              {(["Todos", "Primary", "Secondary"] as const).map((category) => (
-                <FilterButton
-                  key={category}
-                  active={realCategory === category}
-                  onClick={() => setRealCategory(category)}
-                >
-                  {category}
-                </FilterButton>
-              ))}
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-1">
+                {(["Todos", "Primary", "Secondary"] as const).map((category) => (
+                  <FilterButton
+                    key={category}
+                    active={realCategory === category}
+                    onClick={() => setRealCategory(category)}
+                  >
+                    {category === "Todos" ? "Todos" : category === "Primary" ? "P" : "S"}
+                  </FilterButton>
+                ))}
+              </div>
+              <div className="flex items-center overflow-hidden rounded border border-border bg-canvas" title="Densidade da paleta">
+                {(Object.keys(DENSITY) as TileDensity[]).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setDensity(key)}
+                    className={cn(
+                      "grid h-6 w-6 place-items-center border-l border-border text-[9px] font-semibold first:border-l-0 hover:bg-surface",
+                      density === key && "bg-primary/15 text-primary",
+                    )}
+                    title={key === "compact" ? "Compacto" : key === "normal" ? "Normal" : "Grande"}
+                  >
+                    {DENSITY[key].label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="rounded border border-border bg-canvas px-2 py-1.5 text-[9px] leading-relaxed text-muted-foreground">
-              <b className="text-foreground">{atlas.primary}</b><br />+ {atlas.secondary}
-              {atlas.game && <><br /><span>{atlas.game}</span></>}
+
+            <div className="flex items-center justify-between rounded border border-border bg-canvas px-2 py-1 text-[8px] text-muted-foreground">
+              <span className="truncate"><b className="text-foreground">P</b> {atlas.primary.replace(/^gTileset_/, "")}</span>
+              <span className="px-1 text-border-strong">+</span>
+              <span className="truncate text-right"><b className="text-foreground">S</b> {atlas.secondary.replace(/^gTileset_/, "")}</span>
             </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            <div className="grid grid-cols-4 gap-1">
+            <div className={cn("grid gap-1", densityConfig.grid)}>
               {realTiles.map((record) => (
                 <button
                   key={record.id}
                   type="button"
-                  title={`ID ${record.id} (${hex(record.id, 3)}) · ${record.source} local ${record.localId}${record.behavior != null ? ` · behavior 0x${record.behavior.toString(16).padStart(2, "0")}` : ""}`}
+                  title={`ID ${record.id} (${hex(record.id, 3)}) · ${record.source} local ${record.localId}${record.behavior != null ? ` · behavior 0x${record.behavior.toString(16).padStart(2, "0")}` : ""}${record.layerType != null ? ` · layer ${record.layerType}` : ""}`}
                   onClick={() => editorStore.setMetatile(record.id)}
                   className={cn(
-                    "relative overflow-hidden rounded-sm border p-0 leading-none transition-shadow",
+                    "relative grid place-items-center overflow-hidden rounded-sm border p-0 leading-none transition-shadow",
                     state.selectedMetatile === record.id
                       ? "border-primary shadow-[0_0_0_1px_var(--color-primary)]"
-                      : "border-border hover:border-border-strong",
+                      : record.source === "secondary"
+                        ? "border-border-strong hover:border-primary/50"
+                        : "border-border hover:border-border-strong",
                   )}
                 >
-                  <RealSwatch atlas={atlas} record={record} size={44} />
-                  <span className="absolute bottom-0 right-0 bg-background/85 px-0.5 font-mono text-[8px] text-foreground/80">
+                  <RealSwatch atlas={atlas} record={record} size={densityConfig.size} />
+                  <span className={cn(
+                    "absolute bottom-0 right-0 bg-background/85 px-0.5 font-mono text-foreground/80",
+                    density === "compact" ? "text-[6px]" : "text-[7px]",
+                  )}>
                     {record.id}
                   </span>
+                  {record.source === "secondary" && (
+                    <span className="absolute left-0 top-0 bg-primary/75 px-0.5 text-[6px] font-bold text-primary-foreground">S</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -137,17 +185,20 @@ export function TilePalette() {
             )}
           </div>
 
-          <div className="border-t border-border p-2">
+          <div className="border-t border-border bg-toolbar/40 p-2">
             <span className="panel-title">Selecionado</span>
             {selectedReal ? (
               <div className="mt-1.5 flex items-center gap-2">
-                <div className="rounded-sm border border-border">
+                <div className="rounded-sm border border-border bg-canvas">
                   <RealSwatch atlas={atlas} record={selectedReal} size={40} />
                 </div>
-                <div className="min-w-0 leading-tight">
-                  <p className="font-mono text-xs font-medium">ID {selectedReal.id} · {hex(selectedReal.id, 3)}</p>
-                  <p className="text-[10px] text-muted-foreground">{selectedReal.source} · local {selectedReal.localId}</p>
-                  <p className="text-[10px] text-muted-foreground">
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="flex items-center gap-1">
+                    <p className="font-mono text-xs font-medium">ID {selectedReal.id} · {hex(selectedReal.id, 3)}</p>
+                    <span className="rounded bg-surface px-1 text-[7px] uppercase text-muted-foreground">{selectedReal.source}</span>
+                  </div>
+                  <p className="mt-0.5 text-[9px] text-muted-foreground">local {selectedReal.localId}</p>
+                  <p className="text-[9px] text-muted-foreground">
                     behavior {selectedReal.behavior == null ? "—" : hex(selectedReal.behavior, 2)} · layer {selectedReal.layerType ?? "—"}
                   </p>
                 </div>
