@@ -142,13 +142,13 @@ export function shiftMapJsonForResize(
     if (!Array.isArray(events)) continue;
     events.forEach((value, index) => {
       if (!isRecord(value)) return;
-      const x = Number(value.x);
-      const y = Number(value.y);
+      const x = Number(value["x"]);
+      const y = Number(value["y"]);
       if (!Number.isInteger(x) || !Number.isInteger(y)) return;
       const nextX = x + dx;
       const nextY = y + dy;
-      value.x = nextX;
-      value.y = nextY;
+      value["x"] = nextX;
+      value["y"] = nextY;
       if (dx !== 0 || dy !== 0) shiftedEvents++;
       if (nextX < 0 || nextY < 0 || nextX >= newWidth || nextY >= newHeight) {
         outOfBounds.push({ source: key, index, x: nextX, y: nextY });
@@ -157,12 +157,12 @@ export function shiftMapJsonForResize(
   }
 
   let adjustedConnections = 0;
-  const connections = document.connections;
+  const connections = document["connections"];
   if (Array.isArray(connections)) {
     connections.forEach((value) => {
       if (!isRecord(value)) return;
-      const direction = String(value.direction ?? "");
-      const offset = Number(value.offset);
+      const direction = String(value["direction"] ?? "");
+      const offset = Number(value["offset"]);
       if (!Number.isInteger(offset)) return;
       const delta = direction === "up" || direction === "down"
         ? dx
@@ -170,7 +170,7 @@ export function shiftMapJsonForResize(
           ? dy
           : 0;
       if (delta !== 0) {
-        value.offset = offset + delta;
+        value["offset"] = offset + delta;
         adjustedConnections++;
       }
     });
@@ -193,17 +193,21 @@ export function updateLayoutDimensionsSource(
       `layouts.json inválido: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (!isRecord(parsed) || !Array.isArray(parsed.layouts)) {
+  if (!isRecord(parsed)) {
+    throw new LayoutStructureError("layouts.json precisa ter um objeto na raiz.");
+  }
+  const layouts = parsed["layouts"];
+  if (!Array.isArray(layouts)) {
     throw new LayoutStructureError("layouts.json não contém a lista layouts.");
   }
-  const layout = parsed.layouts.find(
-    (value) => isRecord(value) && value.id === layoutId,
+  const layout = layouts.find(
+    (value) => isRecord(value) && value["id"] === layoutId,
   );
   if (!layout || !isRecord(layout)) {
     throw new LayoutStructureError(`Layout ${layoutId} não encontrado em layouts.json.`);
   }
-  layout.width = width;
-  layout.height = height;
+  layout["width"] = width;
+  layout["height"] = height;
   return `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
