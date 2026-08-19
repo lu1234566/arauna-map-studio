@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { editorStore, useEditor } from "@/lib/editorStore";
-import { METATILE_BY_ID } from "@/lib/demoAtlas";
 import {
   METATILE_MASK,
   PHYSICAL_MASK,
@@ -150,7 +149,6 @@ export function Inspector() {
   const id = i != null ? (state.map.metatiles[i] ?? 0) : null;
   const phys = i != null ? (state.map.physical[i] ?? 0) : 0;
   const raw = i != null ? rawValue(state.map, i) : 0;
-  const demoTile = id != null ? METATILE_BY_ID.get(id) : undefined;
   const realTile = atlas && id != null ? realAtlasStore.recordFor(id, atlas) : undefined;
   const prot = x != null && y != null
     ? state.protectedCells.find((cell) => cell.x === x && cell.y === y)
@@ -160,8 +158,9 @@ export function Inspector() {
     : [];
   const eventLayer =
     state.viewMode === "warps" || state.viewMode === "npcs" || state.viewMode === "triggers";
+  const visualWritable = state.viewMode !== "visual" || atlas?.compatibility !== "reference";
   const editableLayer =
-    state.viewMode === "visual" ||
+    (state.viewMode === "visual" && visualWritable) ||
     state.viewMode === "collision" ||
     state.viewMode === "elevation" ||
     (eventLayer && Boolean(state.mapJsonDocument));
@@ -194,7 +193,11 @@ export function Inspector() {
         <Row label="Bytes ao exportar" value={`${state.map.metatiles.length * 2}`} />
         <Row label="map.bin" value={state.sourceFile ?? "não importado"} mono={false} />
         <Row label="map.json" value={state.mapJsonSource ?? "não importado"} mono={false} />
-        <Row label="Atlas gráfico" value={atlas ? `${atlas.primary} + ${atlas.secondary}` : "DEMO"} mono={false} />
+        <Row
+          label="Atlas gráfico"
+          value={atlas ? `${atlas.familyLabel} · ${atlas.primary} + ${atlas.secondary}` : "carregando tileset real…"}
+          mono={false}
+        />
         <Row label="map.bin alterado" value={state.dirty ? "SIM" : "não"} mono={false} />
         <Row label="map.json alterado" value={state.mapJsonDirty ? "SIM" : "não"} mono={false} />
       </Section>
@@ -203,7 +206,14 @@ export function Inspector() {
         <Row label="Camada" value={state.viewMode} mono={false} />
         <Row label="Modo" value={editableLayer ? "editável" : "somente leitura"} mono={false} />
         {state.viewMode === "visual" && (
-          <Row label="Metatile ativo" value={`${state.selectedMetatile} · ${hex(state.selectedMetatile, 3)}`} />
+          <>
+            <Row label="Metatile ativo" value={`${state.selectedMetatile} · ${hex(state.selectedMetatile, 3)}`} />
+            {atlas?.compatibility === "reference" && (
+              <p className="mt-1 text-[10px] leading-relaxed text-warning">
+                Pack de referência GBA ativo. Troque para Emerald para pintar metatile IDs no mapa de Arauna.
+              </p>
+            )}
+          </>
         )}
         {state.viewMode === "collision" && <Row label="Colisão ativa" value={String(state.selectedCollision)} />}
         {state.viewMode === "elevation" && <Row label="Elevação ativa" value={String(state.selectedElevation)} />}
@@ -323,13 +333,13 @@ export function Inspector() {
             <Row label="Metatile ID" value={`${id} · ${hex(id ?? 0, 3)}`} />
             {realTile ? (
               <>
-                <Row label="Atlas" value="REAL" mono={false} />
+                <Row label="Atlas" value="REAL GBA" mono={false} />
                 <Row label="Origem" value={`${realTile.source} · local ${realTile.localId}`} />
                 <Row label="Behavior" value={realTile.behavior == null ? "—" : hex(realTile.behavior, 2)} />
                 <Row label="Layer type" value={realTile.layerType == null ? "—" : String(realTile.layerType)} />
               </>
             ) : (
-              <Row label="Nome (fallback)" value={demoTile?.name ?? "—"} mono={false} />
+              <Row label="Atlas" value={atlas ? "ID ausente neste pack" : "tileset real ainda não carregado"} mono={false} />
             )}
             <Row label="Valor bruto" value={hex(raw)} />
             <Row label="Bits físicos" value={hex(phys)} />
