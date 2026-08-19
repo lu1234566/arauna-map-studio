@@ -12,30 +12,22 @@ export function SmartPathScopeGuard() {
   const smart = useSmartPath();
   const atlas = useRealAtlas();
   const preset = smart.presets.find((item) => item.id === smart.activePresetId) ?? null;
+  const presetPrimary = preset?.scope?.primary ?? null;
+  const presetSecondary = preset?.scope?.secondary ?? null;
+  const atlasPrimary = atlas?.primary ?? null;
+  const atlasSecondary = atlas?.secondary ?? null;
 
   useEffect(() => {
-    if (!smart.enabled || !preset?.scope) return;
-    const matches = Boolean(
-      atlas &&
-      preset.scope.primary === atlas.primary &&
-      preset.scope.secondary === atlas.secondary,
-    );
+    if (!smart.enabled || !presetPrimary || !presetSecondary) return;
+    const matches = presetPrimary === atlasPrimary && presetSecondary === atlasSecondary;
     if (matches) return;
     smartPathStore.setEnabled(false);
     editorStore.setMessage(
-      atlas
-        ? `Smart Paths desativado: o preset pertence a ${preset.scope.primary} + ${preset.scope.secondary}, mas o mapa atual usa ${atlas.primary} + ${atlas.secondary}.`
+      atlasPrimary && atlasSecondary
+        ? `Smart Paths desativado: o preset pertence a ${presetPrimary} + ${presetSecondary}, mas o mapa atual usa ${atlasPrimary} + ${atlasSecondary}.`
         : "Smart Paths desativado: o preset é vinculado a um tileset, mas nenhum atlas real está carregado.",
     );
-  }, [
-    smart.enabled,
-    preset?.id,
-    preset?.updatedAt,
-    preset?.scope?.primary,
-    preset?.scope?.secondary,
-    atlas?.primary,
-    atlas?.secondary,
-  ]);
+  }, [smart.enabled, presetPrimary, presetSecondary, atlasPrimary, atlasSecondary]);
 
   return null;
 }
