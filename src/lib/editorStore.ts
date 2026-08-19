@@ -11,6 +11,12 @@ import {
   type ValidationReport,
   validateMap,
 } from "./emeraldMap";
+import {
+  metadataOutOfBounds,
+  parsePokeemeraldMapJson,
+  type MapEventSource,
+  type PokeemeraldMapMetadata,
+} from "./pokeemeraldMapJson";
 
 export type Tool = "pencil" | "picker" | "fill" | "select";
 export type ViewMode = "visual" | "collision" | "elevation" | "warps" | "npcs" | "triggers";
@@ -27,6 +33,7 @@ export interface DemoEvent {
   kind: "warp" | "npc" | "trigger";
   label: string;
   detail: string;
+  source?: MapEventSource;
 }
 
 export interface Selection {
@@ -49,6 +56,7 @@ export interface EditorState {
   protectProgression: boolean;
   protectedCells: ProtectedCell[];
   events: DemoEvent[];
+  mapMetadata: PokeemeraldMapMetadata | null;
   selection: Selection | null;
   selectedCell: number | null;
   hoverCell: number | null;
@@ -58,41 +66,20 @@ export interface EditorState {
   lastMessage: string;
   validation: ValidationReport | null;
   sourceFile: string | null;
+  mapJsonSource: string | null;
 }
 
-const PROTECTED: ProtectedCell[] = [
-  { x: 5, y: 8, reason: "Entrada da casa do jogador (demo)" },
-  { x: 14, y: 8, reason: "Entrada da casa do rival (demo)" },
-  { x: 7, y: 16, reason: "Saída sul para Rota 101 (demo)" },
-  { x: 10, y: 1, reason: "Laboratório — porta (demo)" },
-  { x: 11, y: 1, reason: "Laboratório — porta (demo)" },
-];
-
-const EVENTS: DemoEvent[] = [
-  { x: 5, y: 8, kind: "warp", label: "W0", detail: "→ VilaAmanhecer_CasaJogador_1F (demo)" },
-  { x: 14, y: 8, kind: "warp", label: "W1", detail: "→ VilaAmanhecer_CasaRival_1F (demo)" },
-  { x: 10, y: 1, kind: "warp", label: "W2", detail: "→ VilaAmanhecer_Laboratorio (demo)" },
-  { x: 7, y: 16, kind: "warp", label: "W3", detail: "→ Rota101 (demo)" },
-  { x: 8, y: 11, kind: "npc", label: "N0", detail: "OBJ_EVENT_GFX_BOY_1 — andar aleatório (demo)" },
-  { x: 12, y: 5, kind: "npc", label: "N1", detail: "OBJ_EVENT_GFX_WOMAN_1 — parada (demo)" },
-  { x: 3, y: 13, kind: "npc", label: "N2", detail: "OBJ_EVENT_GFX_MAN_1 — olhar sul (demo)" },
-  { x: 7, y: 15, kind: "trigger", label: "T0", detail: "VAR_ARAUNA_INTRO = 1 (demo)" },
-  { x: 10, y: 9, kind: "trigger", label: "T1", detail: "Script de cena de abertura (demo)" },
-];
-
-const STORAGE_MAP = "arauna.map.v1";
+const STORAGE_MAP = "arauna.map.v2";
 const STORAGE_PREFS = "arauna.prefs.v1";
 const MAX_HISTORY = 100;
 
 function defaultMap(): MapData {
-  // Padrão simples só para dar contexto visual ao mapa novo.
-  const map = createEmptyMap(20, 20, 0x000);
-  return map;
+  return createEmptyMap(20, 20, 0x000);
 }
 
 function initialState(): EditorState {
   return {
-    mapName: "VilaAmanhecer (LittlerootTown)",
+    mapName: "Novo mapa 20×20",
     map: defaultMap(),
     tool: "pencil",
     viewMode: "visual",
@@ -102,17 +89,19 @@ function initialState(): EditorState {
     showGrid: true,
     showCoords: true,
     protectProgression: true,
-    protectedCells: PROTECTED,
-    events: EVENTS,
+    protectedCells: [],
+    events: [],
+    mapMetadata: null,
     selection: null,
     selectedCell: null,
     hoverCell: null,
     undoDepth: 0,
     redoDepth: 0,
     dirty: false,
-    lastMessage: "Pronto.",
+    lastMessage: "Pronto. Importe map.bin e map.json para trabalhar com um mapa real do pokeemerald.",
     validation: null,
     sourceFile: null,
+    mapJsonSource: null,
   };
 }
 
@@ -134,7 +123,7 @@ class EditorStore {
 
   private set(patch: Partial<EditorState>, persist = true) {
     this.state = { ...this.state, ...patch };
-    this.listeners.forEach((l) => l());
+    this.listeners.forEach((listener) => listener());
     if (persist) this.schedulePersist();
   }
 
@@ -157,6 +146,10 @@ class EditorStore {
           metatiles: Array.from(s.map.metatiles),
           physical: Array.from(s.map.physical),
           sourceFile: s.sourceFile,
+          mapJsonSource: s.mapJsonSource,
+          mapMetadata: s.mapMetadata,
+          events: s.events,
+          protectedCells: s.protectedCells,
         }),
       );
       localStorage.setItem(
@@ -181,46 +174,63 @@ class EditorStore {
     try {
       const rawPrefs = localStorage.getItem(STORAGE_PREFS);
       if (rawPrefs) {
-        const p = JSON.parse(rawPrefs);
+        const prefs = JSON.parse(rawPrefs) as Partial<EditorState>;
         this.state = {
           ...this.state,
-          tool: p.tool ?? this.state.tool,
-          viewMode: p.viewMode ?? this.state.viewMode,
-          selectedMetatile: p.selectedMetatile ?? this.state.selectedMetatile,
-          zoom: p.zoom ?? this.state.zoom,
-          showGrid: p.showGrid ?? this.state.showGrid,
-          showCoords: p.showCoords ?? this.state.showCoords,
-          protectProgression: p.protectProgression ?? this.state.protectProgression,
+          tool: prefs.tool ?? this.state.tool,
+          viewMode: prefs.viewMode ?? this.state.viewMode,
+          selectedMetatile: prefs.selectedMetatile ?? this.state.selectedMetatile,
+          zoom: prefs.zoom ?? this.state.zoom,
+          showGrid: prefs.showGrid ?? this.state.showGrid,
+          showCoords: prefs.showCoords ?? this.state.showCoords,
+          protectProgression: prefs.protectProgression ?? this.state.protectProgression,
         };
       }
-      const rawMap = localStorage.getItem(STORAGE_MAP);
+
+      // v2 inclui metadados de map.json. Se não existir, tenta recuperar o mapa v1.
+      const rawMap = localStorage.getItem(STORAGE_MAP) ?? localStorage.getItem("arauna.map.v1");
       if (rawMap) {
-        const m = JSON.parse(rawMap);
-        if (Array.isArray(m.metatiles) && m.metatiles.length === m.width * m.height) {
+        const saved = JSON.parse(rawMap) as Record<string, unknown>;
+        const width = Number(saved.width);
+        const height = Number(saved.height);
+        const metatiles = saved.metatiles;
+        if (Array.isArray(metatiles) && metatiles.length === width * height) {
+          const physical = Array.isArray(saved.physical) ? saved.physical : [];
+          const restoredMap: MapData = {
+            width,
+            height,
+            metatiles: Uint16Array.from(metatiles.map(Number)),
+            physical: Uint16Array.from(physical.map(Number)),
+          };
+          if (restoredMap.physical.length !== restoredMap.metatiles.length) {
+            restoredMap.physical = new Uint16Array(restoredMap.metatiles.length);
+          }
+
           this.state = {
             ...this.state,
-            mapName: m.mapName ?? this.state.mapName,
-            sourceFile: m.sourceFile ?? null,
-            map: {
-              width: m.width,
-              height: m.height,
-              metatiles: Uint16Array.from(m.metatiles),
-              physical: Uint16Array.from(m.physical ?? []),
-            },
+            mapName: typeof saved.mapName === "string" ? saved.mapName : this.state.mapName,
+            sourceFile: typeof saved.sourceFile === "string" ? saved.sourceFile : null,
+            mapJsonSource: typeof saved.mapJsonSource === "string" ? saved.mapJsonSource : null,
+            mapMetadata:
+              saved.mapMetadata && typeof saved.mapMetadata === "object"
+                ? (saved.mapMetadata as PokeemeraldMapMetadata)
+                : null,
+            events: Array.isArray(saved.events) ? (saved.events as DemoEvent[]) : this.state.events,
+            protectedCells: Array.isArray(saved.protectedCells)
+              ? (saved.protectedCells as ProtectedCell[])
+              : this.state.protectedCells,
+            map: restoredMap,
             lastMessage: "Projeto restaurado do armazenamento local.",
           };
-          if (this.state.map.physical.length !== this.state.map.metatiles.length) {
-            this.state.map.physical = new Uint16Array(this.state.map.metatiles.length);
-          }
         }
       }
-      this.listeners.forEach((l) => l());
+      this.listeners.forEach((listener) => listener());
     } catch {
-      /* ignore */
+      /* armazenamento inválido: mantém estado inicial */
     }
   }
 
-  // ---- histórico ----
+  // ---- histórico do layout binário ----
   private pushHistory() {
     this.undoStack.push(cloneMap(this.state.map));
     if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
@@ -251,9 +261,9 @@ class EditorStore {
 
   // ---- helpers ----
   isProtected = (x: number, y: number) =>
-    this.state.protectProgression && this.state.protectedCells.some((c) => c.x === x && c.y === y);
+    this.state.protectProgression && this.state.protectedCells.some((cell) => cell.x === x && cell.y === y);
 
-  // ---- edição ----
+  // ---- edição visual ----
   /** Pinta uma célula. `continuous` agrupa o traço num único passo de undo. */
   paint = (x: number, y: number, continuous = false) => {
     const s = this.state;
@@ -261,7 +271,10 @@ class EditorStore {
     const { width, height } = s.map;
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     if (this.isProtected(x, y)) {
-      this.set({ lastMessage: `Célula (${x},${y}) protegida — desligue "Proteger progressão" para editar.` }, false);
+      this.set(
+        { lastMessage: `Célula (${x},${y}) protegida — desligue "Proteger progressão" para editar.` },
+        false,
+      );
       return;
     }
     const i = idx(x, y, width);
@@ -304,19 +317,24 @@ class EditorStore {
     const sel = s.selection;
     if (!sel || s.viewMode !== "visual") return;
     const map = cloneMap(s.map);
-    let n = 0;
-    for (let y = sel.y; y < sel.y + sel.h; y++)
+    let changed = 0;
+    for (let y = sel.y; y < sel.y + sel.h; y++) {
       for (let x = sel.x; x < sel.x + sel.w; x++) {
         if (this.isProtected(x, y)) continue;
         const i = idx(x, y, map.width);
         if (map.metatiles[i] !== (s.selectedMetatile & METATILE_MASK)) {
           map.metatiles[i] = s.selectedMetatile & METATILE_MASK;
-          n++;
+          changed++;
         }
       }
-    if (!n) return;
+    }
+    if (!changed) return;
     this.pushHistory();
-    this.syncHistoryDepths({ map, dirty: true, lastMessage: `Seleção preenchida: ${n} célula(s).` });
+    this.syncHistoryDepths({
+      map,
+      dirty: true,
+      lastMessage: `Seleção preenchida: ${changed} célula(s).`,
+    });
   };
 
   setSelection = (selection: Selection | null) => this.set({ selection }, false);
@@ -341,8 +359,13 @@ class EditorStore {
   newMap = () => {
     this.pushHistory();
     this.syncHistoryDepths({
+      mapName: "Novo mapa 20×20",
       map: defaultMap(),
       sourceFile: null,
+      mapJsonSource: null,
+      mapMetadata: null,
+      events: [],
+      protectedCells: [],
       dirty: false,
       selection: null,
       selectedCell: null,
@@ -371,10 +394,67 @@ class EditorStore {
     }
   };
 
+  importMapJson = (source: string, fileName: string) => {
+    try {
+      const metadata = parsePokeemeraldMapJson(source);
+      const totalEvents = metadata.events.length;
+      this.set({
+        mapName: `${metadata.name} (${metadata.id})`,
+        mapMetadata: metadata,
+        mapJsonSource: fileName,
+        events: metadata.events,
+        protectedCells: metadata.protectedCells,
+        selectedCell: null,
+        validation: null,
+        lastMessage:
+          `Importado ${fileName} — ${metadata.counts.warps} warp(s), ` +
+          `${metadata.counts.objects} NPC(s), ${metadata.counts.coordEvents} trigger(s), ` +
+          `${metadata.counts.bgEvents} BG event(s); ${totalEvents} evento(s) visíveis.`,
+      });
+      return { ok: true as const, metadata };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.set({ lastMessage: `Falha ao importar map.json: ${message}` });
+      return { ok: false as const, message };
+    }
+  };
+
   exportBytes = () => exportMapBin(this.state.map);
 
   runValidation = () => {
-    const validation = validateMap(this.state.map);
+    const base = validateMap(this.state.map);
+    const issues = [...base.issues];
+    const metadata = this.state.mapMetadata;
+
+    if (!metadata) {
+      issues.push({
+        level: "warn" as const,
+        message: "map.json ainda não foi importado; warps, triggers e eventos não entraram nesta validação.",
+      });
+    } else {
+      const outside = metadataOutOfBounds(metadata, this.state.map.width, this.state.map.height);
+      if (outside.length) {
+        issues.push({
+          level: "error" as const,
+          message: `${outside.length} evento(s) do map.json estão fora dos limites ${this.state.map.width}×${this.state.map.height}.`,
+        });
+      } else {
+        issues.push({
+          level: "info" as const,
+          message: `Todos os ${metadata.events.length} evento(s) do map.json estão dentro dos limites.`,
+        });
+      }
+      issues.push({
+        level: "info" as const,
+        message: `Layout declarado: ${metadata.layout}. Conexões: ${metadata.connections.length}. Células protegidas derivadas: ${metadata.protectedCells.length}.`,
+      });
+    }
+
+    const validation: ValidationReport = {
+      ...base,
+      issues,
+      pass: issues.every((issue) => issue.level !== "error"),
+    };
     this.set({
       validation,
       lastMessage: validation.pass ? "Validação: PASS." : "Validação: FAIL.",
