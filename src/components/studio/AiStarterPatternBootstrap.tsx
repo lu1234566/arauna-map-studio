@@ -42,6 +42,7 @@ function pruneAutomaticVocabulary(scope: PatternScope) {
  * - mantém o starter pack canônico quando o scope suportar;
  * - com map.json ativo, extrai fachadas, mercado e trechos RAW do mapa aberto;
  * - cria Smart Paths usando pisos/costa reais do próprio mapa;
+ * - ignora eventos de borda fora do blockdata (ex.: warp x=width);
  * - remove apenas vocabulário AUTOMÁTICO de outros tilesets;
  * - nunca duplica os IDs automáticos já instalados.
  */
@@ -56,10 +57,13 @@ export function AiStarterPatternBootstrap() {
     const scope = { primary: atlas.primary, secondary: atlas.secondary };
     pruneAutomaticVocabulary(scope);
 
+    const safeEvents = editor.events.filter((event) => (
+      event.x >= 0 && event.y >= 0 && event.x < editor.map.width && event.y < editor.map.height
+    ));
     const mapDerived = editor.mapJsonDocument
       ? [
-          ...deriveMapPatterns(editor.map, editor.events, editor.mapName, scope, atlas),
-          ...deriveSemanticEventPatterns(editor.map, editor.events, editor.mapName, scope),
+          ...deriveMapPatterns(editor.map, safeEvents, editor.mapName, scope, atlas),
+          ...deriveSemanticEventPatterns(editor.map, safeEvents, editor.mapName, scope),
         ]
       : [];
     const candidates = [
