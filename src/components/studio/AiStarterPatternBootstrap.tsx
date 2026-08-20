@@ -13,7 +13,8 @@ export function AiStarterPatternBootstrap() {
     if (!atlas || !library.hydrated || library.patterns.length) return;
     const patterns = starterPatternsForScope({ primary: atlas.primary, secondary: atlas.secondary });
     if (!patterns.length) return;
-    patternLibraryStore.importJson(serializeMapPatterns(patterns));
+    const imported = patternLibraryStore.importJson(serializeMapPatterns(patterns));
+    if (imported.ok) patternLibraryStore.setPanelOpen(false);
   }, [atlas, library.hydrated, library.patterns.length]);
 
   return null;
