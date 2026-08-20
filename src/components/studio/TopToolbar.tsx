@@ -24,15 +24,17 @@ import {
   Settings2,
   Maximize2,
 } from "lucide-react";
-import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
-import { saveEditorToWritableWorkspace } from "@/lib/fileSystemWorkspace";
-import { cn } from "@/lib/utils";
-import { realAtlasStore } from "@/lib/realAtlasStore";
-import { useWorkspaceSession } from "@/lib/workspaceSession";
 import {
   LITTLEROOT_MAP_JSON,
   littlerootMapBinBuffer,
 } from "@/data/littlerootSnapshot";
+import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
+import { saveEditorToWritableWorkspace } from "@/lib/fileSystemWorkspace";
+import { requestMapCameraFit } from "@/lib/mapCamera";
+import { mapBinDimensionCandidates, parseMapBinDimensionInput } from "@/lib/mapBinImport";
+import { realAtlasStore } from "@/lib/realAtlasStore";
+import { cn } from "@/lib/utils";
+import { useWorkspaceSession } from "@/lib/workspaceSession";
 
 const TOOLS: { id: Tool; icon: typeof Brush; label: string; key: string }[] = [
   { id: "pencil", icon: Brush, label: "Lápis", key: "B" },
@@ -92,6 +94,11 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
+function showBinImportError(message: string) {
+  editorStore.setMessage(`Falha na importação: ${message}`);
+  window.alert(`Não foi possível importar o map.bin.\n\n${message}`);
+}
+
 export function TopToolbar({ onValidate }: { onValidate: () => void }) {
   const state = useEditor();
   const session = useWorkspaceSession();
@@ -101,7 +108,80 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
 
   const handleImportBin = async (file: File) => {
     const buffer = await file.arrayBuffer();
-    editorStore.importBuffer(buffer, file.name);
+    if (!buffer.byteLength || buffer.byteLength % 2 !== 0) {
+      showBinImportError(
+        `O arquivo possui ${buffer.byteLength} bytes; map.bin precisa ter quantidade par de bytes (uint16).`,
+      );
+      return;
+    }
+
+    const cells = buffer.byteLength / 2;
+    let width = 20;
+    let height = 20;
+
+    if (cells !== 400) {
+      const inferred = mapBinDimensionCandidates(buffer);
+      const currentMatches = state.map.width * state.map.height === cells
+        ? { width: state.map.width, height: state.map.height }
+        : null;
+      const candidates = currentMatches
+        ? [
+            currentMatches,
+            ...inferred.filter(
+              (candidate) =>
+                candidate.width !== currentMatches.width || candidate.height !== currentMatches.height,
+            ),
+          ]
+        : inferred;
+      const suggested = candidates[0];
+
+      if (!suggested) {
+        showBinImportError(
+          `${buffer.byteLength} bytes = ${cells} células, mas não foi encontrada uma dimensão plausível.`,
+        );
+        return;
+      }
+
+      const options = candidates
+        .slice(0, 8)
+        .map((candidate) => `${candidate.width}×${candidate.height}`)
+        .join(", ");
+      const answer = window.prompt(
+        `${file.name}\n${buffer.byteLength} bytes = ${cells} células.\n\n` +
+          "O formato map.bin não guarda largura e altura. Confirme a dimensão correta.\n" +
+          `Sugestões: ${options}\n\nDigite LARGURA×ALTURA:`,
+        `${suggested.width}×${suggested.height}`,
+      );
+
+      if (answer == null) {
+        editorStore.setMessage(`Importação de ${file.name} cancelada; nenhuma alteração foi feita.`);
+        return;
+      }
+
+      const dimensions = parseMapBinDimensionInput(answer, cells);
+      if (!dimensions) {
+        showBinImportError(
+          `Dimensão “${answer}” inválida para ${cells} células. ` +
+            `Use largura×altura e garanta que largura × altura = ${cells}.`,
+        );
+        return;
+      }
+
+      width = dimensions.width;
+      height = dimensions.height;
+    }
+
+    const result = editorStore.importBufferSized(buffer, file.name, width, height);
+    if (!result.ok) {
+      showBinImportError(result.message);
+      return;
+    }
+
+    requestMapCameraFit();
+    editorStore.setMessage(
+      `Importado ${file.name} — ${buffer.byteLength} bytes, ${width}×${height} (${cells} células). ` +
+        "Aguardando map.json deste mapa.",
+    );
   };
 
   const handleImportJson = async (file: File) => {
@@ -224,7 +304,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
         >
           <Map className="size-3.5" /> Vila snapshot
         </TB>
-        <TB title="Importar map.bin 20×20 manualmente" onClick={() => binRef.current?.click()}>
+        <TB title="Importar map.bin com dimensões variáveis" onClick={() => binRef.current?.click()}>
           <Upload className="size-3.5" /> map.bin
         </TB>
         <TB title="Importar data/maps/.../map.json manualmente" onClick={() => jsonRef.current?.click()}>
