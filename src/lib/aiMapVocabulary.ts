@@ -19,8 +19,19 @@ interface SemanticSpec {
   height: number;
 }
 
+// Valores oficiais de include/constants/metatile_behaviors.h:
+// MB_POND_WATER (0x10) ... MB_SHALLOW_WATER (0x17).
 const WATER_BEHAVIORS = new Set([0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17]);
-const WALKABLE_BEHAVIORS = new Set([0x00, 0x07, 0x08, 0x0a]);
+// Pisos comuns nos mapas externos de Emerald. O filtro de colisão continua
+// sendo a primeira barreira; behavior só ajuda a evitar portas/efeitos.
+const WALKABLE_BEHAVIORS = new Set([
+  0x00, // normal
+  0x02, 0x03, // tall/long grass
+  0x06, 0x07, // deep sand / short grass
+  0x08, 0x09, 0x0a, // cave / long-grass edge / no running
+  0x20, 0x21, 0x22, // ice / sand / seaweed
+  0x24, 0x25, // ashgrass / footprints
+]);
 
 function slug(value: string) {
   return value
@@ -73,6 +84,10 @@ function behaviorMap(atlas: SavedRealAtlas | null) {
   return new Map((atlas?.records ?? []).map((record) => [record.id & METATILE_MASK, record.behavior]));
 }
 
+function inBounds(map: MapData, x: number, y: number) {
+  return x >= 0 && y >= 0 && x < map.width && y < map.height;
+}
+
 function cropRaw(map: MapData, left: number, top: number, width: number, height: number) {
   const x0 = Math.max(0, Math.min(map.width - 1, left));
   const y0 = Math.max(0, Math.min(map.height - 1, top));
@@ -83,6 +98,77 @@ function cropRaw(map: MapData, left: number, top: number, width: number, height:
     for (let x = x0; x < x1; x++) values.push(rawValue(map, idx(x, y, map.width)));
   }
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0, values };
+}
+
+/**
+ * A porta/warp costuma ficar na base do prédio. Tentamos encontrar o bloco
+ * colidível conectado logo acima dela e usamos seu bounding box (+ margem).
+ * Se o prédio não puder ser inferido com segurança, voltamos ao crop semântico.
+ */
+function detectBuildingRegion(
+  map: MapData,
+  doorX: number,
+  doorY: number,
+  fallbackWidth: number,
+  fallbackHeight: number,
+) {
+  const minX = Math.max(0, doorX - 8);
+  const maxX = Math.min(map.width - 1, doorX + 8);
+  const minY = Math.max(0, doorY - 11);
+  const maxY = Math.min(map.height - 1, doorY);
+  const blocked = (x: number, y: number) => (
+    x >= minX && x <= maxX && y >= minY && y <= maxY &&
+    getCollision(map.physical[idx(x, y, map.width)] ?? 0) !== 0
+  );
+
+  const queue: Array<{ x: number; y: number }> = [];
+  for (const point of [
+    { x: doorX, y: doorY - 1 },
+    { x: doorX - 1, y: doorY - 1 },
+    { x: doorX + 1, y: doorY - 1 },
+    { x: doorX - 1, y: doorY },
+    { x: doorX + 1, y: doorY },
+  ]) {
+    if (inBounds(map, point.x, point.y) && blocked(point.x, point.y)) queue.push(point);
+  }
+
+  const seen = new Set<string>();
+  const cells: Array<{ x: number; y: number }> = [];
+  while (queue.length && cells.length < 180) {
+    const current = queue.shift()!;
+    const key = `${current.x},${current.y}`;
+    if (seen.has(key) || !blocked(current.x, current.y)) continue;
+    seen.add(key);
+    cells.push(current);
+    for (const next of [
+      { x: current.x + 1, y: current.y },
+      { x: current.x - 1, y: current.y },
+      { x: current.x, y: current.y + 1 },
+      { x: current.x, y: current.y - 1 },
+    ]) {
+      if (!seen.has(`${next.x},${next.y}`) && blocked(next.x, next.y)) queue.push(next);
+    }
+  }
+
+  if (cells.length >= 5) {
+    const left = Math.max(0, Math.min(...cells.map((cell) => cell.x)) - 1);
+    const right = Math.min(map.width - 1, Math.max(...cells.map((cell) => cell.x)) + 1);
+    const top = Math.max(0, Math.min(...cells.map((cell) => cell.y)) - 1);
+    const bottom = Math.min(map.height - 1, Math.max(doorY, Math.max(...cells.map((cell) => cell.y)) + 1));
+    const width = right - left + 1;
+    const height = bottom - top + 1;
+    if (width >= 4 && width <= 15 && height >= 4 && height <= 12) {
+      return cropRaw(map, left, top, width, height);
+    }
+  }
+
+  return cropRaw(
+    map,
+    doorX - Math.floor(fallbackWidth / 2),
+    doorY - (fallbackHeight - 1),
+    fallbackWidth,
+    fallbackHeight,
+  );
 }
 
 function patternSignature(values: number[]) {
@@ -126,7 +212,7 @@ function patchStats(
   size: number,
 ) {
   let water = 0;
-  let blocked = 0;
+  let blockedCount = 0;
   let normal = 0;
   const ids = new Set<number>();
   for (let y = top; y < top + size; y++) {
@@ -137,14 +223,14 @@ function patchStats(
       ids.add(id);
       if (behavior != null && WATER_BEHAVIORS.has(behavior)) water++;
       if (behavior != null && WALKABLE_BEHAVIORS.has(behavior)) normal++;
-      if (getCollision(map.physical[i] ?? 0) !== 0) blocked++;
+      if (getCollision(map.physical[i] ?? 0) !== 0) blockedCount++;
     }
   }
   const total = size * size;
   return {
     unique: ids.size,
     water: water / total,
-    blocked: blocked / total,
+    blocked: blockedCount / total,
     normal: normal / total,
   };
 }
@@ -213,6 +299,10 @@ function mineContextPatches(
  * Extrai vocabulário reutilizável diretamente do mapa REAL que está aberto.
  * Warps viram fachadas/edifícios com port semântico; trechos urbanos, verdes e
  * costeiros são minerados como patches RAW preservando metatile+colisão+elevação.
+ *
+ * Patterns derivados de warp recebem `warp-anchor:X,Y`. O planejador usa essa
+ * tag para manter a porta exatamente sobre o warp existente por padrão, o que
+ * evita gerar uma cidade bonita porém não jogável.
  */
 export function deriveMapPatterns(
   map: MapData,
@@ -229,24 +319,39 @@ export function deriveMapPatterns(
   for (const event of events.filter((item) => item.source === "warp")) {
     const destination = destinationFromDetail(event.detail);
     const semantic = semanticForDestination(destination);
-    const sizes = [
-      { width: semantic.width, height: semantic.height, suffix: "completo" },
-      { width: Math.min(7, semantic.width), height: Math.min(6, semantic.height), suffix: "compacto" },
+    const complete = detectBuildingRegion(map, event.x, event.y, semantic.width, semantic.height);
+    const regions = [
+      { region: complete, suffix: "completo" },
+      {
+        region: cropRaw(
+          map,
+          event.x - Math.floor(Math.min(7, semantic.width) / 2),
+          event.y - (Math.min(6, semantic.height) - 1),
+          Math.min(7, semantic.width),
+          Math.min(6, semantic.height),
+        ),
+        suffix: "compacto",
+      },
     ];
 
-    for (const size of sizes) {
-      const left = event.x - Math.floor(size.width / 2);
-      const top = event.y - (size.height - 1);
-      const region = cropRaw(map, left, top, size.width, size.height);
+    for (const { region, suffix } of regions) {
       const signature = patternSignature(region.values);
       if (seen.has(signature)) continue;
       seen.add(signature);
       const relativePort = { x: event.x - region.x, y: event.y - region.y };
       patterns.push(rawPattern(
-        `auto-${mapKey}-warp-${event.sourceIndex}-${size.suffix}`,
-        `${semantic.name} — ${size.suffix}`,
+        `auto-${mapKey}-warp-${event.sourceIndex}-${suffix}`,
+        `${semantic.name} — ${suffix}`,
         semantic.category,
-        [...semantic.tags, destination.toLowerCase(), "extraído do mapa", mapKey],
+        [
+          ...semantic.tags,
+          destination.toLowerCase(),
+          `warp-destination:${destination}`,
+          `warp-anchor:${event.x},${event.y}`,
+          "preservar warp existente",
+          "extraído do mapa",
+          mapKey,
+        ],
         region,
         scope,
         createdAt,
@@ -259,10 +364,71 @@ export function deriveMapPatterns(
   return patterns.slice(0, 80);
 }
 
+function mostCommonId(counts: Map<number, number>, excluded = new Set<number>()) {
+  return [...counts.entries()]
+    .filter(([id]) => !excluded.has(id))
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+function waterSmartPath(
+  map: MapData,
+  mapKey: string,
+  scope: PatternScope,
+  behaviors: Map<number, number | null>,
+  groundCounts: Map<number, number>,
+  createdAt: string,
+): SmartPathPreset | null {
+  const isWater = (x: number, y: number) => {
+    if (!inBounds(map, x, y)) return false;
+    const id = (map.metatiles[idx(x, y, map.width)] ?? 0) & METATILE_MASK;
+    const behavior = behaviors.get(id);
+    return behavior != null && WATER_BEHAVIORS.has(behavior);
+  };
+
+  const perMask = Array.from({ length: 16 }, () => new Map<number, number>());
+  const overall = new Map<number, number>();
+  let observedMasks = 0;
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (!isWater(x, y)) continue;
+      const id = (map.metatiles[idx(x, y, map.width)] ?? 0) & METATILE_MASK;
+      let mask = 0;
+      if (isWater(x, y - 1)) mask |= 1;
+      if (isWater(x + 1, y)) mask |= 2;
+      if (isWater(x, y + 1)) mask |= 4;
+      if (isWater(x - 1, y)) mask |= 8;
+      const bucket = perMask[mask]!;
+      bucket.set(id, (bucket.get(id) ?? 0) + 1);
+      overall.set(id, (overall.get(id) ?? 0) + 1);
+    }
+  }
+
+  for (const bucket of perMask) if (bucket.size) observedMasks++;
+  const fallback = mostCommonId(overall);
+  if (fallback == null || observedMasks < 3) return null;
+  const variants = perMask.map((bucket) => mostCommonId(bucket) ?? fallback);
+  const family = new Set(variants);
+  const erase = mostCommonId(groundCounts, family);
+  if (erase == null) return null;
+  if (new Set(variants).size < 2) return null;
+
+  return {
+    format: SMART_PATH_FORMAT,
+    id: `auto-${mapKey}-smart-path-costa-agua`,
+    name: "Costa/água real do mapa",
+    variants,
+    eraseMetatile: erase,
+    scope: { ...scope },
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
 /**
- * Cria Smart Paths seguros a partir dos pisos caminháveis mais usados do mapa.
- * A primeira versão é propositalmente conservadora: cada família usa um único
- * metatile real para os 16 masks, evitando inventar curvas/IDs que não existam.
+ * Cria Smart Paths a partir dos próprios metatiles do mapa aberto.
+ * - pisos caminháveis frequentes viram caminhos conservadores (sem inventar IDs);
+ * - quando o atlas identifica água suficiente, as variantes NESW são inferidas
+ *   da topologia que já existe no mapa, produzindo um autotile costeiro real.
  */
 export function deriveMapSmartPaths(
   map: MapData,
@@ -271,34 +437,40 @@ export function deriveMapSmartPaths(
   atlas: SavedRealAtlas | null,
 ): SmartPathPreset[] {
   const behaviors = behaviorMap(atlas);
-  const counts = new Map<number, number>();
+  const groundCounts = new Map<number, number>();
   for (let i = 0; i < map.metatiles.length; i++) {
     if (getCollision(map.physical[i] ?? 0) !== 0) continue;
     const id = (map.metatiles[i] ?? 0) & METATILE_MASK;
     if (id === 0) continue;
     const behavior = behaviors.get(id);
-    if (behavior != null && !WALKABLE_BEHAVIORS.has(behavior)) continue;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
+    if (behavior != null && (WATER_BEHAVIORS.has(behavior) || !WALKABLE_BEHAVIORS.has(behavior))) continue;
+    groundCounts.set(id, (groundCounts.get(id) ?? 0) + 1);
   }
 
-  const ranked = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1]);
+  const ranked = [...groundCounts.entries()].sort((a, b) => b[1] - a[1]);
   if (ranked.length < 2) return [];
   const eraseMetatile = ranked[0]![0];
   const seeds = ranked.slice(1).filter(([, count]) => count >= 4).slice(0, 3);
-  if (!seeds.length) return [];
-
-  const labels = ["Rua urbana real", "Caminho secundário real", "Praça/calçada real"];
   const createdAt = new Date().toISOString();
   const mapKey = slug(mapName);
-  return seeds.map(([seed], index) => ({
-    format: SMART_PATH_FORMAT,
-    id: `auto-${mapKey}-smart-path-${index + 1}`,
-    name: labels[index] ?? `Caminho real ${index + 1}`,
-    variants: Array.from({ length: 16 }, () => seed),
-    eraseMetatile,
-    scope: { ...scope },
-    createdAt,
-    updatedAt: createdAt,
-  }));
+  const presets: SmartPathPreset[] = [];
+
+  const coast = waterSmartPath(map, mapKey, scope, behaviors, groundCounts, createdAt);
+  if (coast) presets.push(coast);
+
+  const labels = ["Rua urbana real", "Caminho secundário real", "Praça/calçada real"];
+  for (const [index, [seed]] of seeds.entries()) {
+    if (seed === eraseMetatile) continue;
+    presets.push({
+      format: SMART_PATH_FORMAT,
+      id: `auto-${mapKey}-smart-path-${index + 1}`,
+      name: labels[index] ?? `Caminho real ${index + 1}`,
+      variants: Array.from({ length: 16 }, () => seed),
+      eraseMetatile,
+      scope: { ...scope },
+      createdAt,
+      updatedAt: createdAt,
+    });
+  }
+  return presets.slice(0, 4);
 }
