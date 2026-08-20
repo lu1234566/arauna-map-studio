@@ -39,6 +39,22 @@ const anchoredPattern: MapPattern = {
   updatedAt: "2026-08-20T00:00:00.000Z",
 };
 
+const greenPattern: MapPattern = {
+  format: MAP_PATTERN_FORMAT,
+  id: "auto-slateport-green-test",
+  name: "Trecho verde real 1",
+  category: "Vegetação · trecho",
+  tags: ["verde", "vegetação", "jardim", "extraído do mapa"],
+  width: 3,
+  height: 3,
+  kind: "raw",
+  values: Array.from({ length: 9 }, () => 0x3003),
+  ports: [],
+  scope: { primary: "gTileset_General", secondary: "gTileset_Slateport" },
+  createdAt: "2026-08-20T00:00:00.000Z",
+  updatedAt: "2026-08-20T00:00:00.000Z",
+};
+
 function urbanPath() {
   const preset = createSmartPathPreset("Via urbana pelos acessos reais", 2, 1);
   preset.id = "auto-slateport-smart-path-acessos-urbanos";
@@ -112,6 +128,30 @@ describe("AI real-map reconstruction", () => {
     expect(result.map.metatiles[idx(7, 7, map.width)]).toBe(2);
     expect(result.map.metatiles[idx(8, 8, map.width)]).toBe(1);
     expect(result.map.metatiles[idx(5, 5, map.width)]).toBe(1);
+  });
+
+  it("rebuilds coherent green zones from real green patterns without invading urban access", () => {
+    const map = createEmptyMap(18, 14, 1);
+    for (let y = 4; y <= 6; y++) {
+      for (let x = 11; x <= 13; x++) map.metatiles[idx(x, y, map.width)] = 3;
+    }
+
+    const result = planAiMapReconstruction(
+      map,
+      atlas,
+      [anchoredPattern, greenPattern],
+      [{ x: 5, y: 5, kind: "warp", label: "W0" }],
+      [urbanPath()],
+    );
+
+    expect(result.baseMetatile).toBe(1);
+    expect(result.urbanMetatile).toBe(2);
+    expect(result.greenMetatile).toBe(3);
+    expect(result.greenSeedCount).toBeGreaterThanOrEqual(9);
+    expect(result.greenChangedCount).toBeGreaterThan(0);
+    expect(result.map.metatiles[idx(12, 7, map.width)]).toBe(3);
+    expect(result.map.metatiles[idx(7, 7, map.width)]).toBe(2);
+    expect(result.map.metatiles[idx(16, 11, map.width)]).toBe(1);
   });
 
   it("cleans only small orphan collision clusters and preserves elevation and protected obstacles", () => {
