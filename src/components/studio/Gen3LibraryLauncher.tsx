@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { Gamepad2 } from "lucide-react";
 import { AiCityBuilderDock } from "./AiCityBuilderDock";
+import { AiStarterPatternBootstrap } from "./AiStarterPatternBootstrap";
 
 export function Gen3LibraryLauncher() {
   return (
     <>
+      <AiStarterPatternBootstrap />
       <AiCityBuilderDock />
       <Link
         to="/gen3-library"
