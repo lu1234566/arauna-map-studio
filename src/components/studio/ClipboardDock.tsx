@@ -47,7 +47,9 @@ export function ClipboardDock() {
     ? "sem seleção ativa"
     : `célula (${editor.selectedCell % editor.map.width},${Math.floor(editor.selectedCell / editor.map.width)})`;
 
-  if (!hasAnchor && !clipboard) return null;
+  // Não ocupa o canvas só porque uma célula foi clicada. O dock é contextual:
+  // aparece apenas em camadas editáveis quando há seleção regional ou clipboard.
+  if (!editableLayer || (!selection && !clipboard)) return null;
 
   return (
     <section className="absolute bottom-9 right-2 z-30 w-[310px] overflow-hidden rounded border border-border bg-panel/95 shadow-xl backdrop-blur-sm">
