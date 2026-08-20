@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { deriveSemanticEventPatterns } from "@/lib/aiMapSemanticRegions";
 import { deriveMapPatterns, deriveMapSmartPaths } from "@/lib/aiMapVocabulary";
 import { starterPatternsForScope } from "@/lib/emeraldStarterPatterns";
 import { useEditor } from "@/lib/editorStore";
@@ -39,8 +40,8 @@ function pruneAutomaticVocabulary(scope: PatternScope) {
  * Instala vocabulário GBA real para a IA.
  *
  * - mantém o starter pack canônico quando o scope suportar;
- * - com map.json ativo, extrai fachadas e trechos RAW do próprio mapa aberto;
- * - cria Smart Paths conservadores usando pisos caminháveis reais do mapa;
+ * - com map.json ativo, extrai fachadas, mercado e trechos RAW do mapa aberto;
+ * - cria Smart Paths usando pisos/costa reais do próprio mapa;
  * - remove apenas vocabulário AUTOMÁTICO de outros tilesets;
  * - nunca duplica os IDs automáticos já instalados.
  */
@@ -55,11 +56,15 @@ export function AiStarterPatternBootstrap() {
     const scope = { primary: atlas.primary, secondary: atlas.secondary };
     pruneAutomaticVocabulary(scope);
 
+    const mapDerived = editor.mapJsonDocument
+      ? [
+          ...deriveMapPatterns(editor.map, editor.events, editor.mapName, scope, atlas),
+          ...deriveSemanticEventPatterns(editor.map, editor.events, editor.mapName, scope),
+        ]
+      : [];
     const candidates = [
       ...starterPatternsForScope(scope),
-      ...(editor.mapJsonDocument
-        ? deriveMapPatterns(editor.map, editor.events, editor.mapName, scope, atlas)
-        : []),
+      ...mapDerived,
     ];
     const existingPatternIds = new Set(patternLibraryStore.getState().patterns.map((pattern) => pattern.id));
     const missingPatterns = candidates.filter((pattern) => !existingPatternIds.has(pattern.id));
