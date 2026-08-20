@@ -57,7 +57,7 @@ describe("AI real-map reconstruction", () => {
     // Warp cell must remain untouched.
     map.metatiles[idx(1, 1, map.width)] = 2;
 
-    // Blocked cell keeps its visual even though behavior is normal.
+    // Blocked border cell keeps its visual and collision.
     map.metatiles[idx(0, 3, map.width)] = 2;
     map.physical[idx(0, 3, map.width)] = 0x0400;
 
@@ -91,10 +91,11 @@ describe("AI real-map reconstruction", () => {
     expect(result.map.physical[idx(0, 3, map.width)]).toBe(0x0400);
   });
 
-  it("uses a real urban Smart Path as contextual ground near anchored structures", () => {
+  it("uses a real urban Smart Path only in a short contextual zone around anchored structures", () => {
     const map = createEmptyMap(14, 14, 1);
     map.metatiles[idx(0, 0, map.width)] = 3;
     map.metatiles[idx(7, 7, map.width)] = 3;
+    map.metatiles[idx(8, 8, map.width)] = 3;
 
     const result = planAiMapReconstruction(
       map,
@@ -109,7 +110,49 @@ describe("AI real-map reconstruction", () => {
     expect(result.urbanChangedCount).toBeGreaterThan(0);
     expect(result.map.metatiles[idx(0, 0, map.width)]).toBe(1);
     expect(result.map.metatiles[idx(7, 7, map.width)]).toBe(2);
+    expect(result.map.metatiles[idx(8, 8, map.width)]).toBe(1);
     expect(result.map.metatiles[idx(5, 5, map.width)]).toBe(1);
+  });
+
+  it("cleans only small orphan collision clusters and preserves elevation and protected obstacles", () => {
+    const map = createEmptyMap(12, 12, 1);
+
+    // Small isolated obstacle: should become floor and lose collision, preserving elevation 3.
+    for (const [x, y] of [[5, 5], [6, 5]] as const) {
+      const i = idx(x, y, map.width);
+      map.metatiles[i] = 2;
+      map.physical[i] = 0x3400;
+    }
+
+    // Small obstacle touching a protected warp: must remain.
+    map.metatiles[idx(3, 2, map.width)] = 2;
+    map.physical[idx(3, 2, map.width)] = 0x3400;
+
+    // Large 3x3 cluster exceeds cleanup limit and must remain.
+    for (let y = 8; y <= 10; y++) {
+      for (let x = 8; x <= 10; x++) {
+        const i = idx(x, y, map.width);
+        map.metatiles[i] = 2;
+        map.physical[i] = 0x3400;
+      }
+    }
+
+    const result = planAiMapReconstruction(
+      map,
+      atlas,
+      [],
+      [{ x: 2, y: 2, kind: "warp", label: "W0" }],
+    );
+
+    expect(result.orphanClearedCount).toBe(2);
+    expect(result.map.metatiles[idx(5, 5, map.width)]).toBe(1);
+    expect(result.map.metatiles[idx(6, 5, map.width)]).toBe(1);
+    expect(result.map.physical[idx(5, 5, map.width)]).toBe(0x3000);
+    expect(result.map.physical[idx(6, 5, map.width)]).toBe(0x3000);
+    expect(result.map.metatiles[idx(3, 2, map.width)]).toBe(2);
+    expect(result.map.physical[idx(3, 2, map.width)]).toBe(0x3400);
+    expect(result.map.metatiles[idx(9, 9, map.width)]).toBe(2);
+    expect(result.map.physical[idx(9, 9, map.width)]).toBe(0x3400);
   });
 
   it("only enables reconstruction for broad remodel instructions", () => {
