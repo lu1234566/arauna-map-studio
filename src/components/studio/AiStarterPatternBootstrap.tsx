@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { deriveSemanticEventPatterns } from "@/lib/aiMapSemanticRegions";
+import { deriveSemanticEventPatterns, deriveSemanticEventSmartPaths } from "@/lib/aiMapSemanticRegions";
 import { deriveMapPatterns, deriveMapSmartPaths } from "@/lib/aiMapVocabulary";
 import { starterPatternsForScope } from "@/lib/emeraldStarterPatterns";
 import { useEditor } from "@/lib/editorStore";
@@ -41,7 +41,7 @@ function pruneAutomaticVocabulary(scope: PatternScope) {
  *
  * - mantém o starter pack canônico quando o scope suportar;
  * - com map.json ativo, extrai fachadas, mercado e trechos RAW do mapa aberto;
- * - cria Smart Paths usando pisos/costa reais do próprio mapa;
+ * - cria Smart Paths usando costa/pisos reais e acessos abaixo das portas reais;
  * - ignora eventos de borda fora do blockdata (ex.: warp x=width);
  * - remove apenas vocabulário AUTOMÁTICO de outros tilesets;
  * - nunca duplica os IDs automáticos já instalados.
@@ -78,7 +78,10 @@ export function AiStarterPatternBootstrap() {
     }
 
     if (editor.mapJsonDocument) {
-      const pathCandidates = deriveMapSmartPaths(editor.map, editor.mapName, scope, atlas);
+      const pathCandidates = [
+        ...deriveSemanticEventSmartPaths(editor.map, safeEvents, editor.mapName, scope),
+        ...deriveMapSmartPaths(editor.map, editor.mapName, scope, atlas),
+      ];
       const existingPathIds = new Set(smartPathStore.getState().presets.map((preset) => preset.id));
       const missingPaths = pathCandidates.filter((preset) => !existingPathIds.has(preset.id));
       if (missingPaths.length) {
