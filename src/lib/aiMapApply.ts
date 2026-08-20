@@ -8,6 +8,7 @@ import {
 } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
 import { editorStore } from "./editorStore";
+import type { MapBlueprint } from "./mapBlueprint";
 import { planMapTemplate, serializeMapTemplates, type MapTemplate } from "./mapTemplate";
 import { mapTemplateStore } from "./mapTemplateStore";
 import type { MapPattern } from "./patternLibrary";
@@ -80,6 +81,24 @@ function limitContextPatches(template: MapTemplate, patterns: MapPattern[]) {
     template: removed ? { ...template, elements } : template,
     removed,
   };
+}
+
+function effectiveBlueprintForTemplate(blueprint: MapBlueprint | null, template: MapTemplate) {
+  if (!blueprint) return null;
+  const counts = new Map<string, number>();
+  for (const element of template.elements) {
+    if (element.type !== "pattern") continue;
+    const key = `${element.patternId}@${element.x},${element.y}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const patterns = blueprint.patterns.filter((placement) => {
+    const key = `${placement.pattern}@${placement.x},${placement.y}`;
+    const remaining = counts.get(key) ?? 0;
+    if (!remaining) return false;
+    counts.set(key, remaining - 1);
+    return true;
+  });
+  return { ...blueprint, patterns };
 }
 
 function applyTargetMap(targetMap: MapData, touched: number[]) {
@@ -179,20 +198,6 @@ export function applyCompiledAiMap({
     };
   }
 
-  if (editor.mapJsonDocument) {
-    const conflicts = gameReadyStructureConflicts(compiled.blueprint, patterns, reservedCells);
-    if (conflicts.length) {
-      return {
-        ok: false,
-        message: `Aplicação bloqueada pela segurança de mapa real: ${conflicts.slice(0, 3).join(" ")}`,
-        changes: 0,
-        topologyApplied: 0,
-        topologyPending: 0,
-        reconstruction: null,
-      };
-    }
-  }
-
   const reconstructionEnabled = Boolean(editor.mapJsonDocument && isAiRemodelPrompt(prompt));
   const reconstruction = reconstructionEnabled
     ? planAiMapReconstruction(editor.map, atlas, patterns, reservedCells)
@@ -201,6 +206,22 @@ export function applyCompiledAiMap({
   const effective = reconstructionEnabled
     ? limitContextPatches(compiled.template, patterns)
     : { template: compiled.template, removed: 0 };
+
+  if (editor.mapJsonDocument) {
+    const effectiveBlueprint = effectiveBlueprintForTemplate(compiled.blueprint, effective.template);
+    const conflicts = gameReadyStructureConflicts(effectiveBlueprint, patterns, reservedCells);
+    if (conflicts.length) {
+      return {
+        ok: false,
+        message: `Aplicação bloqueada pela segurança de mapa real: ${conflicts.slice(0, 3).join(" ")}`,
+        changes: 0,
+        topologyApplied: 0,
+        topologyPending: 0,
+        reconstruction,
+      };
+    }
+  }
+
   const currentScope = atlas ? { primary: atlas.primary, secondary: atlas.secondary } : undefined;
   const templatePlan = planMapTemplate(
     sourceMap,
