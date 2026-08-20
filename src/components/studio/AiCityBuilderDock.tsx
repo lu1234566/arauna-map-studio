@@ -2,6 +2,8 @@ import { Bot, Braces, Check, Hammer, Sparkles, WandSparkles, X } from "lucide-re
 import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { applyCompiledAiMap } from "@/lib/aiMapApply";
+import { planLayeredPromptBase } from "@/lib/aiLayeredPrompt";
+import { planAiMapIdentityBase } from "@/lib/aiMapIdentity";
 import {
   compileAiMapPlan,
   parseAiMapPlanJson,
@@ -12,6 +14,7 @@ import {
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
 import { isAiRemodelPrompt, planAiMapReconstruction } from "@/lib/aiMapReconstruction";
 import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
+import { getCollision, METATILE_MASK } from "@/lib/emeraldMap";
 import { useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
@@ -35,6 +38,62 @@ function SmallBadge({ children, good }: { children: React.ReactNode; good?: bool
       {children}
     </span>
   );
+}
+
+function normalized(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function canonicalizeLayerPrompt(value: string) {
+  const lines = value.split(/\r?\n/);
+  const result: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    const hasRange = /\bx\s*[:=]\s*-?\d+\s*(?:\.\.|…|ate|até|a|-)\s*-?\d+/i.test(line)
+      && /\by\s*[:=]\s*-?\d+\s*(?:\.\.|…|ate|até|a|-)\s*-?\d+/i.test(line);
+    if (!hasRange || /(?:→|->|=>)/.test(line)) {
+      result.push(line);
+      continue;
+    }
+    let next = index + 1;
+    while (next < lines.length && !lines[next]!.trim()) next++;
+    const materialLine = lines[next]?.trim() ?? "";
+    if (/^(?:→|->|=>)\s*\S+/i.test(materialLine)) {
+      result.push(`${line.trimEnd()} ${materialLine}`);
+      for (let skipped = index + 1; skipped < next; skipped++) result.push(lines[skipped] ?? "");
+      index = next;
+      continue;
+    }
+    result.push(line);
+  }
+  return result.join("\n");
+}
+
+function axisRange(line: string, axis: "x" | "y") {
+  const match = line.match(new RegExp(`\\b${axis}\\s*[:=]\\s*(-?\\d+)\\s*(?:\\.\\.|…|ate|até|a|-)\\s*(-?\\d+)`, "i"));
+  if (!match) return null;
+  const a = Number(match[1]);
+  const b = Number(match[2]);
+  return { min: Math.min(a, b), max: Math.max(a, b) };
+}
+
+function roleForLayerLine(line: string) {
+  const arrow = line.match(/(?:→|->|=>)\s*(.+)$/);
+  if (!arrow) return null;
+  const key = normalized(arrow[1] ?? "");
+  if (/(preserv|manter|nao alterar|agua|costa|litoral)/.test(key)) return "preserve" as const;
+  if (/(grama|verde|veget|jardim|parque)/.test(key)) return "green" as const;
+  if (/(bege|areia|portuar|porto|cais|promenade|doca)/.test(key)) return "port" as const;
+  if (/(concret|paviment|urbano|calcad|asfalto|residencial)/.test(key)) return "urban" as const;
+  if (/(base|neutro|comum|solo comum|piso comum)/.test(key)) return "base" as const;
+  return null;
+}
+
+function hexMetatile(id: number) {
+  return `0x${(id & METATILE_MASK).toString(16).toUpperCase().padStart(3, "0")}`;
 }
 
 export function AiCityBuilderDock() {
@@ -67,16 +126,97 @@ export function AiCityBuilderDock() {
     editor.map.height,
   ), [editor.events, editor.mapJsonDocument, editor.map.width, editor.map.height]);
 
-  const reconstructionActive = Boolean(editor.mapJsonDocument && isAiRemodelPrompt(prompt));
+  const canonicalPrompt = useMemo(() => canonicalizeLayerPrompt(prompt), [prompt]);
+  const reconstructionActive = Boolean(editor.mapJsonDocument && isAiRemodelPrompt(canonicalPrompt));
   const reconstructionPreview = useMemo(() => reconstructionActive
-    ? planAiMapReconstruction(editor.map, atlas, compatiblePatterns, reservedCells)
+    ? planAiMapReconstruction(editor.map, atlas, compatiblePatterns, reservedCells, compatiblePaths)
     : null, [
       reconstructionActive,
       editor.map,
       atlas?.createdAt,
       compatiblePatterns,
+      compatiblePaths,
       reservedCells,
     ]);
+
+  const identityPreview = useMemo(() => (
+    reconstructionActive && reconstructionPreview
+      ? planAiMapIdentityBase(reconstructionPreview.map, atlas, compatiblePatterns, reservedCells, reconstructionPreview)
+      : null
+  ), [reconstructionActive, reconstructionPreview, atlas?.createdAt, compatiblePatterns, reservedCells]);
+
+  const resolvedPrompt = useMemo(() => {
+    if (!atlas || !reconstructionPreview) return canonicalPrompt;
+    const records = new Map(atlas.records.map((record) => [record.id & METATILE_MASK, record]));
+    const safe = (id: number) => {
+      const record = records.get(id & METATILE_MASK);
+      return Boolean(record && (record.behavior ?? -1) === 0 && (record.layerType ?? 0) === 0);
+    };
+    const dominantInRange = (line: string, excluded: Set<number>) => {
+      const xr = axisRange(line, "x");
+      const yr = axisRange(line, "y");
+      if (!xr || !yr) return null;
+      const counts = new Map<number, number>();
+      for (let y = Math.max(0, yr.min); y <= Math.min(editor.map.height - 1, yr.max); y++) {
+        for (let x = Math.max(0, xr.min); x <= Math.min(editor.map.width - 1, xr.max); x++) {
+          const cellIndex = y * editor.map.width + x;
+          if (getCollision(editor.map.physical[cellIndex] ?? 0) !== 0) continue;
+          const id = (editor.map.metatiles[cellIndex] ?? 0) & METATILE_MASK;
+          if (!id || excluded.has(id) || !safe(id)) continue;
+          counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    };
+
+    const base = reconstructionPreview.baseMetatile;
+    const urban = reconstructionPreview.urbanMetatile;
+    const green = reconstructionPreview.greenMetatile;
+    const port = identityPreview?.portMetatile ?? null;
+    return canonicalPrompt.split(/\r?\n/).map((line) => {
+      if (!/(?:→|->|=>)/.test(line) || /(?:metatile|tile|id)?\s*0x[0-9a-f]{1,3}\b/i.test(line)) return line;
+      const role = roleForLayerLine(line);
+      if (!role || role === "preserve") return line;
+      const excluded = new Set<number>();
+      if (base != null) excluded.add(base & METATILE_MASK);
+      let desired: number | null = null;
+      if (role === "base") desired = base;
+      if (role === "urban") desired = urban ?? dominantInRange(line, excluded);
+      if (urban != null) excluded.add(urban & METATILE_MASK);
+      if (role === "green") desired = green ?? dominantInRange(line, excluded);
+      if (green != null) excluded.add(green & METATILE_MASK);
+      if (role === "port") desired = port ?? dominantInRange(line, excluded);
+      if (desired == null || !safe(desired)) return line;
+      return line.replace(/(?:→|->|=>)\s*(.+)$/, `-> metatile ${hexMetatile(desired)}`);
+    }).join("\n");
+  }, [canonicalPrompt, atlas?.createdAt, reconstructionPreview, identityPreview?.portMetatile, editor.map]);
+
+  const layeredPreview = useMemo(() => (
+    reconstructionPreview && compiled?.valid
+      ? planLayeredPromptBase(
+          editor.map,
+          resolvedPrompt,
+          atlas,
+          compatiblePatterns,
+          reservedCells,
+          reconstructionPreview,
+          identityPreview?.portMetatile ?? null,
+          compiled.blueprint,
+        )
+      : null
+  ), [
+    reconstructionPreview,
+    compiled,
+    editor.map,
+    resolvedPrompt,
+    atlas?.createdAt,
+    compatiblePatterns,
+    reservedCells,
+    identityPreview?.portMetatile,
+  ]);
+
+  const layeredReady = !layeredPreview?.active || layeredPreview.errors.length === 0;
+  const planReady = Boolean(compiled?.valid && compiled.template && layeredReady);
 
   const vocabulary = useMemo(() => ({
     patterns: compatiblePatterns.map((pattern) => ({
@@ -164,20 +304,32 @@ export function AiCityBuilderDock() {
   };
 
   const applyPlan = () => {
-    if (!plan || !compiled?.valid || !compiled.template) return;
-    const result = applyCompiledAiMap({
-      prompt,
-      plan,
-      compiled,
-      atlas,
-      patterns: compatiblePatterns,
-      smartPaths: compatiblePaths,
-      reservedCells,
-    });
-    setMessage(result.message);
-    if (!result.ok) return;
-    requestMapCameraFit();
-    setOpen(false);
+    if (!plan || !compiled?.valid || !compiled.template) {
+      setMessage("Aplicação indisponível: o plano estruturado ainda não está compilável.");
+      return;
+    }
+    if (layeredPreview?.active && layeredPreview.errors.length) {
+      setMessage(`Aplicação bloqueada pelo preflight A+B: ${layeredPreview.errors.slice(0, 3).join(" ")}`);
+      return;
+    }
+    setMessage("Aplicando zone-first + finish layer ao mapa…");
+    try {
+      const result = applyCompiledAiMap({
+        prompt: resolvedPrompt,
+        plan,
+        compiled,
+        atlas,
+        patterns: compatiblePatterns,
+        smartPaths: compatiblePaths,
+        reservedCells,
+      });
+      setMessage(result.message);
+      if (!result.ok) return;
+      requestMapCameraFit();
+      setOpen(false);
+    } catch (error) {
+      setMessage(`Falha real ao aplicar o mapa: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   return (
@@ -211,8 +363,11 @@ export function AiCityBuilderDock() {
                 {reconstructionActive && <SmallBadge good>Reconstrução de base ON</SmallBadge>}
                 {reconstructionPreview?.baseMetatile != null && (
                   <SmallBadge good={reconstructionPreview.changedCount > 0}>
-                    base 0x{reconstructionPreview.baseMetatile.toString(16).toUpperCase().padStart(3, "0")} · {reconstructionPreview.changedCount} células
+                    base {hexMetatile(reconstructionPreview.baseMetatile)} · {reconstructionPreview.changedCount} células
                   </SmallBadge>
+                )}
+                {layeredPreview?.active && (
+                  <SmallBadge good={layeredReady}>A+B {layeredPreview.parsed.zones.length} zonas</SmallBadge>
                 )}
                 {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
               </div>
@@ -241,6 +396,16 @@ export function AiCityBuilderDock() {
                   {reconstructionPreview?.warnings[0] ? <span> {reconstructionPreview.warnings[0]}</span> : null}
                 </div>
               )}
+
+              {layeredPreview?.active && layeredPreview.errors.length ? (
+                <div className="max-h-24 overflow-y-auto rounded border border-destructive/35 bg-destructive/5 p-2 text-[9px] leading-relaxed text-destructive">
+                  <b>Preflight A+B:</b> {layeredPreview.errors.join(" ")}
+                </div>
+              ) : layeredPreview?.active ? (
+                <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-success">
+                  Preflight A+B válido: {layeredPreview.assignedCount}/{layeredPreview.eligibleCount} células editáveis atribuídas; {layeredPreview.unsetCount} UNSET/preservadas.
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap gap-1">
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
@@ -280,11 +445,11 @@ export function AiCityBuilderDock() {
                   <div className="min-w-0 space-y-1.5">
                     <div className={cn(
                       "rounded border p-2 text-[9px]",
-                      compiled?.valid ? "border-success/30 bg-success/5 text-success" : "border-destructive/30 bg-destructive/5 text-destructive",
+                      planReady ? "border-success/30 bg-success/5 text-success" : "border-destructive/30 bg-destructive/5 text-destructive",
                     )}>
                       <div className="flex items-center gap-1 font-semibold">
-                        {compiled?.valid ? <Check className="size-3" /> : <X className="size-3" />}
-                        {compiled?.valid ? "Plano compilável" : "Revisão necessária"}
+                        {planReady ? <Check className="size-3" /> : <X className="size-3" />}
+                        {planReady ? "Plano + camadas aplicáveis" : "Revisão necessária"}
                       </div>
                       {plan && (
                         <div className="mt-1 space-y-0.5 opacity-90">
@@ -296,6 +461,7 @@ export function AiCityBuilderDock() {
                       )}
                     </div>
                     {compiled?.errors.length ? <div className="max-h-20 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{compiled.errors.join(" ")}</div> : null}
+                    {layeredPreview?.errors.length ? <div className="max-h-20 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{layeredPreview.errors.join(" ")}</div> : null}
                     {compiled?.warnings.length ? <div className="max-h-20 overflow-y-auto rounded border border-warning/25 p-1.5 text-[8px] text-warning">{compiled.warnings.join(" ")}</div> : null}
                   </div>
                 </div>
@@ -311,13 +477,13 @@ export function AiCityBuilderDock() {
           <div className="shrink-0 border-t border-border bg-panel/98 p-2 shadow-[0_-8px_20px_rgba(0,0,0,0.22)]">
             <div className={cn(
               "mb-1.5 max-h-16 overflow-y-auto rounded border px-2 py-1.5 text-[9px] leading-relaxed",
-              compiled?.valid ? "border-success/25 bg-success/5 text-success" : "border-border bg-canvas text-muted-foreground",
+              planReady ? "border-success/25 bg-success/5 text-success" : "border-border bg-canvas text-muted-foreground",
             )}>
               {message}
             </div>
             <button
               type="button"
-              disabled={!compiled?.valid || !compiled.template}
+              disabled={!planReady}
               onClick={applyPlan}
               className="inline-flex w-full items-center justify-center gap-1 rounded border border-success/50 bg-success/10 px-2 py-2 text-[10px] font-semibold text-success hover:bg-success/20 disabled:pointer-events-none disabled:opacity-35"
             >
