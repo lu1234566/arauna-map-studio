@@ -134,6 +134,37 @@ function validPoint(point: AiPointRef) {
   return absolute || semantic;
 }
 
+export function orthogonalizeRoutePoints(points: TemplatePoint[]) {
+  if (!points.length) return { points: [] as TemplatePoint[], inserted: 0, removedDuplicates: 0 };
+  const result: TemplatePoint[] = [{ ...points[0]! }];
+  let inserted = 0;
+  let removedDuplicates = 0;
+
+  for (let index = 1; index < points.length; index++) {
+    const current = points[index]!;
+    const previous = result[result.length - 1]!;
+    if (previous.x === current.x && previous.y === current.y) {
+      removedDuplicates++;
+      continue;
+    }
+    if (previous.x !== current.x && previous.y !== current.y) {
+      // Preferimos terminar o reparo na vertical. Isso combina com a maioria das
+      // portas externas do Emerald (south-facing) e mantém o cotovelo dentro do
+      // retângulo formado pelos dois waypoints, portanto dentro do mapa quando
+      // os extremos também estão dentro dele.
+      result.push({ x: current.x, y: previous.y });
+      inserted++;
+    }
+    const last = result[result.length - 1]!;
+    if (last.x === current.x && last.y === current.y) {
+      removedDuplicates++;
+      continue;
+    }
+    result.push({ ...current });
+  }
+  return { points: result, inserted, removedDuplicates };
+}
+
 export function resolveAiPoint(
   point: AiPointRef,
   structures: AiStructurePlacement[],
@@ -253,7 +284,7 @@ export function compileAiMapPlan(
       errors.push(`Rota ${routeIndex + 1}: sem pontos.`);
       return [];
     }
-    const points: TemplatePoint[] = [];
+    const resolvedPoints: TemplatePoint[] = [];
     for (const [pointIndex, reference] of route.points.entries()) {
       if (!validPoint(reference)) {
         errors.push(`Rota ${routeIndex + 1}, ponto ${pointIndex + 1}: referência inválida.`);
@@ -264,10 +295,20 @@ export function compileAiMapPlan(
         errors.push(`Rota ${routeIndex + 1}, ponto ${pointIndex + 1}: ${resolved.error}`);
         continue;
       }
-      points.push(resolved.point);
+      resolvedPoints.push(resolved.point);
     }
-    if (points.length !== route.points.length) return [];
-    return [{ smartPath: route.smartPath, points, mode: route.mode ?? "add" }];
+    if (resolvedPoints.length !== route.points.length) return [];
+
+    const repaired = orthogonalizeRoutePoints(resolvedPoints);
+    if (repaired.inserted) {
+      warnings.push(
+        `Rota ${routeIndex + 1}: ${repaired.inserted} cotovelo(s) ortogonal(is) inserido(s) automaticamente após resolver portas/waypoints.`,
+      );
+    }
+    if (repaired.removedDuplicates) {
+      warnings.push(`Rota ${routeIndex + 1}: ${repaired.removedDuplicates} waypoint(s) duplicado(s) removido(s).`);
+    }
+    return [{ smartPath: route.smartPath, points: repaired.points, mode: route.mode ?? "add" }];
   });
 
   for (const [index, warp] of plan.warps.entries()) {
@@ -493,5 +534,5 @@ export function aiPlanContract(patterns: MapPattern[], smartPaths: SmartPathPres
     return `- ${pattern.name} [id=${pattern.id}, ${pattern.width}x${pattern.height}, tags=${pattern.tags.join("|") || "-"}, ports=${ports || "nenhum"}]`;
   }).join("\n") || "- nenhum pattern";
   const pathList = smartPaths.map((preset) => `- ${preset.name} [id=${preset.id}]`).join("\n") || "- nenhum Smart Path";
-  return `Você planeja mapas de Pokémon Emerald para Juramento de Arauna. O mapa atual mede ${width}x${height} metatiles. Use SOMENTE os Patterns e Smart Paths abaixo. Não invente IDs, nomes ou tiles. Coordenadas têm origem (0,0) no canto superior esquerdo. Estruturas usam x/y do canto superior esquerdo. Para uma porta, prefira {"structure":"id-ou-label","port":"id-ou-nome"} quando o port existir; se não existir, use coordenada absoluta {"x":N,"y":N}. Rotas precisam ser ortogonais. Warps devem apontar para destMap real informado pelo usuário; nunca invente destinos. Conexões de borda só devem ser criadas se o usuário pedir explicitamente. Preserve exatamente posições/direções dadas pelo usuário e só estime quando ele não especificar.\n\nPATTERNS:\n${patternList}\n\nSMART PATHS:\n${pathList}`;
+  return `Você planeja mapas de Pokémon Emerald para Juramento de Arauna. O mapa atual mede ${width}x${height} metatiles. Use SOMENTE os Patterns e Smart Paths abaixo. Não invente IDs, nomes ou tiles. Coordenadas têm origem (0,0) no canto superior esquerdo. Estruturas usam x/y do canto superior esquerdo. Para uma porta, prefira {"structure":"id-ou-label","port":"id-ou-nome"} quando o port existir; se não existir, use coordenada absoluta {"x":N,"y":N}. Rotas precisam ser ortogonais; se precisar mudar x e y entre dois destinos, inclua um waypoint de cotovelo. Warps devem apontar para destMap real informado pelo usuário; nunca invente destinos. Conexões de borda só devem ser criadas se o usuário pedir explicitamente. Preserve exatamente posições/direções dadas pelo usuário e só estime quando ele não especificar.\n\nPATTERNS:\n${patternList}\n\nSMART PATHS:\n${pathList}`;
 }
