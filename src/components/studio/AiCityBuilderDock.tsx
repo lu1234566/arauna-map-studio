@@ -43,10 +43,11 @@ function SmallBadge({ children, good }: { children: React.ReactNode; good?: bool
 
 function connectionIndex(direction: string) {
   const document = editorStore.getState().mapJsonDocument;
-  const connections = document && Array.isArray(document.connections) ? document.connections : [];
+  const source = document?.["connections"];
+  const connections = Array.isArray(source) ? source : [];
   return connections.findIndex((value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    return String((value as Record<string, unknown>).direction ?? "") === direction;
+    return String((value as Record<string, unknown>)["direction"] ?? "") === direction;
   });
 }
 
