@@ -90,6 +90,17 @@ export function ExactGridPreview({
         <span>detalhe {grid.ownerCounts.detail}</span>
         <span>preserva {grid.ownerCounts.preserve}</span>
       </div>
+      {grid.structureMask && (
+        <div className="mt-1.5 rounded border border-border/60 bg-black/20 px-1.5 py-1 font-mono text-[7px] leading-3 text-muted-foreground">
+          <div>
+            máscara: {grid.structureMask.opaqueCount} opacas · {grid.structureMask.transparentCount} contexto transparente
+          </div>
+          <div>
+            retorno: {grid.structureMask.restoredGroundCount} solo · {grid.structureMask.restoredRoadCount} vias · {grid.structureMask.restoredPreserveCount} preservadas
+          </div>
+          <div>física ground/road normalizada: {grid.structureMask.normalizedPhysicalCount}</div>
+        </div>
+      )}
     </div>
   );
 }
