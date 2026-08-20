@@ -10,7 +10,7 @@ import {
   type AiMapPlan,
 } from "@/lib/aiMapPlan";
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
-import { isAiRemodelPrompt } from "@/lib/aiMapReconstruction";
+import { isAiRemodelPrompt, planAiMapReconstruction } from "@/lib/aiMapReconstruction";
 import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
 import { useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
@@ -68,6 +68,15 @@ export function AiCityBuilderDock() {
   ), [editor.events, editor.mapJsonDocument, editor.map.width, editor.map.height]);
 
   const reconstructionActive = Boolean(editor.mapJsonDocument && isAiRemodelPrompt(prompt));
+  const reconstructionPreview = useMemo(() => reconstructionActive
+    ? planAiMapReconstruction(editor.map, atlas, compatiblePatterns, reservedCells)
+    : null, [
+      reconstructionActive,
+      editor.map,
+      atlas?.createdAt,
+      compatiblePatterns,
+      reservedCells,
+    ]);
 
   const vocabulary = useMemo(() => ({
     patterns: compatiblePatterns.map((pattern) => ({
@@ -199,6 +208,11 @@ export function AiCityBuilderDock() {
               {editor.mapJsonDocument && <SmallBadge good>{reservedCells.length} células/eventos protegidos</SmallBadge>}
               {atlas && <SmallBadge good>{atlas.secondary.replace(/^gTileset_/, "")}</SmallBadge>}
               {reconstructionActive && <SmallBadge good>Reconstrução de base ON</SmallBadge>}
+              {reconstructionPreview?.baseMetatile != null && (
+                <SmallBadge good={reconstructionPreview.changedCount > 0}>
+                  base 0x{reconstructionPreview.baseMetatile.toString(16).toUpperCase().padStart(3, "0")} · {reconstructionPreview.changedCount} células
+                </SmallBadge>
+              )}
               {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
             </div>
 
@@ -223,6 +237,7 @@ export function AiCityBuilderDock() {
             {reconstructionActive && (
               <div className="rounded border border-primary/30 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
                 <b className="text-primary">Remodelagem ampla detectada.</b> Antes do Template, o Studio vai reconstruir somente piso NORMAL seguro: água/costa, colisão/elevação, warps, triggers e regiões ancoradas/fixas permanecem intactos. Pedidos pontuais não ativam esta etapa.
+                {reconstructionPreview?.warnings[0] ? <span> {reconstructionPreview.warnings[0]}</span> : null}
               </div>
             )}
 
