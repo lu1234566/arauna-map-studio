@@ -181,7 +181,7 @@ export function AiCityBuilderDock() {
   };
 
   return (
-    <section className="absolute right-2 top-24 z-40 flex max-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded border border-primary/35 bg-panel/95 shadow-2xl backdrop-blur-sm">
+    <section className="absolute right-2 top-24 z-40 flex max-h-[calc(100dvh-9rem)] flex-col overflow-hidden rounded border border-primary/35 bg-panel/95 shadow-2xl backdrop-blur-sm">
       <div className="shrink-0 flex items-center gap-1.5 p-1.5">
         <button
           type="button"
@@ -198,127 +198,131 @@ export function AiCityBuilderDock() {
       </div>
 
       {open && (
-        <div className="min-h-0 w-[560px] max-w-[calc(100vw-330px)] flex-1 overflow-y-auto overscroll-contain border-t border-border">
-          <div className="space-y-2 p-2.5">
-            <div className="flex flex-wrap gap-1">
-              <SmallBadge good={compatiblePatterns.length >= 6}>{compatiblePatterns.length}/{patternState.patterns.length} Patterns compatíveis</SmallBadge>
-              <SmallBadge good={Boolean(compatiblePaths.length)}>{compatiblePaths.length}/{pathState.presets.length} Smart Paths compatíveis</SmallBadge>
-              <SmallBadge>{editor.map.width}×{editor.map.height}</SmallBadge>
-              <SmallBadge good={Boolean(editor.mapJsonDocument)}>{editor.mapJsonDocument ? "map.json ativo" : "sem map.json"}</SmallBadge>
-              {editor.mapJsonDocument && <SmallBadge good>{reservedCells.length} células/eventos protegidos</SmallBadge>}
-              {atlas && <SmallBadge good>{atlas.secondary.replace(/^gTileset_/, "")}</SmallBadge>}
-              {reconstructionActive && <SmallBadge good>Reconstrução de base ON</SmallBadge>}
-              {reconstructionPreview?.baseMetatile != null && (
-                <SmallBadge good={reconstructionPreview.changedCount > 0}>
-                  base 0x{reconstructionPreview.baseMetatile.toString(16).toUpperCase().padStart(3, "0")} · {reconstructionPreview.changedCount} células
-                </SmallBadge>
+        <div className="flex min-h-0 w-[560px] max-w-[calc(100vw-330px)] flex-1 flex-col border-t border-border">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="space-y-2 p-2.5 pb-3">
+              <div className="flex flex-wrap gap-1">
+                <SmallBadge good={compatiblePatterns.length >= 6}>{compatiblePatterns.length}/{patternState.patterns.length} Patterns compatíveis</SmallBadge>
+                <SmallBadge good={Boolean(compatiblePaths.length)}>{compatiblePaths.length}/{pathState.presets.length} Smart Paths compatíveis</SmallBadge>
+                <SmallBadge>{editor.map.width}×{editor.map.height}</SmallBadge>
+                <SmallBadge good={Boolean(editor.mapJsonDocument)}>{editor.mapJsonDocument ? "map.json ativo" : "sem map.json"}</SmallBadge>
+                {editor.mapJsonDocument && <SmallBadge good>{reservedCells.length} células/eventos protegidos</SmallBadge>}
+                {atlas && <SmallBadge good>{atlas.secondary.replace(/^gTileset_/, "")}</SmallBadge>}
+                {reconstructionActive && <SmallBadge good>Reconstrução de base ON</SmallBadge>}
+                {reconstructionPreview?.baseMetatile != null && (
+                  <SmallBadge good={reconstructionPreview.changedCount > 0}>
+                    base 0x{reconstructionPreview.baseMetatile.toString(16).toUpperCase().padStart(3, "0")} · {reconstructionPreview.changedCount} células
+                  </SmallBadge>
+                )}
+                {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
+              </div>
+
+              {editor.mapJsonDocument ? (
+                <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
+                  Mapa real ativo. O Studio usa somente Patterns/Smart Paths compatíveis com <b className="text-foreground">{atlas?.primary ?? "tileset primary"} + {atlas?.secondary ?? "tileset secondary"}</b>. Fachadas, trechos e eventos do próprio mapa entram automaticamente no planejamento, e uma verificação local bloqueia prédios sobre warps/triggers/NPCs.
+                </div>
+              ) : (
+                <div className="rounded border border-warning/35 bg-warning/5 p-2 text-[9px] leading-relaxed text-warning">
+                  Para gerar um mapa que possa entrar no jogo, prefira <b>Workspace → abrir o mapa real</b>. Um BIN isolado não informa layout/tileset, warps, NPCs ou conexões; importe também o map.json ou use Workspace.
+                </div>
               )}
-              {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
-            </div>
 
-            {editor.mapJsonDocument ? (
-              <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-                Mapa real ativo. O Studio usa somente Patterns/Smart Paths compatíveis com <b className="text-foreground">{atlas?.primary ?? "tileset primary"} + {atlas?.secondary ?? "tileset secondary"}</b>. Fachadas, trechos e eventos do próprio mapa entram automaticamente no planejamento, e uma verificação local bloqueia prédios sobre warps/triggers/NPCs.
-              </div>
-            ) : (
-              <div className="rounded border border-warning/35 bg-warning/5 p-2 text-[9px] leading-relaxed text-warning">
-                Para gerar um mapa que possa entrar no jogo, prefira <b>Workspace → abrir o mapa real</b>. Um BIN isolado não informa layout/tileset, warps, NPCs ou conexões; importe também o map.json ou use Workspace.
-              </div>
-            )}
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                spellCheck={false}
+                placeholder={'Ex.: "Laboratório no nordeste em (12,3), casa do jogador em (3,12), ligue a entrada da casa à praça e crie a saída norte para MAP_ROUTE101."'}
+                className="h-32 max-h-56 w-full resize-y rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed outline-none focus:border-primary/60"
+              />
 
-            <textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              spellCheck={false}
-              placeholder={'Ex.: "Laboratório no nordeste em (12,3), casa do jogador em (3,12), ligue a entrada da casa à praça e crie a saída norte para MAP_ROUTE101."'}
-              className="h-36 w-full resize-y rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed outline-none focus:border-primary/60"
-            />
-
-            {reconstructionActive && (
-              <div className="rounded border border-primary/30 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-                <b className="text-primary">Remodelagem ampla detectada.</b> Antes do Template, o Studio vai reconstruir somente piso NORMAL seguro: água/costa, colisão/elevação, warps, triggers e regiões ancoradas/fixas permanecem intactos. Pedidos pontuais não ativam esta etapa.
-                {reconstructionPreview?.warnings[0] ? <span> {reconstructionPreview.warnings[0]}</span> : null}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-1">
-              <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
-              <button
-                type="button"
-                disabled={busy || !prompt.trim()}
-                onClick={interpretLocal}
-                className="inline-flex items-center gap-1 rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface disabled:opacity-35"
-                title="Funciona sem API; exige comandos explícitos com coordenadas"
-              >
-                <Braces className="size-3" /> Interpretar local
-              </button>
-              <button
-                type="button"
-                disabled={busy || !prompt.trim()}
-                onClick={() => void interpretAi()}
-                className="ml-auto inline-flex items-center gap-1 rounded border border-primary/50 bg-primary/15 px-2.5 py-1 text-[9px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-35"
-              >
-                {busy ? <Sparkles className="size-3 animate-pulse" /> : <Bot className="size-3" />} Gerar com IA
-              </button>
-            </div>
-
-            {(rawJson || compiled) && (
-              <div className="grid grid-cols-[1fr_190px] gap-2">
-                <div>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[8px] uppercase tracking-wide text-muted-foreground">Plano estruturado</span>
-                    <button type="button" onClick={compileEditedJson} className="rounded border border-border px-1.5 py-0.5 text-[8px] hover:bg-surface">Revalidar JSON</button>
-                  </div>
-                  <textarea
-                    value={rawJson}
-                    onChange={(event) => setRawJson(event.target.value)}
-                    spellCheck={false}
-                    className="h-44 w-full resize-y rounded border border-border bg-canvas p-2 font-mono text-[8px] leading-relaxed outline-none focus:border-primary/60"
-                  />
+              {reconstructionActive && (
+                <div className="max-h-24 overflow-y-auto rounded border border-primary/30 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
+                  <b className="text-primary">Remodelagem ampla detectada.</b> Antes do Template, o Studio vai reconstruir somente piso NORMAL seguro: água/costa, colisão/elevação, warps, triggers e regiões ancoradas/fixas permanecem intactos. Pedidos pontuais não ativam esta etapa.
+                  {reconstructionPreview?.warnings[0] ? <span> {reconstructionPreview.warnings[0]}</span> : null}
                 </div>
-                <div className="space-y-1.5">
-                  <div className={cn(
-                    "rounded border p-2 text-[9px]",
-                    compiled?.valid ? "border-success/30 bg-success/5 text-success" : "border-destructive/30 bg-destructive/5 text-destructive",
-                  )}>
-                    <div className="flex items-center gap-1 font-semibold">
-                      {compiled?.valid ? <Check className="size-3" /> : <X className="size-3" />}
-                      {compiled?.valid ? "Plano compilável" : "Revisão necessária"}
+              )}
+
+              <div className="flex flex-wrap gap-1">
+                <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
+                <button
+                  type="button"
+                  disabled={busy || !prompt.trim()}
+                  onClick={interpretLocal}
+                  className="inline-flex items-center gap-1 rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface disabled:opacity-35"
+                  title="Funciona sem API; exige comandos explícitos com coordenadas"
+                >
+                  <Braces className="size-3" /> Interpretar local
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !prompt.trim()}
+                  onClick={() => void interpretAi()}
+                  className="ml-auto inline-flex items-center gap-1 rounded border border-primary/50 bg-primary/15 px-2.5 py-1 text-[9px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-35"
+                >
+                  {busy ? <Sparkles className="size-3 animate-pulse" /> : <Bot className="size-3" />} Gerar com IA
+                </button>
+              </div>
+
+              {(rawJson || compiled) && (
+                <div className="grid grid-cols-[minmax(0,1fr)_190px] gap-2">
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-[8px] uppercase tracking-wide text-muted-foreground">Plano estruturado</span>
+                      <button type="button" onClick={compileEditedJson} className="rounded border border-border px-1.5 py-0.5 text-[8px] hover:bg-surface">Revalidar JSON</button>
                     </div>
-                    {plan && (
-                      <div className="mt-1 space-y-0.5 opacity-90">
-                        <p>{plan.structures.length} estrutura(s)</p>
-                        <p>{plan.routes.length} rota(s)</p>
-                        <p>{compiled?.warps.length ?? 0} warp(s)</p>
-                        <p>{plan.connections.length} conexão(ões)</p>
-                      </div>
-                    )}
+                    <textarea
+                      value={rawJson}
+                      onChange={(event) => setRawJson(event.target.value)}
+                      spellCheck={false}
+                      className="h-36 max-h-52 w-full resize-y rounded border border-border bg-canvas p-2 font-mono text-[8px] leading-relaxed outline-none focus:border-primary/60"
+                    />
                   </div>
-                  {compiled?.errors.length ? <div className="max-h-24 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{compiled.errors.join(" ")}</div> : null}
-                  {compiled?.warnings.length ? <div className="max-h-24 overflow-y-auto rounded border border-warning/25 p-1.5 text-[8px] text-warning">{compiled.warnings.join(" ")}</div> : null}
-                  <button
-                    type="button"
-                    disabled={!compiled?.valid || !compiled.template}
-                    onClick={applyPlan}
-                    className="inline-flex w-full items-center justify-center gap-1 rounded border border-success/50 bg-success/10 px-2 py-2 text-[9px] font-semibold text-success hover:bg-success/20 disabled:pointer-events-none disabled:opacity-35"
-                  >
-                    <Hammer className="size-3.5" /> Aplicar cidade no mapa
-                  </button>
+                  <div className="min-w-0 space-y-1.5">
+                    <div className={cn(
+                      "rounded border p-2 text-[9px]",
+                      compiled?.valid ? "border-success/30 bg-success/5 text-success" : "border-destructive/30 bg-destructive/5 text-destructive",
+                    )}>
+                      <div className="flex items-center gap-1 font-semibold">
+                        {compiled?.valid ? <Check className="size-3" /> : <X className="size-3" />}
+                        {compiled?.valid ? "Plano compilável" : "Revisão necessária"}
+                      </div>
+                      {plan && (
+                        <div className="mt-1 space-y-0.5 opacity-90">
+                          <p>{plan.structures.length} estrutura(s)</p>
+                          <p>{plan.routes.length} rota(s)</p>
+                          <p>{compiled?.warps.length ?? 0} warp(s)</p>
+                          <p>{plan.connections.length} conexão(ões)</p>
+                        </div>
+                      )}
+                    </div>
+                    {compiled?.errors.length ? <div className="max-h-20 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{compiled.errors.join(" ")}</div> : null}
+                    {compiled?.warnings.length ? <div className="max-h-20 overflow-y-auto rounded border border-warning/25 p-1.5 text-[8px] text-warning">{compiled.warnings.join(" ")}</div> : null}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
+              <details className="text-[8px] text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground">Sintaxe local precisa (sem IA)</summary>
+                <pre className="mt-1 whitespace-pre-wrap rounded border border-border bg-canvas p-2 font-mono leading-relaxed">{EXAMPLE}</pre>
+              </details>
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-border bg-panel/98 p-2 shadow-[0_-8px_20px_rgba(0,0,0,0.22)]">
             <div className={cn(
-              "rounded border px-2 py-1.5 text-[9px] leading-relaxed",
+              "mb-1.5 max-h-16 overflow-y-auto rounded border px-2 py-1.5 text-[9px] leading-relaxed",
               compiled?.valid ? "border-success/25 bg-success/5 text-success" : "border-border bg-canvas text-muted-foreground",
             )}>
               {message}
             </div>
-
-            <details className="text-[8px] text-muted-foreground">
-              <summary className="cursor-pointer hover:text-foreground">Sintaxe local precisa (sem IA)</summary>
-              <pre className="mt-1 whitespace-pre-wrap rounded border border-border bg-canvas p-2 font-mono leading-relaxed">{EXAMPLE}</pre>
-            </details>
+            <button
+              type="button"
+              disabled={!compiled?.valid || !compiled.template}
+              onClick={applyPlan}
+              className="inline-flex w-full items-center justify-center gap-1 rounded border border-success/50 bg-success/10 px-2 py-2 text-[10px] font-semibold text-success hover:bg-success/20 disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Hammer className="size-3.5" /> Aplicar cidade no mapa
+            </button>
           </div>
         </div>
       )}
