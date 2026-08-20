@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Gamepad2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import "@/lib/flexibleBinImportBootstrap";
 import { useEditor } from "@/lib/editorStore";
 import { AiCityBuilderDock } from "./AiCityBuilderDock";
@@ -7,10 +8,19 @@ import { AiStarterPatternBootstrap } from "./AiStarterPatternBootstrap";
 
 export function Gen3LibraryLauncher() {
   const editor = useEditor();
+  const [pageEpoch, setPageEpoch] = useState(0);
+
+  useEffect(() => {
+    const resetTransientAi = () => setPageEpoch((value) => value + 1);
+    window.addEventListener("pageshow", resetTransientAi);
+    return () => window.removeEventListener("pageshow", resetTransientAi);
+  }, []);
+
   const aiSessionKey = [
     editor.sourceFile ?? "novo",
     editor.mapName,
     `${editor.map.width}x${editor.map.height}`,
+    pageEpoch,
   ].join("|");
 
   return (
