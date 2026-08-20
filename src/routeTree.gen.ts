@@ -10,33 +10,128 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as FormatoRouteImport } from './routes/formato'
+import { Route as Gen3LibraryRouteImport } from './routes/gen3-library'
+import { Route as GeneratorRouteImport } from './routes/generator'
+import { Route as MapSettingsRouteImport } from './routes/map-settings'
+import { Route as StructureRouteImport } from './routes/structure'
+import { Route as TilesetsRouteImport } from './routes/tilesets'
+import { Route as WorkspaceRouteImport } from './routes/workspace'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FormatoRoute = FormatoRouteImport.update({
+  id: '/formato',
+  path: '/formato',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Gen3LibraryRoute = Gen3LibraryRouteImport.update({
+  id: '/gen3-library',
+  path: '/gen3-library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GeneratorRoute = GeneratorRouteImport.update({
+  id: '/generator',
+  path: '/generator',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MapSettingsRoute = MapSettingsRouteImport.update({
+  id: '/map-settings',
+  path: '/map-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StructureRoute = StructureRouteImport.update({
+  id: '/structure',
+  path: '/structure',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TilesetsRoute = TilesetsRouteImport.update({
+  id: '/tilesets',
+  path: '/tilesets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/formato': typeof FormatoRoute
+  '/gen3-library': typeof Gen3LibraryRoute
+  '/generator': typeof GeneratorRoute
+  '/map-settings': typeof MapSettingsRoute
+  '/structure': typeof StructureRoute
+  '/tilesets': typeof TilesetsRoute
+  '/workspace': typeof WorkspaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/formato': typeof FormatoRoute
+  '/gen3-library': typeof Gen3LibraryRoute
+  '/generator': typeof GeneratorRoute
+  '/map-settings': typeof MapSettingsRoute
+  '/structure': typeof StructureRoute
+  '/tilesets': typeof TilesetsRoute
+  '/workspace': typeof WorkspaceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/formato': typeof FormatoRoute
+  '/gen3-library': typeof Gen3LibraryRoute
+  '/generator': typeof GeneratorRoute
+  '/map-settings': typeof MapSettingsRoute
+  '/structure': typeof StructureRoute
+  '/tilesets': typeof TilesetsRoute
+  '/workspace': typeof WorkspaceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/formato'
+    | '/gen3-library'
+    | '/generator'
+    | '/map-settings'
+    | '/structure'
+    | '/tilesets'
+    | '/workspace'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/formato'
+    | '/gen3-library'
+    | '/generator'
+    | '/map-settings'
+    | '/structure'
+    | '/tilesets'
+    | '/workspace'
+  id:
+    | '__root__'
+    | '/'
+    | '/formato'
+    | '/gen3-library'
+    | '/generator'
+    | '/map-settings'
+    | '/structure'
+    | '/tilesets'
+    | '/workspace'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FormatoRoute: typeof FormatoRoute
+  Gen3LibraryRoute: typeof Gen3LibraryRoute
+  GeneratorRoute: typeof GeneratorRoute
+  MapSettingsRoute: typeof MapSettingsRoute
+  StructureRoute: typeof StructureRoute
+  TilesetsRoute: typeof TilesetsRoute
+  WorkspaceRoute: typeof WorkspaceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +143,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/formato': {
+      id: '/formato'
+      path: '/formato'
+      fullPath: '/formato'
+      preLoaderRoute: typeof FormatoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gen3-library': {
+      id: '/gen3-library'
+      path: '/gen3-library'
+      fullPath: '/gen3-library'
+      preLoaderRoute: typeof Gen3LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/generator': {
+      id: '/generator'
+      path: '/generator'
+      fullPath: '/generator'
+      preLoaderRoute: typeof GeneratorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/map-settings': {
+      id: '/map-settings'
+      path: '/map-settings'
+      fullPath: '/map-settings'
+      preLoaderRoute: typeof MapSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/structure': {
+      id: '/structure'
+      path: '/structure'
+      fullPath: '/structure'
+      preLoaderRoute: typeof StructureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tilesets': {
+      id: '/tilesets'
+      path: '/tilesets'
+      fullPath: '/tilesets'
+      preLoaderRoute: typeof TilesetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace': {
+      id: '/workspace'
+      path: '/workspace'
+      fullPath: '/workspace'
+      preLoaderRoute: typeof WorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FormatoRoute: FormatoRoute,
+  Gen3LibraryRoute: Gen3LibraryRoute,
+  GeneratorRoute: GeneratorRoute,
+  MapSettingsRoute: MapSettingsRoute,
+  StructureRoute: StructureRoute,
+  TilesetsRoute: TilesetsRoute,
+  WorkspaceRoute: WorkspaceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
