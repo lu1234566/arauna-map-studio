@@ -333,8 +333,8 @@ export function applyCompiledAiMap({
   const identityText = identity?.active && (identity.portChangedCount || identity.greenExpandedCount)
     ? ` Identidade portuária: ${identity.portChangedCount} acento(s) de porto e ${identity.greenExpandedCount} expansão(ões) verdes.`
     : "";
-  const districtText = districts?.active && (districts.greenAddedCount || districts.portPromenadeCount)
-    ? ` Bairros pós-vias: ${districts.greenAddedCount} célula(s) verdes e ${districts.portPromenadeCount} célula(s) de promenade portuária, preservando ${districts.pathCorridorCount} célula(s) de circulação.`
+  const districtText = districts?.active && (districts.greenAddedCount || districts.urbanShoulderCount || districts.portPromenadeCount)
+    ? ` Quadras pós-vias: ${districts.urbanShoulderCount} célula(s) de calçadas/aproximações urbanas, ${districts.greenAddedCount} célula(s) verdes e ${districts.portPromenadeCount} célula(s) de promenade, preservando ${districts.pathCorridorCount} célula(s) de circulação.`
     : "";
   const polishText = polish && (polish.clearedCount || polish.islandClearedCount || polish.layeredPreservedCount)
     ? ` Vizinhança GBA: ${polish.clearedCount} fragmento(s) contextual(is), ${polish.islandClearedCount} célula(s) de ilhas colidíveis isoladas removidas e ${polish.layeredPreservedCount} overlay(s) layered com suporte real preservado(s).`

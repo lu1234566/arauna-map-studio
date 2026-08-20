@@ -8,10 +8,12 @@ import type { SmartPathPreset } from "./smartPath";
 const WATER_BEHAVIORS = new Set([0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17]);
 const NORMAL_GROUND_BEHAVIOR = 0x00;
 const PATH_CORRIDOR_RADIUS = 2;
-const STRUCTURE_INFLUENCE_RADIUS = 2;
-const GREEN_EXPANSION_RADIUS = 3;
-const MIN_GREEN_COMPONENT = 8;
-const MAX_GREEN_ADDED_RATIO = 0.18;
+const ROAD_SHOULDER_RADIUS = 1;
+const ACCESS_PLAZA_RADIUS = 2;
+const STRUCTURE_INFLUENCE_RADIUS = 1;
+const GREEN_EXPANSION_RADIUS = 5;
+const MIN_GREEN_COMPONENT = 10;
+const MAX_GREEN_ADDED_RATIO = 0.28;
 const PORT_COAST_RADIUS = 3;
 const PORT_IMMEDIATE_COAST_RADIUS = 1;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -21,6 +23,7 @@ export interface AiMapDistrictRefinementPlan {
   touched: number[];
   active: boolean;
   greenAddedCount: number;
+  urbanShoulderCount: number;
   portPromenadeCount: number;
   pathCorridorCount: number;
   warnings: string[];
@@ -105,6 +108,9 @@ function buildMasks(
   const size = map.width * map.height;
   const preserve = new Uint8Array(size);
   const urbanInfluence = new Uint8Array(size);
+  const accessPlaza = new Uint8Array(size);
+  const pathCore = new Uint8Array(size);
+  const roadShoulder = new Uint8Array(size);
   const pathCorridor = new Uint8Array(size);
   const portInfluence = new Uint8Array(size);
   const nearCoast = new Uint8Array(size);
@@ -115,8 +121,12 @@ function buildMasks(
   for (const cell of reservedCells) {
     if (!inBounds(map, cell.x, cell.y)) continue;
     preserve[idx(cell.x, cell.y, map.width)] = 1;
-    const radius = cell.kind === "warp" ? STRUCTURE_INFLUENCE_RADIUS : 1;
-    markExpanded(urbanInfluence, map, cell.x, cell.y, 1, 1, radius);
+    if (cell.kind === "warp") {
+      markExpanded(accessPlaza, map, cell.x, cell.y, 1, 1, ACCESS_PLAZA_RADIUS);
+      markExpanded(urbanInfluence, map, cell.x, cell.y, 1, 1, ACCESS_PLAZA_RADIUS);
+    } else {
+      markExpanded(urbanInfluence, map, cell.x, cell.y, 1, 1, 1);
+    }
   }
 
   for (const pattern of patterns) {
@@ -142,6 +152,8 @@ function buildMasks(
       const i = idx(x, y, map.width);
       const id = (map.metatiles[i] ?? 0) & METATILE_MASK;
       if (pathFamily.has(id)) {
+        pathCore[i] = 1;
+        markExpanded(roadShoulder, map, x, y, 1, 1, ROAD_SHOULDER_RADIUS);
         markExpanded(pathCorridor, map, x, y, 1, 1, PATH_CORRIDOR_RADIUS);
       }
       if (portMetatile != null && id === portMetatile) {
@@ -154,7 +166,19 @@ function buildMasks(
     }
   }
 
-  return { preserve, urbanInfluence, pathCorridor, portInfluence, nearCoast, immediateCoast, behaviors, pathFamily };
+  return {
+    preserve,
+    urbanInfluence,
+    accessPlaza,
+    pathCore,
+    roadShoulder,
+    pathCorridor,
+    portInfluence,
+    nearCoast,
+    immediateCoast,
+    behaviors,
+    pathFamily,
+  };
 }
 
 function buildGreenSeedMask(
@@ -241,9 +265,10 @@ function connectedGreenComponents(map: MapData, mask: Uint8Array) {
 }
 
 /**
- * Refino pós-Smart Path. As ruas reais já estão desenhadas, então podemos
- * recuperar bairros verdes somente longe de vias/prédios e reforçar uma pequena
- * promenade portuária entre a costa e os edifícios do porto.
+ * Refino pós-Smart Path. O Smart Path é tratado como eixo viário, não como a rua inteira:
+ * uma faixa curta de piso urbano forma calçadas/quadras ao redor do eixo e das portas.
+ * O verde pode se aproximar até a borda dessas faixas e é ampliado a partir de sementes
+ * reais, reduzindo grandes vazios neutros sem voltar ao efeito de tapete verde.
  */
 export function refineAiMapDistricts(
   sourceMap: MapData,
@@ -257,18 +282,45 @@ export function refineAiMapDistricts(
   const map = cloneMap(sourceMap);
   const warnings: string[] = [];
   if (!atlas || !reconstruction || reconstruction.greenMetatile == null || reconstruction.baseMetatile == null) {
-    return { map, touched: [], active: false, greenAddedCount: 0, portPromenadeCount: 0, pathCorridorCount: 0, warnings };
+    return {
+      map,
+      touched: [],
+      active: false,
+      greenAddedCount: 0,
+      urbanShoulderCount: 0,
+      portPromenadeCount: 0,
+      pathCorridorCount: 0,
+      warnings,
+    };
   }
 
   const masks = buildMasks(map, atlas, patterns, reservedCells, smartPaths, portMetatile);
   const greenMetatile = reconstruction.greenMetatile & METATILE_MASK;
   const baseMetatile = reconstruction.baseMetatile & METATILE_MASK;
   const urbanMetatile = reconstruction.urbanMetatile == null ? null : reconstruction.urbanMetatile & METATILE_MASK;
-  const seed = buildGreenSeedMask(map, patterns, greenMetatile);
+  const touched: number[] = [];
 
+  let urbanShoulderCount = 0;
+  if (urbanMetatile != null) {
+    for (let i = 0; i < map.metatiles.length; i++) {
+      if (!masks.roadShoulder[i] && !masks.accessPlaza[i]) continue;
+      if (masks.pathCore[i] || masks.preserve[i] || masks.immediateCoast[i]) continue;
+      if (masks.portInfluence[i] && masks.nearCoast[i]) continue;
+      if (getCollision(map.physical[i] ?? 0) !== 0) continue;
+      const current = (map.metatiles[i] ?? 0) & METATILE_MASK;
+      const replaceable = current === baseMetatile || current === greenMetatile;
+      if (!replaceable || current === urbanMetatile) continue;
+      if (masks.behaviors.get(current) !== NORMAL_GROUND_BEHAVIOR) continue;
+      map.metatiles[i] = urbanMetatile;
+      touched.push(i);
+      urbanShoulderCount++;
+    }
+  }
+
+  const seed = buildGreenSeedMask(map, patterns, greenMetatile);
   const eligibleGreen = (cellIndex: number) => {
     if (cellIndex < 0 || cellIndex >= map.metatiles.length) return false;
-    if (masks.preserve[cellIndex] || masks.urbanInfluence[cellIndex] || masks.pathCorridor[cellIndex]) return false;
+    if (masks.preserve[cellIndex] || masks.urbanInfluence[cellIndex] || masks.roadShoulder[cellIndex]) return false;
     if (masks.portInfluence[cellIndex]) return false;
     if (getCollision(map.physical[cellIndex] ?? 0) !== 0) return false;
     const id = (map.metatiles[cellIndex] ?? 0) & METATILE_MASK;
@@ -281,7 +333,6 @@ export function refineAiMapDistricts(
     .filter((component) => component.length >= MIN_GREEN_COMPONENT)
     .sort((a, b) => b.length - a.length);
   const maxGreenAdded = Math.max(0, Math.floor(map.metatiles.length * MAX_GREEN_ADDED_RATIO));
-  const touched: number[] = [];
   let greenAddedCount = 0;
 
   for (const component of components) {
@@ -299,7 +350,7 @@ export function refineAiMapDistricts(
     const port = portMetatile & METATILE_MASK;
     for (let i = 0; i < map.metatiles.length; i++) {
       if (!masks.portInfluence[i] || !masks.nearCoast[i] || masks.immediateCoast[i]) continue;
-      if (masks.preserve[i] || masks.pathCorridor[i]) continue;
+      if (masks.preserve[i] || masks.pathCore[i]) continue;
       if (getCollision(map.physical[i] ?? 0) !== 0) continue;
       const current = (map.metatiles[i] ?? 0) & METATILE_MASK;
       const replaceable = current === baseMetatile || current === greenMetatile || (urbanMetatile != null && current === urbanMetatile);
@@ -312,9 +363,9 @@ export function refineAiMapDistricts(
   }
 
   const pathCorridorCount = masks.pathCorridor.reduce((sum, value) => sum + (value ? 1 : 0), 0);
-  if (greenAddedCount || portPromenadeCount) {
+  if (greenAddedCount || urbanShoulderCount || portPromenadeCount) {
     warnings.push(
-      `Zonificação pós-vias: ${greenAddedCount} célula(s) ampliaram bairros verdes longe das ruas; ${portPromenadeCount} célula(s) reforçaram a promenade portuária; ${pathCorridorCount} célula(s) ficaram reservadas à circulação.`,
+      `Quadras pós-vias: ${urbanShoulderCount} célula(s) formaram calçadas/aproximações urbanas; ${greenAddedCount} célula(s) ampliaram blocos verdes; ${portPromenadeCount} célula(s) reforçaram a promenade; ${pathCorridorCount} célula(s) permaneceram reservadas à circulação.`,
     );
   }
 
@@ -323,6 +374,7 @@ export function refineAiMapDistricts(
     touched,
     active: true,
     greenAddedCount,
+    urbanShoulderCount,
     portPromenadeCount,
     pathCorridorCount,
     warnings,
