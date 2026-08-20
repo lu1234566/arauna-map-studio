@@ -52,12 +52,12 @@ export function scoreProceduralCandidate(
   const requestedExits = spec.roadPresetId ? countExits(spec) : 0;
   const connectedExits = result.roads.filter((road) => road.kind === "exit").length;
   const requestedLandmarkConnections = spec.roadPresetId ? placedLandmarks : 0;
-  const landmarkConnections = result.roads.filter((road) => road.kind === "landmark").length;
+  const placedLandmarkConnections = result.roads.filter((road) => road.kind === "landmark").length;
 
   const landmarks = Math.round(ratio(placedLandmarks, requestedLandmarks) * 30);
   const fillers = Math.round(ratio(placedFillers, requestedFillers) * 20);
   const exits = Math.round(ratio(connectedExits, requestedExits) * 20);
-  const landmarkConnections = Math.round(ratio(landmarkConnections, requestedLandmarkConnections) * 20);
+  const landmarkConnections = Math.round(ratio(placedLandmarkConnections, requestedLandmarkConnections) * 20);
   const cleanRun = Math.max(0, 10 - Math.min(10, result.warnings.length * 2));
   const total = landmarks + fillers + exits + landmarkConnections + cleanRun;
 
