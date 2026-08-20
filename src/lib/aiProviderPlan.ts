@@ -41,9 +41,7 @@ function normalizeText(value: string) {
 function normalizeCollection(value: unknown, key: string): unknown[] {
   if (Array.isArray(value)) return value;
   if (value == null) return [];
-  if (isRecord(value)) {
-    return Object.keys(value).length ? [value] : [];
-  }
+  if (isRecord(value)) return Object.keys(value).length ? [value] : [];
   throw new Error(`A IA retornou “${key}” em formato inválido; esperado uma lista JSON.`);
 }
 
@@ -153,7 +151,7 @@ function nearestStructureBeforeDestination(
       if (position > nearest) nearest = position;
     }
     if (nearest < 0) return [];
-    return [{ structure: value, distance: destinationIndex - nearest }];
+    return [{ structure: value, position: nearest, distance: destinationIndex - nearest }];
   }).filter((candidate) => candidate.distance <= 2200)
     .sort((a, b) => a.distance - b.distance);
 
@@ -161,7 +159,7 @@ function nearestStructureBeforeDestination(
   if (!best) return null;
   const second = candidates[1];
   if (second && second.distance === best.distance) return null;
-  return best.structure;
+  return { structure: best.structure, position: best.position, destinationIndex };
 }
 
 function resolveUniqueEntrancePort(patternReference: string, defaults: AiProviderPlanDefaults) {
@@ -172,11 +170,19 @@ function resolveUniqueEntrancePort(patternReference: string, defaults: AiProvide
   if (!pattern) return null;
   const ports = pattern.ports ?? [];
   const exactId = ports.filter((port) => normalizeText(port.id) === "entrada");
-  if (exactId.length === 1) return exactId[0]!;
+  if (exactId.length === 1) return exactId[0]!.id;
   const exactName = ports.filter((port) => normalizeText(port.name) === "entrada");
-  if (exactName.length === 1) return exactName[0]!;
+  if (exactName.length === 1) return exactName[0]!.id;
   const entrances = ports.filter((port) => port.kind === "door" || port.kind === "entrance");
-  return entrances.length === 1 ? entrances[0]! : null;
+  return entrances.length === 1 ? entrances[0]!.id : null;
+}
+
+function explicitPortInPromptSegment(prompt: string, from: number, to: number) {
+  const segment = prompt.slice(Math.max(0, from), Math.max(from, to));
+  const semantic = segment.match(/porta\s+sem[aâ]ntica\s*:?\s*["“'‘]?([\p{L}\p{N}_-]+)/iu);
+  if (semantic?.[1]) return semantic[1].trim();
+  const named = segment.match(/(?:porta|entrada)\s+(?:principal\s+)?(?:deve\s+usar\s+)?(?:a\s+porta\s+)?["“'‘]([\p{L}\p{N}_-]+)["”'’]/iu);
+  return named?.[1]?.trim() ?? null;
 }
 
 function reconcileWarpSource(
@@ -189,21 +195,23 @@ function reconcileWarpSource(
   const prompt = defaults.prompt ?? "";
   if (!destination || !prompt) return value;
 
-  const structure = nearestStructureBeforeDestination(destination, structures, prompt);
-  if (!structure) return value;
-  const structureId = firstNonEmptyString(structure, ["id"]);
-  const patternReference = firstNonEmptyString(structure, ["pattern"]);
+  const association = nearestStructureBeforeDestination(destination, structures, prompt);
+  if (!association) return value;
+  const structureId = firstNonEmptyString(association.structure, ["id"]);
+  const patternReference = firstNonEmptyString(association.structure, ["pattern"]);
   if (!structureId || !patternReference) return value;
-  const port = resolveUniqueEntrancePort(patternReference, defaults);
+
+  const port = resolveUniqueEntrancePort(patternReference, defaults)
+    ?? explicitPortInPromptSegment(prompt, association.position, association.destinationIndex);
   if (!port) return value;
-  return { ...value, source: { structure: structureId, port: port.id } };
+  return { ...value, source: { structure: structureId, port } };
 }
 
 /**
  * Normaliza pequenas variações comuns de provedores de IA antes de entregar o
  * plano ao compilador. Além de item único -> lista, reconcilia apenas campos
  * técnicos determinísticos. Warps sem source só são reparados quando destino,
- * estrutura e uma porta de entrada podem ser associados sem ambiguidade ao prompt.
+ * estrutura e porta podem ser associados sem ambiguidade ao prompt.
  */
 export function parseAiProviderPlan(
   source: string,
