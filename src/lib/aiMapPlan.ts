@@ -166,6 +166,36 @@ function sanitizeConnection(value: AiConnectionPlan, index: number, errors: stri
   if (!Number.isInteger(value.offset)) errors.push(`Conexão ${index + 1}: offset precisa ser inteiro.`);
 }
 
+function warpAnchor(pattern: MapPattern) {
+  for (const tag of pattern.tags ?? []) {
+    const match = tag.match(/^warp-anchor:\s*(-?\d+)\s*,\s*(-?\d+)$/i);
+    if (match) return { x: Number(match[1]), y: Number(match[2]) };
+  }
+  return null;
+}
+
+function anchorStructure(
+  structure: AiStructurePlacement,
+  pattern: MapPattern,
+  warnings: string[],
+): AiStructurePlacement {
+  const anchor = warpAnchor(pattern);
+  if (!anchor) return structure;
+  const port = resolvePort("entrada", pattern.ports ?? []);
+  if (!port) {
+    warnings.push(`Estrutura ${structure.id}: pattern “${pattern.name}” possui warp-anchor, mas não tem port “entrada”; posição não foi corrigida automaticamente.`);
+    return structure;
+  }
+  const expectedX = anchor.x - port.x;
+  const expectedY = anchor.y - port.y;
+  if (structure.x === expectedX && structure.y === expectedY) return structure;
+  warnings.push(
+    `Estrutura ${structure.id}: posição (${structure.x},${structure.y}) corrigida para (${expectedX},${expectedY}) ` +
+      `para manter a entrada no warp existente (${anchor.x},${anchor.y}).`,
+  );
+  return { ...structure, x: expectedX, y: expectedY };
+}
+
 export function compileAiMapPlan(
   plan: AiMapPlan,
   patterns: MapPattern[],
@@ -181,6 +211,7 @@ export function compileAiMapPlan(
   if (!Number.isInteger(plan.height) || plan.height < 1 || plan.height > 512) errors.push("height precisa ser inteiro entre 1 e 512.");
 
   const ids = new Set<string>();
+  const normalizedStructures: AiStructurePlacement[] = [];
   const blueprintPatterns = plan.structures.flatMap((structure, index) => {
     if (!structure.id.trim()) {
       errors.push(`Estrutura ${index + 1}: id vazio.`);
@@ -197,7 +228,9 @@ export function compileAiMapPlan(
       errors.push(`Estrutura ${structure.id}: pattern “${structure.pattern}” não existe ou é ambíguo.`);
       return [];
     }
-    return [{ pattern: pattern.id, x: structure.x, y: structure.y }];
+    const safeStructure = anchorStructure(structure, pattern, warnings);
+    normalizedStructures.push(safeStructure);
+    return [{ pattern: pattern.id, x: safeStructure.x, y: safeStructure.y }];
   });
 
   const blueprintRoutes: BlueprintRoute[] = plan.routes.flatMap((route, routeIndex) => {
@@ -215,7 +248,7 @@ export function compileAiMapPlan(
         errors.push(`Rota ${routeIndex + 1}, ponto ${pointIndex + 1}: referência inválida.`);
         continue;
       }
-      const resolved = resolveAiPoint(reference, plan.structures, patterns);
+      const resolved = resolveAiPoint(reference, normalizedStructures, patterns);
       if (!resolved.point) {
         errors.push(`Rota ${routeIndex + 1}, ponto ${pointIndex + 1}: ${resolved.error}`);
         continue;
@@ -229,7 +262,7 @@ export function compileAiMapPlan(
   for (const [index, warp] of plan.warps.entries()) {
     if (!warp.destMap.trim()) errors.push(`Warp ${index + 1}: destMap vazio.`);
     if (!warp.destWarpId.trim()) errors.push(`Warp ${index + 1}: destWarpId vazio.`);
-    const resolved = resolveAiPoint(warp.source, plan.structures, patterns);
+    const resolved = resolveAiPoint(warp.source, normalizedStructures, patterns);
     if (!resolved.point) {
       errors.push(`Warp ${index + 1}: ${resolved.error}`);
       continue;
