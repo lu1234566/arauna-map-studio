@@ -72,6 +72,10 @@ function behaviorMap(atlas: SavedRealAtlas | null) {
   return new Map((atlas?.records ?? []).map((record) => [record.id & METATILE_MASK, record.behavior]));
 }
 
+function layerMap(atlas: SavedRealAtlas | null) {
+  return new Map((atlas?.records ?? []).map((record) => [record.id & METATILE_MASK, record.layerType]));
+}
+
 function isPortPattern(pattern: MapPattern) {
   const key = normalize(`${pattern.id} ${pattern.name} ${pattern.category} ${(pattern.tags ?? []).join(" ")}`);
   return /(porto|cais|estaleiro|terminal|harbor|ferry|mercado|oceanograf|navio)/.test(key);
@@ -80,19 +84,25 @@ function isPortPattern(pattern: MapPattern) {
 function portGroundFromPatterns(
   patterns: MapPattern[],
   behaviors: Map<number, number | null>,
+  layers: Map<number, number | null>,
   excluded: Set<number>,
 ) {
   const counts = new Map<number, number>();
   for (const pattern of patterns) {
     if (pattern.kind !== "raw") continue;
     const key = normalize(`${pattern.id} ${pattern.name} ${pattern.category} ${(pattern.tags ?? []).join(" ")}`);
-    const useful = isPortPattern(pattern) || pattern.id.includes("-coast-") || /trecho costeiro/.test(key);
+    const useful = isPortPattern(pattern) || pattern.id.toLowerCase().includes("-coast-") || /trecho costeiro/.test(key);
     if (!useful) continue;
     for (const raw of pattern.values ?? []) {
       const value = Number(raw) & 0xffff;
       if (getCollision(value) !== 0) continue;
       const id = value & METATILE_MASK;
-      if (!id || excluded.has(id) || behaviors.get(id) !== NORMAL_GROUND_BEHAVIOR) continue;
+      if (
+        !id
+        || excluded.has(id)
+        || behaviors.get(id) !== NORMAL_GROUND_BEHAVIOR
+        || (layers.get(id) ?? 0) !== 0
+      ) continue;
       counts.set(id, (counts.get(id) ?? 0) + 1);
     }
   }
@@ -199,6 +209,7 @@ export function planAiMapIdentityBase(
   }
 
   const behaviors = behaviorMap(atlas);
+  const layers = layerMap(atlas);
   const { preserve, access } = buildProtectionAndAccessMasks(sourceMap, patterns, reservedCells, behaviors);
   const port = buildPortMask(sourceMap, patterns);
   const greenExpansion = buildGreenExpansionMask(sourceMap, patterns);
@@ -206,7 +217,7 @@ export function planAiMapIdentityBase(
   for (const value of [reconstruction.baseMetatile, reconstruction.urbanMetatile, reconstruction.greenMetatile]) {
     if (value != null) excluded.add(value);
   }
-  const portMetatile = portGroundFromPatterns(patterns, behaviors, excluded);
+  const portMetatile = portGroundFromPatterns(patterns, behaviors, layers, excluded);
   const touched: number[] = [];
   let portChangedCount = 0;
   let greenExpandedCount = 0;
