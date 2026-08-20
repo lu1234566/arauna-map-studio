@@ -50,6 +50,19 @@ function stripFence(text: string) {
   return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
+function providerDefaults(data: PlannerRequest) {
+  return {
+    width: data.width,
+    height: data.height,
+    prompt: data.prompt,
+    patterns: data.patterns.map((pattern) => ({
+      id: pattern.id,
+      name: pattern.name,
+      tags: pattern.tags,
+    })),
+  };
+}
+
 function unmentionedDestinations(plan: AiMapPlan, prompt: string) {
   const source = prompt.toLocaleUpperCase("pt-BR");
   const warps = Array.isArray(plan.warps) ? plan.warps : [];
@@ -70,7 +83,7 @@ function plannerInstructions(data: PlannerRequest) {
     return `- ${pattern.name} [id=${pattern.id}, category=${pattern.category}, size=${pattern.width}x${pattern.height}, tags=${pattern.tags.join("|") || "-"}, ports=${ports || "nenhum"}]`;
   }).join("\n") || "- nenhum";
   const smartPaths = data.smartPaths.map((preset) => `- ${preset.name} [id=${preset.id}]`).join("\n") || "- nenhum";
-  return `Você é a camada de planejamento espacial do Arauna Map Studio para Pokémon Emerald. Converta o comando do usuário em um plano JSON estrito.\n\nREGRAS OBRIGATÓRIAS:\n1. O mapa mede ${data.width}x${data.height} metatiles. Preserve essas dimensões salvo se o usuário der dimensões explícitas.\n2. Use SOMENTE Patterns e Smart Paths da lista. Nunca invente nomes, IDs ou tiles.\n3. Estruturas usam x/y do canto superior esquerdo. Respeite coordenadas e posições cardeais dadas pelo usuário literalmente.\n4. Para entradas/portas, use referência semântica {structure, port} somente quando o Pattern listar esse port. Sem port cadastrado, use coordenada absoluta {x,y} fornecida pelo usuário. Não adivinhe onde está uma porta.\n5. Rotas precisam ser ortogonais. Se precisar contornar uma construção, adicione pontos intermediários.\n6. Warps só podem usar destMap/destWarpId que o usuário informou. Se o usuário não informou destino, NÃO crie warp; registre em notes que falta o destino.\n7. Conexões north/east/south/west só podem ser criadas quando o usuário informou explicitamente o mapa de destino.\n8. Não sobreponha estruturas. Mantenha todas dentro dos limites.\n9. Se uma instrução for impossível com o vocabulário disponível, não substitua por outra coisa: omita e explique em notes.\n10. IDs de structures devem ser curtos, únicos e estáveis; label pode manter o nome humano.\n11. structures, routes, warps, connections e notes DEVEM SEMPRE ser arrays JSON, mesmo quando houver zero ou apenas um item.\n12. Responda exclusivamente com um objeto JSON no schema arauna-ai-map-plan-v1, sem Markdown.\n\nPATTERNS DISPONÍVEIS:\n${patterns}\n\nSMART PATHS DISPONÍVEIS:\n${smartPaths}\n\nCOMANDO DO USUÁRIO:\n${data.prompt}`;
+  return `Você é a camada de planejamento espacial do Arauna Map Studio para Pokémon Emerald. Converta o comando do usuário em um plano JSON estrito.\n\nREGRAS OBRIGATÓRIAS:\n1. O mapa mede ${data.width}x${data.height} metatiles. Preserve essas dimensões salvo se o usuário der dimensões explícitas.\n2. Use SOMENTE Patterns e Smart Paths da lista. Nunca invente nomes, IDs ou tiles.\n3. Estruturas usam x/y do canto superior esquerdo. Respeite coordenadas e posições cardeais dadas pelo usuário literalmente.\n4. Para entradas/portas, use referência semântica {structure, port} somente quando o Pattern listar esse port. Sem port cadastrado, use coordenada absoluta {x,y} fornecida pelo usuário. Não adivinhe onde está uma porta.\n5. Rotas precisam ser ortogonais. Se precisar contornar uma construção, adicione pontos intermediários.\n6. Warps só podem usar destMap/destWarpId que o usuário informou. Se o usuário não informou destino, NÃO crie warp; registre em notes que falta o destino.\n7. Conexões north/east/south/west só podem ser criadas quando o usuário informou explicitamente o mapa de destino.\n8. Não sobreponha estruturas. Mantenha todas dentro dos limites.\n9. Se uma instrução for impossível com o vocabulário disponível, não substitua por outra coisa: omita e explique em notes.\n10. IDs de structures devem ser curtos, únicos e estáveis; label pode manter o nome humano.\n11. structures, routes, warps, connections e notes DEVEM SEMPRE ser arrays JSON, mesmo quando houver zero ou apenas um item.\n12. Cada structure DEVE preencher pattern com o id ou nome EXATO de um Pattern disponível; nunca deixe pattern vazio.\n13. format DEVE ser exatamente ${AI_MAP_PLAN_FORMAT}; width e height DEVEM ser números inteiros.\n14. Responda exclusivamente com um objeto JSON no schema arauna-ai-map-plan-v1, sem Markdown.\n\nPATTERNS DISPONÍVEIS:\n${patterns}\n\nSMART PATHS DISPONÍVEIS:\n${smartPaths}\n\nCOMANDO DO USUÁRIO:\n${data.prompt}`;
 }
 
 function validateReturnedPlan(plan: AiMapPlan, prompt: string) {
@@ -94,7 +107,7 @@ async function callLovableGateway(data: PlannerRequest, apiKey: string) {
   const message = first?.message as Record<string, unknown> | undefined;
   const text = typeof message?.content === "string" ? message.content : "";
   if (!text.trim()) throw new Error("Lovable AI não retornou um plano textual.");
-  const plan = parseAiProviderPlan(stripFence(text));
+  const plan = parseAiProviderPlan(stripFence(text), providerDefaults(data));
   return { model, plan: validateReturnedPlan(plan, data.prompt) };
 }
 
@@ -114,7 +127,7 @@ async function callGeminiDirect(data: PlannerRequest, apiKey: string) {
   const parts = Array.isArray(content?.parts) ? content.parts as Array<Record<string, unknown>> : [];
   const text = parts.map((part) => typeof part.text === "string" ? part.text : "").join("\n").trim();
   if (!text) throw new Error("Gemini não retornou um plano textual.");
-  const plan = parseAiProviderPlan(stripFence(text));
+  const plan = parseAiProviderPlan(stripFence(text), providerDefaults(data));
   return { model, plan: validateReturnedPlan(plan, data.prompt) };
 }
 
