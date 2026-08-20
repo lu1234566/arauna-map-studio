@@ -10,6 +10,7 @@ import {
 } from "@/lib/aiMapPlan";
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
 import { editorStore, useEditor } from "@/lib/editorStore";
+import { requestMapCameraFit } from "@/lib/mapCamera";
 import { serializeMapTemplates } from "@/lib/mapTemplate";
 import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
@@ -200,6 +201,7 @@ export function AiCityBuilderDock() {
       : topologyApplied
         ? ` ${topologyApplied} warp/conexão foram criados ou atualizados no map.json.`
         : "";
+    requestMapCameraFit();
     setMessage(`Mapa aplicado: ${changes} alteração(ões) de tile/camada.${topologyText}`);
   };
 
