@@ -11,7 +11,7 @@ import { realAtlasStore, type SavedRealAtlas } from "./realAtlasStore";
 
 const RAW_ROOT = "https://raw.githubusercontent.com/pret/pokeemerald/master";
 const PRIMARY_ROOT = "data/tilesets/primary/general";
-const DEFAULT_SECONDARY = "petalburg";
+const DEFAULT_SECONDARY = "gTileset_Petalburg";
 const bootstrapPromises = new Map<string, Promise<SavedRealAtlas>>();
 
 async function required(path: string): Promise<Response> {
@@ -29,14 +29,18 @@ async function paletteSet(root: string, indexes: number[]): Promise<Map<number, 
   return new Map(entries);
 }
 
-function normalizeSecondary(value: string) {
+export function normalizeEmeraldSecondary(value: string) {
   const stripped = value.trim().replace(/^gTileset_/i, "");
-  const directory = stripped.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (!directory) throw new Error("Tileset secondary vazio.");
-  return {
-    directory,
-    symbol: `gTileset_${stripped.charAt(0).toUpperCase()}${stripped.slice(1)}`,
-  };
+  if (!stripped) throw new Error("Tileset secondary vazio.");
+  const directory = stripped
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+  const symbol = value.trim().startsWith("gTileset_")
+    ? value.trim()
+    : `gTileset_${stripped}`;
+  return { directory, symbol };
 }
 
 async function buildPretEmeraldPair(secondaryDirectory: string): Promise<RenderTilesetPair> {
@@ -79,7 +83,7 @@ async function buildPretEmeraldPair(secondaryDirectory: string): Promise<RenderT
  * gráficos modificados do próprio Juramento de Arauna.
  */
 export async function ensureAuthenticEmeraldTilesetPair(secondary: string): Promise<SavedRealAtlas> {
-  const normalized = normalizeSecondary(secondary);
+  const normalized = normalizeEmeraldSecondary(secondary);
   const existing = realAtlasStore.ensureHydrated();
   if (existing?.primary === "gTileset_General" && existing.secondary.toLowerCase() === normalized.symbol.toLowerCase()) {
     return existing;
