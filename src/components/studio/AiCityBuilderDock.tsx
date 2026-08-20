@@ -181,8 +181,8 @@ export function AiCityBuilderDock() {
   };
 
   return (
-    <section className="absolute right-2 top-24 z-40 overflow-hidden rounded border border-primary/35 bg-panel/95 shadow-2xl backdrop-blur-sm">
-      <div className="flex items-center gap-1.5 p-1.5">
+    <section className="absolute right-2 top-24 z-40 flex max-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded border border-primary/35 bg-panel/95 shadow-2xl backdrop-blur-sm">
+      <div className="shrink-0 flex items-center gap-1.5 p-1.5">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -198,7 +198,7 @@ export function AiCityBuilderDock() {
       </div>
 
       {open && (
-        <div className="w-[560px] max-w-[calc(100vw-330px)] border-t border-border">
+        <div className="min-h-0 w-[560px] max-w-[calc(100vw-330px)] flex-1 overflow-y-auto overscroll-contain border-t border-border">
           <div className="space-y-2 p-2.5">
             <div className="flex flex-wrap gap-1">
               <SmallBadge good={compatiblePatterns.length >= 6}>{compatiblePatterns.length}/{patternState.patterns.length} Patterns compatíveis</SmallBadge>
