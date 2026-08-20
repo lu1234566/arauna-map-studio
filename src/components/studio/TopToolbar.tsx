@@ -28,10 +28,12 @@ import {
   LITTLEROOT_MAP_JSON,
   littlerootMapBinBuffer,
 } from "@/data/littlerootSnapshot";
+import { secondaryTilesetForEmeraldLayout } from "@/lib/emeraldLayoutTilesets";
 import { editorStore, useEditor, type Tool, type ViewMode } from "@/lib/editorStore";
 import { saveEditorToWritableWorkspace } from "@/lib/fileSystemWorkspace";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { mapBinDimensionCandidates, parseMapBinDimensionInput } from "@/lib/mapBinImport";
+import { ensureAuthenticEmeraldTilesetPair } from "@/lib/pretEmeraldBootstrap";
 import { realAtlasStore } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
 import { useWorkspaceSession } from "@/lib/workspaceSession";
@@ -180,13 +182,45 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
     requestMapCameraFit();
     editorStore.setMessage(
       `Importado ${file.name} — ${buffer.byteLength} bytes, ${width}×${height} (${cells} células). ` +
-        "Aguardando map.json deste mapa.",
+        "Importe agora o map.json correspondente; ele permite detectar o layout/tileset e carregar eventos reais.",
     );
   };
 
   const handleImportJson = async (file: File) => {
     const source = await file.text();
-    editorStore.importMapJson(source, file.name);
+    const result = editorStore.importMapJson(source, file.name);
+    if (!result.ok) return;
+
+    // Workspace já instalou os gráficos exatos do repositório Arauna. Para
+    // BIN/JSON avulsos, map.json fornece o layout; usamos isso para trocar o
+    // fallback canônico Petalburg pelo secondary correto (ex.: Slateport).
+    if (session?.lastMapPath) return;
+
+    const metadata = editorStore.getState().mapMetadata;
+    const secondary = secondaryTilesetForEmeraldLayout(metadata?.layout);
+    if (!secondary) {
+      editorStore.setMessage(
+        `${file.name} importado. Layout ${metadata?.layout ?? "desconhecido"} sem mapeamento automático de tileset; ` +
+          "use Workspace/Tilesets para carregar os gráficos exatos.",
+      );
+      return;
+    }
+
+    editorStore.setMessage(
+      `${file.name} importado — layout ${metadata?.layout}. Carregando gTileset_General + ${secondary}…`,
+    );
+    try {
+      const atlas = await ensureAuthenticEmeraldTilesetPair(secondary);
+      editorStore.setMessage(
+        `${file.name} importado. Atlas GBA real selecionado automaticamente: ${atlas.primary} + ${atlas.secondary}. ` +
+          "Para gráficos customizados do Juramento de Arauna, Workspace continua sendo a fonte exata.",
+      );
+    } catch (cause) {
+      editorStore.setMessage(
+        `${file.name} importado, mas não foi possível carregar automaticamente ${secondary}: ` +
+          `${cause instanceof Error ? cause.message : String(cause)} Use Workspace/Tilesets para selecionar o atlas correto.`,
+      );
+    }
   };
 
   const loadRealLittleroot = () => {
@@ -337,7 +371,7 @@ export function TopToolbar({ onValidate }: { onValidate: () => void }) {
           disabled={!state.mapJsonDocument}
         >
           <Braces className="size-3.5" /> JSON
-          {state.mapJsonDirty && <span className="text-[9px] text-warning">*</span>}
+          {state.mapJsonDirty && <span className="text-warning">*</span>}
         </TB>
         <TB title="Validar layout, bits físicos, eventos e conexões" onClick={onValidate}>
           <CheckCircle2 className="size-3.5" /> Validar
