@@ -1,5 +1,6 @@
 import {
   cloneMap,
+  COLLISION_MASK,
   getCollision,
   idx,
   METATILE_MASK,
@@ -14,7 +15,9 @@ const WATER_BEHAVIORS = new Set([0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17]
 const NORMAL_GROUND_BEHAVIOR = 0x00;
 const MIN_GROUND_SAMPLES = 12;
 const MAX_REBUILD_RATIO = 0.6;
-const URBAN_MARGIN = 3;
+const URBAN_STRUCTURE_MARGIN = 1;
+const URBAN_WARP_MARGIN = 2;
+const MAX_ORPHAN_COLLISION_CLUSTER = 8;
 
 export interface AiMapReconstructionPlan {
   map: MapData;
@@ -26,6 +29,7 @@ export interface AiMapReconstructionPlan {
   changedCount: number;
   baseChangedCount: number;
   urbanChangedCount: number;
+  orphanClearedCount: number;
   confidence: number;
   warnings: string[];
 }
@@ -134,23 +138,85 @@ function emptyPlan(map: MapData, warnings: string[], baseMetatile: number | null
     changedCount: 0,
     baseChangedCount: 0,
     urbanChangedCount: 0,
+    orphanClearedCount: 0,
     confidence: 0,
     warnings,
   };
+}
+
+function isInBounds(map: MapData, x: number, y: number) {
+  return x >= 0 && y >= 0 && x < map.width && y < map.height;
+}
+
+function safeOrphanCollisionClusters(
+  sourceMap: MapData,
+  behaviors: Map<number, number | null>,
+  preserve: Uint8Array,
+  cleanupProtected: Uint8Array,
+) {
+  const seen = new Uint8Array(sourceMap.width * sourceMap.height);
+  const clusters: number[][] = [];
+
+  const isCandidate = (cellIndex: number) => {
+    if (cellIndex < 0 || cellIndex >= sourceMap.metatiles.length) return false;
+    if (preserve[cellIndex] || cleanupProtected[cellIndex]) return false;
+    if (getCollision(sourceMap.physical[cellIndex] ?? 0) === 0) return false;
+    const id = (sourceMap.metatiles[cellIndex] ?? 0) & METATILE_MASK;
+    return behaviors.get(id) === NORMAL_GROUND_BEHAVIOR;
+  };
+
+  for (let start = 0; start < sourceMap.metatiles.length; start++) {
+    if (seen[start] || !isCandidate(start)) continue;
+    const queue = [start];
+    const component: number[] = [];
+    let safe = true;
+
+    while (queue.length) {
+      const current = queue.shift()!;
+      if (seen[current] || !isCandidate(current)) continue;
+      seen[current] = 1;
+      component.push(current);
+      if (component.length > MAX_ORPHAN_COLLISION_CLUSTER) safe = false;
+
+      const x = current % sourceMap.width;
+      const y = Math.floor(current / sourceMap.width);
+      if (x === 0 || y === 0 || x === sourceMap.width - 1 || y === sourceMap.height - 1) safe = false;
+
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!isInBounds(sourceMap, nx, ny)) {
+          safe = false;
+          continue;
+        }
+        const ni = idx(nx, ny, sourceMap.width);
+        if (preserve[ni] || cleanupProtected[ni]) safe = false;
+        const neighborId = (sourceMap.metatiles[ni] ?? 0) & METATILE_MASK;
+        if (WATER_BEHAVIORS.has(behaviors.get(neighborId) ?? -1)) safe = false;
+        if (!seen[ni] && isCandidate(ni)) queue.push(ni);
+      }
+    }
+
+    if (safe && component.length > 0 && component.length <= MAX_ORPHAN_COLLISION_CLUSTER) {
+      clusters.push(component);
+    }
+  }
+
+  return clusters;
 }
 
 /**
  * Cria uma base visual limpa para uma remodelagem REAL sem tocar na lógica do mapa.
  *
  * A reconstrução é propositalmente conservadora:
- * - altera SOMENTE metatile visual de células caminháveis com behavior NORMAL;
- * - nunca altera colisão/elevação;
+ * - altera metatile visual de células caminháveis com behavior NORMAL;
  * - preserva água e a borda imediata da costa;
- * - preserva warps/triggers;
- * - preserva a região original de todo Pattern com warp-anchor/fixed-origin;
- * - usa piso urbano real perto de estruturas/eventos quando um Smart Path urbano
- *   confiável existe, evitando transformar toda a cidade em um único piso verde;
- * - deixa behaviors especiais (areia, grama alta, gelo etc.) intactos.
+ * - preserva warps/triggers e regiões ancoradas/fixas;
+ * - usa piso urbano real só no entorno curto de estruturas e acessos;
+ * - remove pequenos clusters colidíveis órfãos somente quando estão isolados de
+ *   borda, costa, eventos e regiões protegidas, limpando também a colisão para
+ *   não criar paredes invisíveis;
+ * - mantém a elevação e todos os demais bits físicos intactos.
  *
  * Depois dessa etapa o Template/Smart Paths é aplicado sobre a base reconstruída.
  */
@@ -167,27 +233,31 @@ export function planAiMapReconstruction(
 
   const behaviors = behaviorMap(atlas);
   const preserve = new Uint8Array(sourceMap.width * sourceMap.height);
+  const cleanupProtected = new Uint8Array(sourceMap.width * sourceMap.height);
   const urban = new Uint8Array(sourceMap.width * sourceMap.height);
 
-  // Warps/triggers precisam manter sua célula visual. Áreas de movimento de NPC
-  // podem receber novo piso, pois a reconstrução não altera colisão/elevação.
+  // Warps/triggers precisam manter sua célula visual. Para limpeza de obstáculos,
+  // qualquer célula reservada (incluindo área de NPC) vira zona de proteção.
   for (const cell of reservedCells) {
-    if (cell.kind !== "npc" && cell.x >= 0 && cell.y >= 0 && cell.x < sourceMap.width && cell.y < sourceMap.height) {
-      preserve[idx(cell.x, cell.y, sourceMap.width)] = 1;
-    }
-    if (cell.kind === "warp" && cell.x >= 0 && cell.y >= 0 && cell.x < sourceMap.width && cell.y < sourceMap.height) {
-      markExpandedRegion(urban, sourceMap, cell.x, cell.y, 1, 1, URBAN_MARGIN);
+    if (!isInBounds(sourceMap, cell.x, cell.y)) continue;
+    const i = idx(cell.x, cell.y, sourceMap.width);
+    cleanupProtected[i] = 1;
+    if (cell.kind !== "npc") preserve[i] = 1;
+    if (cell.kind === "warp") {
+      markExpandedRegion(urban, sourceMap, cell.x, cell.y, 1, 1, URBAN_WARP_MARGIN);
     }
   }
 
   // Todos os prédios/conjuntos ligados a eventos reais ficam preservados mesmo se
-  // o modelo não os citar explicitamente no plano atual. A vizinhança ao redor
-  // deles é uma zona urbana candidata, sem tocar no prédio em si.
+  // o modelo não os citar explicitamente no plano atual. Somente uma faixa curta
+  // ao redor deles recebe vocação urbana; a malha principal continua vindo dos
+  // Smart Paths, evitando pavimentar a cidade inteira.
   for (const pattern of patterns) {
     const origin = originalOrigin(pattern);
     if (!origin) continue;
     markRegion(preserve, sourceMap, origin.x, origin.y, pattern.width, pattern.height);
-    markExpandedRegion(urban, sourceMap, origin.x, origin.y, pattern.width, pattern.height, URBAN_MARGIN);
+    markRegion(cleanupProtected, sourceMap, origin.x, origin.y, pattern.width, pattern.height);
+    markExpandedRegion(urban, sourceMap, origin.x, origin.y, pattern.width, pattern.height, URBAN_STRUCTURE_MARGIN);
   }
 
   // Água e a célula vizinha imediata formam a costa. Mantemos ambas para não
@@ -201,9 +271,11 @@ export function planAiMapReconstruction(
         for (let dx = -1; dx <= 1; dx++) {
           const px = x + dx;
           const py = y + dy;
-          if (px < 0 || py < 0 || px >= sourceMap.width || py >= sourceMap.height) continue;
-          preserve[idx(px, py, sourceMap.width)] = 1;
-          urban[idx(px, py, sourceMap.width)] = 0;
+          if (!isInBounds(sourceMap, px, py)) continue;
+          const pi = idx(px, py, sourceMap.width);
+          preserve[pi] = 1;
+          cleanupProtected[pi] = 1;
+          urban[pi] = 0;
         }
       }
     }
@@ -225,6 +297,7 @@ export function planAiMapReconstruction(
   const touched: number[] = [];
   let baseChangedCount = 0;
   let urbanChangedCount = 0;
+  let orphanClearedCount = 0;
 
   for (let i = 0; i < sourceMap.metatiles.length; i++) {
     if (preserve[i]) continue;
@@ -237,6 +310,20 @@ export function planAiMapReconstruction(
     touched.push(i);
     if (desired === urbanMetatile && urbanMetatile !== ground.id) urbanChangedCount++;
     else baseChangedCount++;
+  }
+
+  // Depois de estabelecer o piso contextual, limpamos apenas pequenos obstáculos
+  // órfãos. A elevação permanece; somente os bits de colisão são removidos.
+  for (const component of safeOrphanCollisionClusters(sourceMap, behaviors, preserve, cleanupProtected)) {
+    for (const cellIndex of component) {
+      const desired = urbanMetatile != null && urban[cellIndex] ? urbanMetatile : ground.id;
+      map.metatiles[cellIndex] = desired;
+      map.physical[cellIndex] = ((sourceMap.physical[cellIndex] ?? 0) & ~COLLISION_MASK) & 0xffff;
+      touched.push(cellIndex);
+      orphanClearedCount++;
+      if (desired === urbanMetatile && urbanMetatile !== ground.id) urbanChangedCount++;
+      else baseChangedCount++;
+    }
   }
 
   if (touched.length > sourceMap.metatiles.length * MAX_REBUILD_RATIO) {
@@ -253,6 +340,7 @@ export function planAiMapReconstruction(
       changedCount: 0,
       baseChangedCount: 0,
       urbanChangedCount: 0,
+      orphanClearedCount: 0,
       confidence: ground.count / ground.candidateCount,
       warnings,
     };
@@ -262,8 +350,11 @@ export function planAiMapReconstruction(
     const urbanText = urbanMetatile != null
       ? `; ${urbanChangedCount} célula(s) próximas a estruturas/acessos usarão piso urbano 0x${urbanMetatile.toString(16).toUpperCase().padStart(3, "0")}`
       : "; nenhum piso urbano confiável foi derivado, então somente a base comum será usada";
+    const cleanupText = orphanClearedCount
+      ? `; ${orphanClearedCount} célula(s) de pequenos obstáculos órfãos serão limpas com colisão removida`
+      : "; nenhum obstáculo colidível órfão seguro foi encontrado";
     warnings.push(
-      `Base contextual: ${baseChangedCount} célula(s) usarão piso comum 0x${ground.id.toString(16).toUpperCase().padStart(3, "0")}${urbanText}. Colisão/elevação permanecem intactas.`,
+      `Base contextual: ${baseChangedCount} célula(s) usarão piso comum 0x${ground.id.toString(16).toUpperCase().padStart(3, "0")}${urbanText}${cleanupText}. Elevação permanece intacta.`,
     );
   }
 
@@ -277,6 +368,7 @@ export function planAiMapReconstruction(
     changedCount: touched.length,
     baseChangedCount,
     urbanChangedCount,
+    orphanClearedCount,
     confidence: ground.count / ground.candidateCount,
     warnings,
   };
