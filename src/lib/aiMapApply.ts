@@ -1,5 +1,6 @@
 import { getCollision, getElevation, type MapData } from "./emeraldMap";
 import { gameReadyStructureConflicts } from "./aiMapGameReady";
+import { refineAiMapDistricts } from "./aiMapDistrictRefinement";
 import { polishAiMapFragments } from "./aiMapFragmentPolish";
 import { planAiMapIdentityBase } from "./aiMapIdentity";
 import type { AiMapCompileResult, AiMapPlan } from "./aiMapPlan";
@@ -264,6 +265,18 @@ export function applyCompiledAiMap({
   mapTemplateStore.setEnabled(false);
   mapTemplateStore.setPanelOpen(false);
 
+  const districts = reconstructionEnabled && reconstruction
+    ? refineAiMapDistricts(
+        templatePlan.map,
+        atlas,
+        patterns,
+        reservedCells,
+        smartPaths,
+        reconstruction,
+        identity?.portMetatile ?? null,
+      )
+    : null;
+  const districtMap = districts?.map ?? templatePlan.map;
   const surfaces = [
     reconstruction?.baseMetatile,
     reconstruction?.urbanMetatile,
@@ -271,13 +284,14 @@ export function applyCompiledAiMap({
     identity?.portMetatile,
   ];
   const polish = reconstructionEnabled
-    ? polishAiMapFragments(templatePlan.map, atlas, patterns, reservedCells, surfaces)
+    ? polishAiMapFragments(districtMap, atlas, patterns, reservedCells, surfaces)
     : null;
-  const finalMap = polish?.map ?? templatePlan.map;
+  const finalMap = polish?.map ?? districtMap;
   const touched = [
     ...(reconstruction?.touched ?? []),
     ...(identity?.touched ?? []),
     ...templatePlan.touched,
+    ...(districts?.touched ?? []),
     ...(polish?.touched ?? []),
   ];
   const changes = applyTargetMap(finalMap, touched);
@@ -319,6 +333,9 @@ export function applyCompiledAiMap({
   const identityText = identity?.active && (identity.portChangedCount || identity.greenExpandedCount)
     ? ` Identidade portuária: ${identity.portChangedCount} acento(s) de porto e ${identity.greenExpandedCount} expansão(ões) verdes.`
     : "";
+  const districtText = districts?.active && (districts.greenAddedCount || districts.portPromenadeCount)
+    ? ` Bairros pós-vias: ${districts.greenAddedCount} célula(s) verdes e ${districts.portPromenadeCount} célula(s) de promenade portuária, preservando ${districts.pathCorridorCount} célula(s) de circulação.`
+    : "";
   const polishText = polish && (polish.clearedCount || polish.layeredPreservedCount)
     ? ` Vizinhança GBA: ${polish.clearedCount} fragmento(s) órfão(s) removido(s) e ${polish.layeredPreservedCount} overlay(s) layered contextual(is) preservado(s).`
     : "";
@@ -333,7 +350,7 @@ export function applyCompiledAiMap({
 
   return {
     ok: true,
-    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${identityText}${polishText}${contextText}${topologyText}`,
+    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${identityText}${districtText}${polishText}${contextText}${topologyText}`,
     changes,
     topologyApplied,
     topologyPending,
