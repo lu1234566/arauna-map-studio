@@ -9,11 +9,14 @@ import {
   type AiMapPlan,
 } from "@/lib/aiMapPlan";
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
+import { gameReadyStructureConflicts } from "@/lib/aiMapGameReady";
+import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { serializeMapTemplates } from "@/lib/mapTemplate";
 import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
+import { useRealAtlas } from "@/lib/realAtlasStore";
 import { useSmartPath } from "@/lib/smartPathStore";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +57,7 @@ function connectionIndex(direction: string) {
 
 export function AiCityBuilderDock() {
   const editor = useEditor();
+  const atlas = useRealAtlas();
   const patternState = usePatternLibrary();
   const pathState = useSmartPath();
   const runGemini = useServerFn(planMapWithGemini);
@@ -66,8 +70,23 @@ export function AiCityBuilderDock() {
   const [message, setMessage] = useState("Descreva a cidade com posições, estruturas, portas, rotas e saídas.");
   const [onlineModel, setOnlineModel] = useState<string | null>(null);
 
+  const compatiblePatterns = useMemo(() => patternState.patterns.filter((pattern) => (
+    !pattern.scope || Boolean(atlas && pattern.scope.primary === atlas.primary && pattern.scope.secondary === atlas.secondary)
+  )), [patternState.patterns, atlas?.primary, atlas?.secondary]);
+
+  const compatiblePaths = useMemo(() => pathState.presets.filter((preset) => (
+    !preset.scope || Boolean(atlas && preset.scope.primary === atlas.primary && preset.scope.secondary === atlas.secondary)
+  )), [pathState.presets, atlas?.primary, atlas?.secondary]);
+
+  const reservedCells = useMemo(() => deriveAiReservedCells(
+    editor.events,
+    editor.mapJsonDocument,
+    editor.map.width,
+    editor.map.height,
+  ), [editor.events, editor.mapJsonDocument, editor.map.width, editor.map.height]);
+
   const vocabulary = useMemo(() => ({
-    patterns: patternState.patterns.map((pattern) => ({
+    patterns: compatiblePatterns.map((pattern) => ({
       id: pattern.id,
       name: pattern.name,
       category: pattern.category,
@@ -76,11 +95,11 @@ export function AiCityBuilderDock() {
       height: pattern.height,
       ports: pattern.ports ?? [],
     })),
-    smartPaths: pathState.presets.map((preset) => ({ id: preset.id, name: preset.name })),
-  }), [patternState.patterns, pathState.presets]);
+    smartPaths: compatiblePaths.map((preset) => ({ id: preset.id, name: preset.name })),
+  }), [compatiblePatterns, compatiblePaths]);
 
   const setAndCompile = (next: AiMapPlan, source: string) => {
-    const result = compileAiMapPlan(next, patternState.patterns, pathState.presets);
+    const result = compileAiMapPlan(next, compatiblePatterns, compatiblePaths);
     setPlan(next);
     setCompiled(result);
     setRawJson(`${JSON.stringify(next, null, 2)}\n`);
@@ -93,8 +112,8 @@ export function AiCityBuilderDock() {
   const interpretLocal = () => {
     const parsed = parseDetailedMapCommand(
       prompt,
-      patternState.patterns,
-      pathState.presets,
+      compatiblePatterns,
+      compatiblePaths,
       editor.map.width,
       editor.map.height,
     );
@@ -114,7 +133,7 @@ export function AiCityBuilderDock() {
       return;
     }
     setBusy(true);
-    setMessage("IA planejando a distribuição e validando o vocabulário…");
+    setMessage("IA planejando a distribuição e validando o vocabulário GBA compatível com o tileset atual…");
     try {
       const response = await runGemini({
         data: {
@@ -123,6 +142,7 @@ export function AiCityBuilderDock() {
           height: editor.map.height,
           patterns: vocabulary.patterns,
           smartPaths: vocabulary.smartPaths,
+          reservedCells,
         },
       });
       if (!response.ok) {
@@ -156,6 +176,18 @@ export function AiCityBuilderDock() {
       setMessage(`O plano mede ${plan.width}×${plan.height}, mas o mapa aberto mede ${editor.map.width}×${editor.map.height}. Ajuste o comando antes de aplicar.`);
       return;
     }
+
+    if (editor.mapJsonDocument) {
+      const conflicts = gameReadyStructureConflicts(compiled.blueprint, compatiblePatterns, reservedCells);
+      if (conflicts.length) {
+        setMessage(
+          `Aplicação bloqueada pela segurança de mapa real: ${conflicts.slice(0, 3).join(" ")} ` +
+            "Peça outra distribuição à IA ou ajuste o JSON sem cobrir eventos existentes.",
+        );
+        return;
+      }
+    }
+
     const imported = mapTemplateStore.importJson(serializeMapTemplates([compiled.template]));
     if (!imported.ok) {
       setMessage(`Falha ao instalar Template: ${imported.message}`);
@@ -228,16 +260,24 @@ export function AiCityBuilderDock() {
         <div className="w-[560px] max-w-[calc(100vw-330px)] border-t border-border">
           <div className="space-y-2 p-2.5">
             <div className="flex flex-wrap gap-1">
-              <SmallBadge good={Boolean(patternState.patterns.length)}>{patternState.patterns.length} Patterns</SmallBadge>
-              <SmallBadge good={Boolean(pathState.presets.length)}>{pathState.presets.length} Smart Paths</SmallBadge>
+              <SmallBadge good={compatiblePatterns.length >= 6}>{compatiblePatterns.length}/{patternState.patterns.length} Patterns compatíveis</SmallBadge>
+              <SmallBadge good={Boolean(compatiblePaths.length)}>{compatiblePaths.length}/{pathState.presets.length} Smart Paths compatíveis</SmallBadge>
               <SmallBadge>{editor.map.width}×{editor.map.height}</SmallBadge>
               <SmallBadge good={Boolean(editor.mapJsonDocument)}>{editor.mapJsonDocument ? "map.json ativo" : "sem map.json"}</SmallBadge>
+              {editor.mapJsonDocument && <SmallBadge good>{reservedCells.length} células/eventos protegidos</SmallBadge>}
+              {atlas && <SmallBadge good>{atlas.secondary.replace(/^gTileset_/, "")}</SmallBadge>}
               {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
             </div>
 
-            <div className="rounded border border-primary/25 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-              Diga exatamente onde cada estrutura fica. A IA só pode usar estruturas e caminhos já cadastrados. Para portas sem <b className="text-foreground">port</b> semântico, informe a coordenada exata da entrada. Warps e conexões só são criados quando o destino é explicitamente informado.
-            </div>
+            {editor.mapJsonDocument ? (
+              <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
+                Mapa real ativo. O Studio usa somente Patterns/Smart Paths compatíveis com <b className="text-foreground">{atlas?.primary ?? "tileset primary"} + {atlas?.secondary ?? "tileset secondary"}</b>. Fachadas, trechos e eventos do próprio mapa entram automaticamente no planejamento, e uma verificação local bloqueia prédios sobre warps/triggers/NPCs.
+              </div>
+            ) : (
+              <div className="rounded border border-warning/35 bg-warning/5 p-2 text-[9px] leading-relaxed text-warning">
+                Para gerar um mapa que possa entrar no jogo, prefira <b>Workspace → abrir o mapa real</b>. Um BIN isolado não informa layout/tileset, warps, NPCs ou conexões; importe também o map.json ou use Workspace.
+              </div>
+            )}
 
             <textarea
               value={prompt}
