@@ -189,7 +189,9 @@ class RealAtlasStore {
     canvas.height = atlas.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.putImageData(new ImageData(bytes, atlas.width, atlas.height), 0, 0);
+    const pixels = new Uint8ClampedArray(bytes.length);
+    pixels.set(bytes);
+    ctx.putImageData(new ImageData(pixels, atlas.width, atlas.height), 0, 0);
     this.canvasCache = { createdAt: atlas.createdAt, canvas };
     return canvas;
   };
