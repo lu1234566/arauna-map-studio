@@ -333,7 +333,7 @@ export function AiCityBuilderDock() {
   };
 
   return (
-    <section className="absolute right-2 top-24 z-40 flex max-h-[calc(100dvh-9rem)] flex-col overflow-hidden rounded border border-primary/35 bg-panel/95 shadow-2xl backdrop-blur-sm">
+    <section className="absolute bottom-8 right-2 top-24 z-40 flex flex-col overflow-hidden rounded border border-primary/35 bg-panel/95 shadow-2xl backdrop-blur-sm">
       <div className="shrink-0 flex items-center gap-1.5 p-1.5">
         <button
           type="button"
@@ -347,6 +347,16 @@ export function AiCityBuilderDock() {
           <WandSparkles className="size-3.5" /> Construir com IA
         </button>
         {!open && <span className="text-[8px] text-muted-foreground">prompt → cidade GBA</span>}
+        {open && planReady && (
+          <button
+            type="button"
+            onClick={applyPlan}
+            className="ml-auto inline-flex items-center gap-1 rounded border border-success/55 bg-success/15 px-2.5 py-1.5 text-[10px] font-semibold text-success hover:bg-success/25"
+            title="Aplicar imediatamente o plano A+B validado"
+          >
+            <Hammer className="size-3.5" /> Aplicar
+          </button>
+        )}
       </div>
 
       {open && (
