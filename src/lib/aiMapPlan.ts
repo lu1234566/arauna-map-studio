@@ -166,9 +166,9 @@ function sanitizeConnection(value: AiConnectionPlan, index: number, errors: stri
   if (!Number.isInteger(value.offset)) errors.push(`Conexão ${index + 1}: offset precisa ser inteiro.`);
 }
 
-function warpAnchor(pattern: MapPattern) {
+function coordinateTag(pattern: MapPattern, prefix: string) {
   for (const tag of pattern.tags ?? []) {
-    const match = tag.match(/^warp-anchor:\s*(-?\d+)\s*,\s*(-?\d+)$/i);
+    const match = tag.match(new RegExp(`^${prefix}:\\s*(-?\\d+)\\s*,\\s*(-?\\d+)$`, "i"));
     if (match) return { x: Number(match[1]), y: Number(match[2]) };
   }
   return null;
@@ -179,7 +179,18 @@ function anchorStructure(
   pattern: MapPattern,
   warnings: string[],
 ): AiStructurePlacement {
-  const anchor = warpAnchor(pattern);
+  const fixed = coordinateTag(pattern, "fixed-origin");
+  if (fixed) {
+    if (structure.x !== fixed.x || structure.y !== fixed.y) {
+      warnings.push(
+        `Estrutura ${structure.id}: posição (${structure.x},${structure.y}) corrigida para (${fixed.x},${fixed.y}) ` +
+          `porque “${pattern.name}” é uma região semântica presa aos eventos reais do mapa.`,
+      );
+    }
+    return { ...structure, x: fixed.x, y: fixed.y };
+  }
+
+  const anchor = coordinateTag(pattern, "warp-anchor");
   if (!anchor) return structure;
   const port = resolvePort("entrada", pattern.ports ?? []);
   if (!port) {
