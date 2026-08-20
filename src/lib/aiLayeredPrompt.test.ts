@@ -66,6 +66,17 @@ const house: MapPattern = {
   updatedAt: "2026-08-20T00:00:00.000Z",
 };
 
+const legacyAnchoredHouse: MapPattern = {
+  ...house,
+  id: "legacy-house",
+  name: "Casa antiga minerada",
+  tags: ["warp-anchor: 3,3"],
+  width: 1,
+  height: 1,
+  values: [7],
+  ports: [{ id: "entrada", name: "Entrada", kind: "door", x: 0, y: 0 }],
+};
+
 const greenDetail: MapPattern = {
   format: MAP_PATTERN_FORMAT,
   id: "auto-slateport-green-0-0",
@@ -116,13 +127,14 @@ describe("layered prompt compiler", () => {
   it("parses ground ranges and road corridors from a layered prompt", () => {
     const parsed = parseLayeredPrompt(prompt);
     expect(parsed.active).toBe(true);
+    expect(parsed.strictIsolation).toBe(true);
     expect(parsed.zones.filter((zone) => zone.kind === "ground")).toHaveLength(2);
     expect(parsed.zones.filter((zone) => zone.kind === "road")).toHaveLength(1);
     expect(parsed.zones[0]?.material.role).toBe("urban");
     expect(parsed.zones[1]?.material.role).toBe("green");
   });
 
-  it("builds a deterministic occupancy map and keeps structures/events out of ground writes", () => {
+  it("builds a deterministic occupancy map and keeps declared structures/events out of ground writes", () => {
     const map = createEmptyMap(12, 10, 1);
     map.metatiles[idx(11, 5, map.width)] = 5;
     const result = planLayeredPromptBase(
@@ -146,25 +158,49 @@ describe("layered prompt compiler", () => {
     expect(result.map.metatiles[idx(11, 5, map.width)]).toBe(5);
   });
 
-  it("rejects conflicting non-preserve ground zones before touching the map", () => {
+  it("lets later ground layers override earlier layers deterministically", () => {
     const map = createEmptyMap(12, 10, 1);
-    const conflicting = `CAMADA 1 — ZONAS BASE
-zona A: x=0..7, y=0..9 -> concreto urbano
-zona B: x=6..11, y=0..9 -> grama`;
-    const result = planLayeredPromptBase(map, conflicting, atlas, [], [], reconstruction, 4, blueprint());
-    expect(result.active).toBe(true);
-    expect(result.errors.some((error) => error.includes("sobrepõe outro material"))).toBe(true);
-    expect(result.touched).toHaveLength(0);
+    const layered = `CAMADA 1 — ZONAS BASE
+base: x=0..11, y=0..9 -> grama
+CAMADA 2 — PISO URBANO
+praça: x=3..8, y=2..7 -> concreto urbano`;
+    const result = planLayeredPromptBase(map, layered, atlas, [], [], reconstruction, 4, blueprint());
+    expect(result.errors).toEqual([]);
+    expect(result.map.metatiles[idx(1, 1, map.width)]).toBe(3);
+    expect(result.map.metatiles[idx(5, 5, map.width)]).toBe(2);
+    expect(result.warnings.some((warning) => warning.includes("camada posterior"))).toBe(true);
   });
 
-  it("allows preserve coast guards to overlap a concrete/port zone without material conflict", () => {
+  it("does not preserve an old anchored structure unless the current Blueprint declares it", () => {
+    const map = createEmptyMap(12, 10, 1);
+    map.metatiles[idx(3, 3, map.width)] = 7;
+    const layered = `CAMADA 1 — ZONAS BASE
+base: x=0..11, y=0..9 -> concreto urbano`;
+    const result = planLayeredPromptBase(
+      map,
+      layered,
+      atlas,
+      [legacyAnchoredHouse],
+      [],
+      reconstruction,
+      4,
+      blueprint(),
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.occupancy[idx(3, 3, map.width)]).toBe(LAYER_OCCUPANCY.base);
+    expect(result.map.metatiles[idx(3, 3, map.width)]).toBe(2);
+  });
+
+  it("allows preserve coast guards to be replaced by a later declared material before protected real coast masks", () => {
     const map = createEmptyMap(12, 10, 1);
     const layered = `CAMADA 1 — ZONAS BASE
 faixa costeira: x=8..11, y=0..9 -> água/costa
+CAMADA 2 — PISO PORTUÁRIO
 porto: x=6..10, y=2..8 -> piso portuário`;
     const result = planLayeredPromptBase(map, layered, atlas, [], [], reconstruction, 4, blueprint());
     expect(result.errors).toEqual([]);
     expect(result.map.metatiles[idx(7, 5, map.width)]).toBe(4);
+    expect(result.map.metatiles[idx(9, 5, map.width)]).toBe(4);
   });
 
   it("finish layer restores exact zone material while preserving Smart Paths and allowed details", () => {

@@ -55,6 +55,7 @@ export interface ParsedLayeredPrompt {
   zones: PromptLayerZone[];
   requireFullCoverage: boolean;
   strictFinish: boolean;
+  strictIsolation: boolean;
   errors: string[];
   warnings: string[];
 }
@@ -201,10 +202,11 @@ export function parseLayeredPrompt(prompt: string): ParsedLayeredPrompt {
     || zones.length > 0
   );
   const active = sawLayerHeading && zones.length > 0;
+  const strictIsolation = active;
   if (sawLayerHeading && !zones.length && !errors.length) {
     warnings.push("Prompt menciona camadas, mas nenhuma zona x=.. / y=.. foi reconhecida; o pipeline clássico será usado.");
   }
-  return { active, zones, requireFullCoverage, strictFinish, errors, warnings };
+  return { active, zones, requireFullCoverage, strictFinish, strictIsolation, errors, warnings };
 }
 
 function behaviorMap(atlas: SavedRealAtlas | null) {
@@ -302,6 +304,7 @@ function buildProtectionMasks(
   patterns: MapPattern[],
   reservedCells: AiReservedCell[],
   blueprint: MapBlueprint | null,
+  strictIsolation: boolean,
 ) {
   const structure = new Uint8Array(map.width * map.height);
   const reserved = new Uint8Array(map.width * map.height);
@@ -312,9 +315,11 @@ function buildProtectionMasks(
     if (inBounds(map, cell.x, cell.y)) reserved[idx(cell.x, cell.y, map.width)] = 1;
   }
 
-  for (const pattern of patterns) {
-    const origin = originalOrigin(pattern);
-    if (origin) markRect(structure, map, origin.x, origin.y, pattern.width, pattern.height);
+  if (!strictIsolation) {
+    for (const pattern of patterns) {
+      const origin = originalOrigin(pattern);
+      if (origin) markRect(structure, map, origin.x, origin.y, pattern.width, pattern.height);
+    }
   }
 
   for (const placement of blueprint?.patterns ?? []) {
@@ -349,19 +354,17 @@ function roleCode(role: LayerMaterialRole) {
   return 1;
 }
 
-function zoneContains(zone: PromptLayerZone, x: number, y: number) {
-  return x >= zone.x1 && x <= zone.x2 && y >= zone.y1 && y <= zone.y2;
-}
-
 function expectedContextRole(kind: "green" | "urban" | "port") {
   return kind === "green" ? 3 : kind === "port" ? 4 : 2;
 }
 
 /**
  * Etapa A — zone-first. O mapa visual nasce de uma occupancy map lógica. Zonas de
- * solo são aplicadas primeiro, estruturas/eventos ficam reservados e corredores
- * de rua têm prioridade sobre o solo. O mapa real continua como backing store,
- * portanto "unset" nunca vira lixo no BIN: ele apenas significa "não tocar ainda".
+ * solo são aplicadas em ordem; uma camada posterior pode sobrescrever o material
+ * de uma camada anterior. Estruturas/eventos ficam reservados e corredores de rua
+ * têm prioridade sobre o solo. Em isolamento estrito, somente estruturas citadas
+ * pelo Blueprint continuam protegidas; fachadas mineradas antigas não vazam para
+ * a composição nova.
  */
 export function planLayeredPromptBase(
   sourceMap: MapData,
@@ -403,7 +406,14 @@ export function planLayeredPromptBase(
     return { ...inactive(), active: true };
   }
 
-  const { structure, reserved, coast, behaviors } = buildProtectionMasks(sourceMap, atlas, patterns, reservedCells, blueprint);
+  const { structure, reserved, coast } = buildProtectionMasks(
+    sourceMap,
+    atlas,
+    patterns,
+    reservedCells,
+    blueprint,
+    parsed.strictIsolation,
+  );
   for (let i = 0; i < occupancy.length; i++) {
     if (structure[i]) occupancy[i] = LAYER_OCCUPANCY.structure;
     else if (reserved[i] || coast[i]) occupancy[i] = LAYER_OCCUPANCY.reserved;
@@ -411,7 +421,7 @@ export function planLayeredPromptBase(
 
   const roleByCell = new Int8Array(sourceMap.width * sourceMap.height);
   const roadByCell = new Uint8Array(sourceMap.width * sourceMap.height);
-  const resolvedByZone = new Map<string, number>();
+  let groundOverrideCount = 0;
 
   for (const zone of parsed.zones) {
     if (zone.x1 < 0 || zone.y1 < 0 || zone.x2 >= sourceMap.width || zone.y2 >= sourceMap.height) {
@@ -423,33 +433,30 @@ export function planLayeredPromptBase(
       errors.push(`Zona “${zone.label}”: ${resolved.error}.`);
       continue;
     }
-    resolvedByZone.set(zone.id, resolved.id);
     const role = roleCode(zone.material.role);
     for (let y = zone.y1; y <= zone.y2; y++) {
       for (let x = zone.x1; x <= zone.x2; x++) {
         const i = idx(x, y, sourceMap.width);
+        const previous = materialByCell[i];
         if (zone.kind === "road") {
+          if (previous !== MATERIAL_UNSET && previous !== resolved.id) groundOverrideCount++;
           roadByCell[i] = 1;
           roleByCell[i] = role;
           materialByCell[i] = resolved.id;
           continue;
         }
-        const previous = materialByCell[i];
-        if (previous !== MATERIAL_UNSET && previous !== resolved.id) {
-          if (previous === MATERIAL_PRESERVE) {
-            roleByCell[i] = role;
-            materialByCell[i] = resolved.id;
-          } else if (resolved.id !== MATERIAL_PRESERVE) {
-            errors.push(`Zonas de solo conflitantes em (${x},${y}); “${zone.label}” sobrepõe outro material.`);
-          }
-          continue;
-        }
-        if (previous === MATERIAL_UNSET || resolved.id !== MATERIAL_PRESERVE) {
-          roleByCell[i] = role;
-          materialByCell[i] = resolved.id;
-        }
+        if (previous !== MATERIAL_UNSET && previous !== resolved.id) groundOverrideCount++;
+        roleByCell[i] = role;
+        materialByCell[i] = resolved.id;
       }
     }
+  }
+
+  if (groundOverrideCount) {
+    warnings.push(`${groundOverrideCount} célula(s) receberam material de uma camada posterior; ordem do prompt venceu deterministicamente.`);
+  }
+  if (parsed.strictIsolation) {
+    warnings.push("Isolamento estrito A+B: somente estruturas presentes no plano, eventos reservados e costa protegida sobrevivem ao mapa-base antigo.");
   }
 
   let detailPreservedCount = 0;
@@ -559,9 +566,9 @@ function smartPathFamily(smartPaths: SmartPathPreset[]) {
 
 /**
  * Etapa B — finish layer. Reimpõe o material exato de cada zona depois que
- * estruturas/Smart Paths foram compostos. Assim detalhes fora da sua zona e
- * overlays órfãos desaparecem, enquanto estruturas, detalhes permitidos, vias,
- * eventos e costa conservam prioridade.
+ * estruturas/Smart Paths foram compostos. Smart Paths só sobrevivem quando estão
+ * numa zona de rua ou quando foram realmente desenhados depois da base A+B; tiles
+ * antigos da mesma família deixam de vazar para o resultado.
  */
 export function finishLayeredPromptMap(
   sourceMap: MapData,
@@ -609,7 +616,12 @@ export function finishLayeredPromptMap(
     }
 
     const current = (map.metatiles[i] ?? 0) & METATILE_MASK;
-    if (paths.has(current)) {
+    const beforeTemplate = (basePlan.map.metatiles[i] ?? 0) & METATILE_MASK;
+    const generatedPath = paths.has(current) && (
+      occupancy === LAYER_OCCUPANCY.road
+      || current !== beforeTemplate
+    );
+    if (generatedPath) {
       basePlan.occupancy[i] = LAYER_OCCUPANCY.road;
       pathPreservedCount++;
       continue;
@@ -630,7 +642,7 @@ export function finishLayeredPromptMap(
   }
 
   warnings.push(
-    `Finish layer: ${enforcedCount} célula(s) voltaram ao material exato da zona; ${pathPreservedCount} célula(s) de Smart Path, ${detailPreservedCount} célula(s) de detalhe permitido e ${overlayPreservedCount} overlay(s) dentro de estruturas/detalhes foram preservados.`,
+    `Finish layer: ${enforcedCount} célula(s) voltaram ao material exato da zona; ${pathPreservedCount} célula(s) de Smart Path realmente desenhadas, ${detailPreservedCount} célula(s) de detalhe permitido e ${overlayPreservedCount} overlay(s) dentro de estruturas/detalhes foram preservados.`,
   );
   return {
     active: true,
