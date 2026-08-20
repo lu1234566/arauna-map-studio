@@ -11,9 +11,8 @@ import { realAtlasStore, type SavedRealAtlas } from "./realAtlasStore";
 
 const RAW_ROOT = "https://raw.githubusercontent.com/pret/pokeemerald/master";
 const PRIMARY_ROOT = "data/tilesets/primary/general";
-const SECONDARY_ROOT = "data/tilesets/secondary/petalburg";
-
-let bootstrapPromise: Promise<SavedRealAtlas> | null = null;
+const DEFAULT_SECONDARY = "petalburg";
+const bootstrapPromises = new Map<string, Promise<SavedRealAtlas>>();
 
 async function required(path: string): Promise<Response> {
   const response = await fetch(`${RAW_ROOT}/${path}`, { mode: "cors", cache: "force-cache" });
@@ -30,7 +29,18 @@ async function paletteSet(root: string, indexes: number[]): Promise<Map<number, 
   return new Map(entries);
 }
 
-async function buildPretEmeraldGeneralPetalburg(): Promise<RenderTilesetPair> {
+function normalizeSecondary(value: string) {
+  const stripped = value.trim().replace(/^gTileset_/i, "");
+  const directory = stripped.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!directory) throw new Error("Tileset secondary vazio.");
+  return {
+    directory,
+    symbol: `gTileset_${stripped.charAt(0).toUpperCase()}${stripped.slice(1)}`,
+  };
+}
+
+async function buildPretEmeraldPair(secondaryDirectory: string): Promise<RenderTilesetPair> {
+  const secondaryRoot = `data/tilesets/secondary/${secondaryDirectory}`;
   const [
     primaryTilesBlob,
     secondaryTilesBlob,
@@ -42,13 +52,13 @@ async function buildPretEmeraldGeneralPetalburg(): Promise<RenderTilesetPair> {
     secondaryPalettes,
   ] = await Promise.all([
     required(`${PRIMARY_ROOT}/tiles.png`).then((response) => response.blob()),
-    required(`${SECONDARY_ROOT}/tiles.png`).then((response) => response.blob()),
+    required(`${secondaryRoot}/tiles.png`).then((response) => response.blob()),
     required(`${PRIMARY_ROOT}/metatiles.bin`).then((response) => response.arrayBuffer()),
-    required(`${SECONDARY_ROOT}/metatiles.bin`).then((response) => response.arrayBuffer()),
+    required(`${secondaryRoot}/metatiles.bin`).then((response) => response.arrayBuffer()),
     required(`${PRIMARY_ROOT}/metatile_attributes.bin`).then((response) => response.arrayBuffer()),
-    required(`${SECONDARY_ROOT}/metatile_attributes.bin`).then((response) => response.arrayBuffer()),
+    required(`${secondaryRoot}/metatile_attributes.bin`).then((response) => response.arrayBuffer()),
     paletteSet(PRIMARY_ROOT, [0, 1, 2, 3, 4, 5]),
-    paletteSet(SECONDARY_ROOT, [6, 7, 8, 9, 10, 11, 12]),
+    paletteSet(secondaryRoot, [6, 7, 8, 9, 10, 11, 12]),
   ]);
 
   return {
@@ -63,6 +73,37 @@ async function buildPretEmeraldGeneralPetalburg(): Promise<RenderTilesetPair> {
 }
 
 /**
+ * Carrega sob demanda um par autêntico General + secondary diretamente do
+ * pret/pokeemerald. É usado como fallback para arquivos BIN/JSON avulsos.
+ * Workspaces locais continuam sendo a fonte preferencial porque podem conter
+ * gráficos modificados do próprio Juramento de Arauna.
+ */
+export async function ensureAuthenticEmeraldTilesetPair(secondary: string): Promise<SavedRealAtlas> {
+  const normalized = normalizeSecondary(secondary);
+  const existing = realAtlasStore.ensureHydrated();
+  if (existing?.primary === "gTileset_General" && existing.secondary.toLowerCase() === normalized.symbol.toLowerCase()) {
+    return existing;
+  }
+
+  const cached = bootstrapPromises.get(normalized.directory);
+  if (cached) return cached;
+
+  const promise = buildPretEmeraldPair(normalized.directory)
+    .then((pair) => realAtlasStore.savePair(pair, 16, {
+      primary: "gTileset_General",
+      secondary: normalized.symbol,
+      origin: "pret/pokeemerald@master",
+      game: "Pokémon Emerald",
+    }))
+    .catch((error) => {
+      bootstrapPromises.delete(normalized.directory);
+      throw error;
+    });
+  bootstrapPromises.set(normalized.directory, promise);
+  return promise;
+}
+
+/**
  * Fresh Lovable/browser previews receive real Emerald metatiles immediately.
  * Nothing is procedurally imitated: the browser reads the canonical pokeemerald
  * artifacts and reconstructs the same 16×16 metatiles used by the game.
@@ -71,18 +112,5 @@ async function buildPretEmeraldGeneralPetalburg(): Promise<RenderTilesetPair> {
 export async function ensureAuthenticEmeraldPreviewAtlas(): Promise<SavedRealAtlas> {
   const existing = realAtlasStore.ensureHydrated();
   if (existing) return existing;
-  if (bootstrapPromise) return bootstrapPromise;
-
-  bootstrapPromise = buildPretEmeraldGeneralPetalburg()
-    .then((pair) => realAtlasStore.savePair(pair, 16, {
-      primary: "gTileset_General",
-      secondary: "gTileset_Petalburg",
-      origin: "pret/pokeemerald@master",
-      game: "Pokémon Emerald",
-    }))
-    .catch((error) => {
-      bootstrapPromise = null;
-      throw error;
-    });
-  return bootstrapPromise;
+  return ensureAuthenticEmeraldTilesetPair(DEFAULT_SECONDARY);
 }
