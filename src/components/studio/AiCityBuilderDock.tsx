@@ -17,11 +17,18 @@ import { useSmartPath } from "@/lib/smartPathStore";
 import { cn } from "@/lib/utils";
 
 const EXAMPLE = `Mapa 20x20; nome="Vila Amanhecer IA"
-estrutura "Casa do jogador" usar "Casa Rural" em (3,12)
-estrutura "Laboratório" usar "Laboratório" em (12,3)
-rota "Estrada de Terra": (0,14) -> (6,14) -> (6,16)
-warp (6,16) -> MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE:0
-saida oeste -> MAP_ROUTE101 offset 0`;
+estrutura "Casa do jogador" usar "casa do jogador" em (2,4)
+estrutura "Laboratório" usar "Laboratório" em (3,12)
+warp porta "Casa do jogador"."entrada" -> MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F:0
+warp porta "Laboratório"."entrada" -> MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB:0
+saida norte -> MAP_ROUTE101 offset 0`;
+
+const CONNECTION_DIRECTION = {
+  north: "up",
+  east: "right",
+  south: "down",
+  west: "left",
+} as const;
 
 function SmallBadge({ children, good }: { children: React.ReactNode; good?: boolean }) {
   return (
@@ -32,6 +39,15 @@ function SmallBadge({ children, good }: { children: React.ReactNode; good?: bool
       {children}
     </span>
   );
+}
+
+function connectionIndex(direction: string) {
+  const document = editorStore.getState().mapJsonDocument;
+  const connections = document && Array.isArray(document.connections) ? document.connections : [];
+  return connections.findIndex((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    return String((value as Record<string, unknown>).direction ?? "") === direction;
+  });
 }
 
 export function AiCityBuilderDock() {
@@ -113,7 +129,7 @@ export function AiCityBuilderDock() {
         return;
       }
       setOnlineModel(response.model);
-      setAndCompile(response.plan, `Gemini ${response.model}`);
+      setAndCompile(response.plan, `IA ${response.model}`);
     } catch (error) {
       setOnlineModel(null);
       setMessage(`Falha ao chamar a IA: ${error instanceof Error ? error.message : String(error)}`);
@@ -154,15 +170,23 @@ export function AiCityBuilderDock() {
     let topologyPending = 0;
     if (editorStore.getState().mapJsonDocument) {
       for (const warp of compiled.warps) {
-        const id = editorStore.createEvent("warp", warp.x, warp.y);
+        const existing = editorStore.getState().events.find(
+          (event) => event.source === "warp" && event.x === warp.x && event.y === warp.y,
+        );
+        const id = existing?.id ?? editorStore.createEvent("warp", warp.x, warp.y);
         if (!id) continue;
         editorStore.updateEventField(id, "dest_map", warp.destMap);
         editorStore.updateEventField(id, "dest_warp_id", warp.destWarpId);
         topologyApplied++;
       }
       for (const connection of compiled.connections) {
-        const index = editorStore.createConnection(connection.direction);
-        if (index == null) continue;
+        const direction = CONNECTION_DIRECTION[connection.direction];
+        let index = connectionIndex(direction);
+        if (index < 0) {
+          const created = editorStore.createConnection(direction);
+          if (created == null) continue;
+          index = created;
+        }
         editorStore.updateConnection(index, "map", connection.map);
         editorStore.updateConnection(index, "offset", connection.offset);
         topologyApplied++;
@@ -173,7 +197,7 @@ export function AiCityBuilderDock() {
     const topologyText = topologyPending
       ? ` ${topologyPending} warp/conexão ficaram pendentes porque este mapa ainda não tem map.json aberto.`
       : topologyApplied
-        ? ` ${topologyApplied} warp/conexão também foram gravados no map.json.`
+        ? ` ${topologyApplied} warp/conexão foram criados ou atualizados no map.json.`
         : "";
     setMessage(`Mapa aplicado: ${changes} alteração(ões) de tile/camada.${topologyText}`);
   };
@@ -214,7 +238,7 @@ export function AiCityBuilderDock() {
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               spellCheck={false}
-              placeholder={'Ex.: "Laboratório no canto nordeste em (12,3), casa do jogador em (3,12), porta da casa em (6,16), estrada ligando..."'}
+              placeholder={'Ex.: "Laboratório no nordeste em (12,3), casa do jogador em (3,12), ligue a entrada da casa à praça e crie a saída norte para MAP_ROUTE101."'}
               className="h-36 w-full resize-y rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed outline-none focus:border-primary/60"
             />
 
