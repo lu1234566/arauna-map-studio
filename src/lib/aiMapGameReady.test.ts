@@ -18,31 +18,36 @@ const pattern: MapPattern = {
   updatedAt: "2026-08-19T00:00:00.000Z",
 };
 
-const blueprint: MapBlueprint = {
-  format: MAP_BLUEPRINT_FORMAT,
-  name: "Teste",
-  category: "Teste",
-  tags: [],
-  width: 20,
-  height: 20,
-  patterns: [{ pattern: "building", x: 3, y: 1 }],
-  routes: [],
-};
+function blueprintAt(x: number, y: number): MapBlueprint {
+  return {
+    format: MAP_BLUEPRINT_FORMAT,
+    name: "Teste",
+    category: "Teste",
+    tags: [],
+    width: 20,
+    height: 20,
+    patterns: [{ pattern: "building", x, y }],
+    routes: [],
+  };
+}
 
 describe("game-ready AI preflight", () => {
-  it("allows the pattern own warp anchor", () => {
+  it("allows a real RAW pattern at its exact original source region", () => {
     expect(gameReadyStructureConflicts(
-      blueprint,
+      blueprintAt(3, 1),
       [pattern],
-      [{ x: 5, y: 5, kind: "warp", label: "W0" }],
+      [
+        { x: 5, y: 5, kind: "warp", label: "W0" },
+        { x: 4, y: 3, kind: "npc", label: "NPC original" },
+      ],
     )).toEqual([]);
   });
 
-  it("blocks unrelated live events inside a planned building", () => {
+  it("blocks live events when the same pattern is moved elsewhere", () => {
     const conflicts = gameReadyStructureConflicts(
-      blueprint,
+      blueprintAt(10, 10),
       [pattern],
-      [{ x: 4, y: 3, kind: "npc", label: "NPC" }],
+      [{ x: 11, y: 11, kind: "npc", label: "NPC" }],
     );
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]).toContain("NPC");
