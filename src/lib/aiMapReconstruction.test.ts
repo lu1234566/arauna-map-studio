@@ -3,6 +3,7 @@ import { createEmptyMap, idx } from "./emeraldMap";
 import { isAiRemodelPrompt, planAiMapReconstruction } from "./aiMapReconstruction";
 import { MAP_PATTERN_FORMAT, type MapPattern } from "./patternLibrary";
 import type { SavedRealAtlas } from "./realAtlasStore";
+import { createSmartPathPreset } from "./smartPath";
 
 const atlas = {
   format: "arauna-real-atlas-v2",
@@ -37,6 +38,13 @@ const anchoredPattern: MapPattern = {
   createdAt: "2026-08-20T00:00:00.000Z",
   updatedAt: "2026-08-20T00:00:00.000Z",
 };
+
+function urbanPath() {
+  const preset = createSmartPathPreset("Via urbana pelos acessos reais", 2, 1);
+  preset.id = "auto-slateport-smart-path-acessos-urbanos";
+  preset.variants = Array.from({ length: 16 }, () => 2);
+  return preset;
+}
 
 describe("AI real-map reconstruction", () => {
   it("only normalizes safe normal ground and preserves events, structures, collision and coast", () => {
@@ -81,6 +89,27 @@ describe("AI real-map reconstruction", () => {
     expect(result.map.metatiles[idx(2, 6, map.width)]).toBe(2);
     expect(result.map.metatiles[idx(2, 7, map.width)]).toBe(5);
     expect(result.map.physical[idx(0, 3, map.width)]).toBe(0x0400);
+  });
+
+  it("uses a real urban Smart Path as contextual ground near anchored structures", () => {
+    const map = createEmptyMap(14, 14, 1);
+    map.metatiles[idx(0, 0, map.width)] = 3;
+    map.metatiles[idx(7, 7, map.width)] = 3;
+
+    const result = planAiMapReconstruction(
+      map,
+      atlas,
+      [anchoredPattern],
+      [{ x: 5, y: 5, kind: "warp", label: "W0" }],
+      [urbanPath()],
+    );
+
+    expect(result.baseMetatile).toBe(1);
+    expect(result.urbanMetatile).toBe(2);
+    expect(result.urbanChangedCount).toBeGreaterThan(0);
+    expect(result.map.metatiles[idx(0, 0, map.width)]).toBe(1);
+    expect(result.map.metatiles[idx(7, 7, map.width)]).toBe(2);
+    expect(result.map.metatiles[idx(5, 5, map.width)]).toBe(1);
   });
 
   it("only enables reconstruction for broad remodel instructions", () => {

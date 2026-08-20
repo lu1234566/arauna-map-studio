@@ -8,19 +8,24 @@ import {
 import type { AiReservedCell } from "./aiMapReservedCells";
 import type { MapPattern } from "./patternLibrary";
 import type { SavedRealAtlas } from "./realAtlasStore";
+import type { SmartPathPreset } from "./smartPath";
 
 const WATER_BEHAVIORS = new Set([0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17]);
 const NORMAL_GROUND_BEHAVIOR = 0x00;
 const MIN_GROUND_SAMPLES = 12;
 const MAX_REBUILD_RATIO = 0.6;
+const URBAN_MARGIN = 3;
 
 export interface AiMapReconstructionPlan {
   map: MapData;
   touched: number[];
   baseMetatile: number | null;
+  urbanMetatile: number | null;
   candidateCount: number;
   preservedCount: number;
   changedCount: number;
+  baseChangedCount: number;
+  urbanChangedCount: number;
   confidence: number;
   warnings: string[];
 }
@@ -69,6 +74,10 @@ function markRegion(mask: Uint8Array, map: MapData, x: number, y: number, width:
   }
 }
 
+function markExpandedRegion(mask: Uint8Array, map: MapData, x: number, y: number, width: number, height: number, margin: number) {
+  markRegion(mask, map, x - margin, y - margin, width + margin * 2, height + margin * 2);
+}
+
 function behaviorMap(atlas: SavedRealAtlas | null) {
   return new Map((atlas?.records ?? []).map((record) => [record.id & METATILE_MASK, record.behavior]));
 }
@@ -96,6 +105,40 @@ function dominantGround(
   };
 }
 
+function urbanGroundFromSmartPaths(
+  smartPaths: SmartPathPreset[],
+  behaviors: Map<number, number | null>,
+  baseMetatile: number | null,
+) {
+  const counts = new Map<number, number>();
+  for (const preset of smartPaths) {
+    const key = normalize(`${preset.id} ${preset.name}`);
+    if (!/(urban|via|rua|calcad|acesso)/.test(key)) continue;
+    for (const raw of preset.variants ?? []) {
+      const id = Number(raw) & METATILE_MASK;
+      if (!id || id === baseMetatile || behaviors.get(id) !== NORMAL_GROUND_BEHAVIOR) continue;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+function emptyPlan(map: MapData, warnings: string[], baseMetatile: number | null = null): AiMapReconstructionPlan {
+  return {
+    map,
+    touched: [],
+    baseMetatile,
+    urbanMetatile: null,
+    candidateCount: 0,
+    preservedCount: 0,
+    changedCount: 0,
+    baseChangedCount: 0,
+    urbanChangedCount: 0,
+    confidence: 0,
+    warnings,
+  };
+}
+
 /**
  * Cria uma base visual limpa para uma remodelagem REAL sem tocar na lógica do mapa.
  *
@@ -105,6 +148,8 @@ function dominantGround(
  * - preserva água e a borda imediata da costa;
  * - preserva warps/triggers;
  * - preserva a região original de todo Pattern com warp-anchor/fixed-origin;
+ * - usa piso urbano real perto de estruturas/eventos quando um Smart Path urbano
+ *   confiável existe, evitando transformar toda a cidade em um único piso verde;
  * - deixa behaviors especiais (areia, grama alta, gelo etc.) intactos.
  *
  * Depois dessa etapa o Template/Smart Paths é aplicado sobre a base reconstruída.
@@ -114,39 +159,35 @@ export function planAiMapReconstruction(
   atlas: SavedRealAtlas | null,
   patterns: MapPattern[],
   reservedCells: AiReservedCell[],
+  smartPaths: SmartPathPreset[] = [],
 ): AiMapReconstructionPlan {
   const map = cloneMap(sourceMap);
   const warnings: string[] = [];
-  if (!atlas) {
-    return {
-      map,
-      touched: [],
-      baseMetatile: null,
-      candidateCount: 0,
-      preservedCount: 0,
-      changedCount: 0,
-      confidence: 0,
-      warnings: ["Reconstrução ignorada: atlas real não está carregado."],
-    };
-  }
+  if (!atlas) return emptyPlan(map, ["Reconstrução ignorada: atlas real não está carregado."]);
 
   const behaviors = behaviorMap(atlas);
   const preserve = new Uint8Array(sourceMap.width * sourceMap.height);
+  const urban = new Uint8Array(sourceMap.width * sourceMap.height);
 
   // Warps/triggers precisam manter sua célula visual. Áreas de movimento de NPC
   // podem receber novo piso, pois a reconstrução não altera colisão/elevação.
   for (const cell of reservedCells) {
-    if (cell.kind === "npc") continue;
-    if (cell.x < 0 || cell.y < 0 || cell.x >= sourceMap.width || cell.y >= sourceMap.height) continue;
-    preserve[idx(cell.x, cell.y, sourceMap.width)] = 1;
+    if (cell.kind !== "npc" && cell.x >= 0 && cell.y >= 0 && cell.x < sourceMap.width && cell.y < sourceMap.height) {
+      preserve[idx(cell.x, cell.y, sourceMap.width)] = 1;
+    }
+    if (cell.kind === "warp" && cell.x >= 0 && cell.y >= 0 && cell.x < sourceMap.width && cell.y < sourceMap.height) {
+      markExpandedRegion(urban, sourceMap, cell.x, cell.y, 1, 1, URBAN_MARGIN);
+    }
   }
 
   // Todos os prédios/conjuntos ligados a eventos reais ficam preservados mesmo se
-  // o modelo não os citar explicitamente no plano atual.
+  // o modelo não os citar explicitamente no plano atual. A vizinhança ao redor
+  // deles é uma zona urbana candidata, sem tocar no prédio em si.
   for (const pattern of patterns) {
     const origin = originalOrigin(pattern);
     if (!origin) continue;
     markRegion(preserve, sourceMap, origin.x, origin.y, pattern.width, pattern.height);
+    markExpandedRegion(urban, sourceMap, origin.x, origin.y, pattern.width, pattern.height, URBAN_MARGIN);
   }
 
   // Água e a célula vizinha imediata formam a costa. Mantemos ambas para não
@@ -162,6 +203,7 @@ export function planAiMapReconstruction(
           const py = y + dy;
           if (px < 0 || py < 0 || px >= sourceMap.width || py >= sourceMap.height) continue;
           preserve[idx(px, py, sourceMap.width)] = 1;
+          urban[idx(px, py, sourceMap.width)] = 0;
         }
       }
     }
@@ -172,25 +214,29 @@ export function planAiMapReconstruction(
   if (ground.id == null || ground.candidateCount < MIN_GROUND_SAMPLES || ground.count < 4) {
     warnings.push("Reconstrução ignorada: não há amostra suficiente de piso NORMAL para escolher uma base segura.");
     return {
-      map,
-      touched: [],
-      baseMetatile: ground.id,
+      ...emptyPlan(map, warnings, ground.id),
       candidateCount: ground.candidateCount,
       preservedCount,
-      changedCount: 0,
       confidence: ground.candidateCount ? ground.count / ground.candidateCount : 0,
-      warnings,
     };
   }
 
+  const urbanMetatile = urbanGroundFromSmartPaths(smartPaths, behaviors, ground.id);
   const touched: number[] = [];
+  let baseChangedCount = 0;
+  let urbanChangedCount = 0;
+
   for (let i = 0; i < sourceMap.metatiles.length; i++) {
     if (preserve[i]) continue;
     if (getCollision(sourceMap.physical[i] ?? 0) !== 0) continue;
     const id = (sourceMap.metatiles[i] ?? 0) & METATILE_MASK;
-    if (id === ground.id || behaviors.get(id) !== NORMAL_GROUND_BEHAVIOR) continue;
-    map.metatiles[i] = ground.id;
+    if (behaviors.get(id) !== NORMAL_GROUND_BEHAVIOR) continue;
+    const desired = urbanMetatile != null && urban[i] ? urbanMetatile : ground.id;
+    if (id === desired) continue;
+    map.metatiles[i] = desired;
     touched.push(i);
+    if (desired === urbanMetatile && urbanMetatile !== ground.id) urbanChangedCount++;
+    else baseChangedCount++;
   }
 
   if (touched.length > sourceMap.metatiles.length * MAX_REBUILD_RATIO) {
@@ -201,17 +247,23 @@ export function planAiMapReconstruction(
       map: cloneMap(sourceMap),
       touched: [],
       baseMetatile: ground.id,
+      urbanMetatile,
       candidateCount: ground.candidateCount,
       preservedCount,
       changedCount: 0,
+      baseChangedCount: 0,
+      urbanChangedCount: 0,
       confidence: ground.count / ground.candidateCount,
       warnings,
     };
   }
 
   if (touched.length) {
+    const urbanText = urbanMetatile != null
+      ? `; ${urbanChangedCount} célula(s) próximas a estruturas/acessos usarão piso urbano 0x${urbanMetatile.toString(16).toUpperCase().padStart(3, "0")}`
+      : "; nenhum piso urbano confiável foi derivado, então somente a base comum será usada";
     warnings.push(
-      `Base de remodelagem: ${touched.length} célula(s) de piso NORMAL serão uniformizadas com metatile 0x${ground.id.toString(16).toUpperCase().padStart(3, "0")}; colisão/elevação permanecem intactas.`,
+      `Base contextual: ${baseChangedCount} célula(s) usarão piso comum 0x${ground.id.toString(16).toUpperCase().padStart(3, "0")}${urbanText}. Colisão/elevação permanecem intactas.`,
     );
   }
 
@@ -219,9 +271,12 @@ export function planAiMapReconstruction(
     map,
     touched,
     baseMetatile: ground.id,
+    urbanMetatile,
     candidateCount: ground.candidateCount,
     preservedCount,
     changedCount: touched.length,
+    baseChangedCount,
+    urbanChangedCount,
     confidence: ground.count / ground.candidateCount,
     warnings,
   };
