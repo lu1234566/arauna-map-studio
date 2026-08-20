@@ -116,7 +116,6 @@ function ownerFor(layered: LayeredBasePlan, cellIndex: number): ExactGridOwner {
   if (occupancy === LAYER_OCCUPANCY.detail) return "detail";
   if (occupancy === LAYER_OCCUPANCY.reserved) return "preserve";
   if (occupancy === LAYER_OCCUPANCY.base) return "ground";
-  // UNSET no Exact Grid continua explícito: significa preservar a célula real.
   return "preserve";
 }
 
@@ -175,6 +174,11 @@ export function compileAiExactGrid({
 
   const errors = [...layered.errors];
   const warnings = [...layered.warnings];
+  if (layered.parsed.strictIsolation && layered.unsetCount > 0) {
+    errors.push(
+      `Exact Grid estrito exige dono explícito para toda célula terrestre editável; ${layered.unsetCount} célula(s) ficaram UNSET.`,
+    );
+  }
   const conflicts = gameReadyStructureConflicts(compiled.blueprint, patterns, reservedCells);
   if (conflicts.length) errors.push(...conflicts.map((value) => `Segurança de mapa real: ${value}`));
   if (errors.length) {
