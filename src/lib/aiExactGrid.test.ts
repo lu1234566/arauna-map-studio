@@ -41,6 +41,27 @@ const house: MapPattern = {
   updatedAt: "2026-08-20T00:00:00.000Z",
 };
 
+const contextHouse: MapPattern = {
+  format: MAP_PATTERN_FORMAT,
+  id: "context-house",
+  name: "Casa com contexto",
+  category: "Prédio",
+  tags: ["warp-anchor:4,8"],
+  width: 5,
+  height: 5,
+  kind: "raw",
+  values: [
+    0x3001, 0x3001, 0x3001, 0x3001, 0x3001,
+    0x3001, 0x3001, 0x0407, 0x3001, 0x3001,
+    0x3001, 0x3001, 0x0407, 0x3001, 0x3001,
+    0x3001, 0x3001, 0x3001, 0x3001, 0x3001,
+    0x3001, 0x3001, 0x3001, 0x3001, 0x3001,
+  ],
+  ports: [{ id: "entrada", name: "Entrada", kind: "entrance", x: 2, y: 4 }],
+  createdAt: "2026-08-20T00:00:00.000Z",
+  updatedAt: "2026-08-20T00:00:00.000Z",
+};
+
 const road = createSmartPathPreset("Via urbana", 6, 1);
 road.id = "urban-road";
 road.variants = Array.from({ length: 16 }, () => 6);
@@ -63,18 +84,18 @@ const reconstruction = {
   warnings: [],
 };
 
-function compiledPlan() {
+function compiledPlan(pattern: MapPattern = house) {
   const plan: AiMapPlan = {
     format: AI_MAP_PLAN_FORMAT,
     name: "Exact Grid test",
     width: 12,
     height: 10,
-    structures: [{ id: "house", label: "Casa", pattern: "house", x: 2, y: 2 }],
+    structures: [{ id: pattern.id, label: pattern.name, pattern: pattern.id, x: 2, y: 2 }],
     routes: [{ smartPath: "urban-road", points: [{ x: 5, y: 0 }, { x: 5, y: 9 }] }],
     warps: [],
     connections: [],
   };
-  return compileAiMapPlan(plan, [house], [road]);
+  return compileAiMapPlan(plan, [pattern], [road]);
 }
 
 const prompt = `RECONSTRUA EM CAMADAS
@@ -118,6 +139,57 @@ describe("Exact Grid compiler", () => {
     expect(exact.map.metatiles[idx(5, 8, map.width)]).toBe(6);
   });
 
+  it("makes captured ground around a raw facade transparent in the final grid", () => {
+    const map = createEmptyMap(12, 10, 1);
+    map.physical.fill(0x3000);
+    map.physical[idx(0, 0, map.width)] = 0x1000;
+    const compiled = compiledPlan(contextHouse);
+    expect(compiled.valid).toBe(true);
+
+    const exact = compileAiExactGrid({
+      sourceMap: map,
+      prompt,
+      compiled,
+      atlas,
+      patterns: [contextHouse],
+      smartPaths: [road],
+      reservedCells: [],
+      reconstruction,
+      portMetatile: 4,
+    });
+
+    expect(exact.valid).toBe(true);
+    expect(exact.structureMask).not.toBeNull();
+    expect(exact.structureMask!.transparentCount).toBeGreaterThan(0);
+    expect(exact.ownerCounts.structure).toBeLessThan(contextHouse.width * contextHouse.height);
+    expect(exact.map.metatiles[idx(2, 2, map.width)]).toBe(1);
+    expect(exact.cells[idx(2, 2, map.width)]!.owner).toBe("ground");
+    expect(exact.map.metatiles[idx(4, 3, map.width)]).toBe(7);
+    expect(exact.cells[idx(4, 3, map.width)]!.owner).toBe("structure");
+  });
+
+  it("normalizes rebuilt ground physics to the canonical physical value of that metatile", () => {
+    const map = createEmptyMap(12, 10, 1);
+    map.physical.fill(0x3000);
+    map.physical[idx(0, 0, map.width)] = 0x1000;
+    const exact = compileAiExactGrid({
+      sourceMap: map,
+      prompt,
+      compiled: compiledPlan(contextHouse),
+      atlas,
+      patterns: [contextHouse],
+      smartPaths: [road],
+      reservedCells: [],
+      reconstruction,
+      portMetatile: 4,
+    });
+
+    expect(exact.valid).toBe(true);
+    expect(exact.map.physical[idx(0, 0, map.width)]).toBe(0x3000);
+    expect(exact.cells[idx(0, 0, map.width)]!.elevation).toBe(3);
+    expect(exact.structureMask!.normalizedPhysicalCount).toBeGreaterThan(0);
+  });
+
   it("serializes an explicit cell-by-cell manifest", () => {
     const map = createEmptyMap(12, 10, 1);
     const exact = compileAiExactGrid({
@@ -135,6 +207,7 @@ describe("Exact Grid compiler", () => {
     expect(json).toContain('"format": "arauna-exact-grid-v1"');
     expect(json).toContain('"metatile": "0x');
     expect(json).toContain('"owner": "structure"');
+    expect(json).toContain('"structureMask"');
   });
 
   it("fails closed when strict layers leave editable cells UNSET", () => {
