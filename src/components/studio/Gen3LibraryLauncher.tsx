@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Gamepad2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import "@/lib/flexibleBinImportBootstrap";
 import { useEditor } from "@/lib/editorStore";
 import { AiCityBuilderDock } from "./AiCityBuilderDock";
 import { AiStarterPatternBootstrap } from "./AiStarterPatternBootstrap";
