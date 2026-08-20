@@ -1,5 +1,7 @@
 import { getCollision, getElevation, type MapData } from "./emeraldMap";
 import { gameReadyStructureConflicts } from "./aiMapGameReady";
+import { polishAiMapFragments } from "./aiMapFragmentPolish";
+import { planAiMapIdentityBase } from "./aiMapIdentity";
 import type { AiMapCompileResult, AiMapPlan } from "./aiMapPlan";
 import {
   isAiRemodelPrompt,
@@ -202,7 +204,11 @@ export function applyCompiledAiMap({
   const reconstruction = reconstructionEnabled
     ? planAiMapReconstruction(editor.map, atlas, patterns, reservedCells, smartPaths)
     : null;
-  const sourceMap = reconstruction?.map ?? editor.map;
+  const reconstructedMap = reconstruction?.map ?? editor.map;
+  const identity = reconstructionEnabled && reconstruction
+    ? planAiMapIdentityBase(reconstructedMap, atlas, patterns, reservedCells, reconstruction)
+    : null;
+  const sourceMap = identity?.map ?? reconstructedMap;
   const effective = reconstructionEnabled
     ? limitContextPatches(compiled.template, patterns)
     : { template: compiled.template, removed: 0 };
@@ -258,11 +264,23 @@ export function applyCompiledAiMap({
   mapTemplateStore.setEnabled(false);
   mapTemplateStore.setPanelOpen(false);
 
+  const surfaces = [
+    reconstruction?.baseMetatile,
+    reconstruction?.urbanMetatile,
+    reconstruction?.greenMetatile,
+    identity?.portMetatile,
+  ];
+  const polish = reconstructionEnabled
+    ? polishAiMapFragments(templatePlan.map, atlas, patterns, reservedCells, surfaces)
+    : null;
+  const finalMap = polish?.map ?? templatePlan.map;
   const touched = [
     ...(reconstruction?.touched ?? []),
+    ...(identity?.touched ?? []),
     ...templatePlan.touched,
+    ...(polish?.touched ?? []),
   ];
-  const changes = applyTargetMap(templatePlan.map, touched);
+  const changes = applyTargetMap(finalMap, touched);
 
   let topologyApplied = 0;
   let topologyPending = 0;
@@ -295,8 +313,14 @@ export function applyCompiledAiMap({
 
   const reconstructionText = reconstructionEnabled
     ? reconstruction?.changedCount
-      ? ` Reconstrução contextual: ${reconstruction.changedCount} célula(s) normalizadas antes da composição (${reconstruction.urbanChangedCount} urbanas, ${reconstruction.baseChangedCount} de base comum).`
+      ? ` Reconstrução contextual: ${reconstruction.changedCount} célula(s) normalizadas antes da composição (${reconstruction.urbanChangedCount} urbanas, ${reconstruction.greenChangedCount} verdes, ${reconstruction.baseChangedCount} de base comum).`
       : ` Reconstrução de base ativada, sem células seguras para normalizar.${reconstruction?.warnings.length ? ` ${reconstruction.warnings[0]}` : ""}`
+    : "";
+  const identityText = identity?.active && (identity.portChangedCount || identity.greenExpandedCount)
+    ? ` Identidade portuária: ${identity.portChangedCount} acento(s) de porto e ${identity.greenExpandedCount} expansão(ões) verdes.`
+    : "";
+  const polishText = polish && (polish.clearedCount || polish.layeredPreservedCount)
+    ? ` Vizinhança GBA: ${polish.clearedCount} fragmento(s) órfão(s) removido(s) e ${polish.layeredPreservedCount} overlay(s) layered contextual(is) preservado(s).`
     : "";
   const contextText = effective.removed
     ? ` ${effective.removed} patch(es) RAW de contexto excedentes foram omitidos para evitar efeito mosaico.`
@@ -309,7 +333,7 @@ export function applyCompiledAiMap({
 
   return {
     ok: true,
-    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${contextText}${topologyText}`,
+    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${identityText}${polishText}${contextText}${topologyText}`,
     changes,
     topologyApplied,
     topologyPending,
