@@ -136,4 +136,25 @@ describe("Exact Grid compiler", () => {
     expect(json).toContain('"metatile": "0x');
     expect(json).toContain('"owner": "structure"');
   });
+
+  it("fails closed when strict layers leave editable cells UNSET", () => {
+    const map = createEmptyMap(12, 10, 1);
+    const incomplete = `RECONSTRUA EM CAMADAS
+CAMADA 1 — SOLO BASE
+x=0..2, y=0..2 -> metatile 0x001`;
+    const exact = compileAiExactGrid({
+      sourceMap: map,
+      prompt: incomplete,
+      compiled: compiledPlan(),
+      atlas,
+      patterns: [house],
+      smartPaths: [road],
+      reservedCells: [],
+      reconstruction,
+      portMetatile: 4,
+    });
+    expect(exact.active).toBe(true);
+    expect(exact.valid).toBe(false);
+    expect(exact.errors.some((message) => message.includes("UNSET"))).toBe(true);
+  });
 });
