@@ -2,10 +2,38 @@ import { useEffect } from "react";
 import { deriveMapPatterns, deriveMapSmartPaths } from "@/lib/aiMapVocabulary";
 import { starterPatternsForScope } from "@/lib/emeraldStarterPatterns";
 import { useEditor } from "@/lib/editorStore";
-import { serializeMapPatterns } from "@/lib/patternLibrary";
+import { serializeMapPatterns, type PatternScope } from "@/lib/patternLibrary";
 import { patternLibraryStore, usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import { smartPathStore, useSmartPath } from "@/lib/smartPathStore";
+
+const LEGACY_STARTER_IDS = new Set([
+  "emerald-littleroot-house-west",
+  "emerald-littleroot-house-east",
+  "emerald-littleroot-birch-lab",
+]);
+
+function scopeMatches(candidate: PatternScope | undefined, scope: PatternScope) {
+  return !candidate || (candidate.primary === scope.primary && candidate.secondary === scope.secondary);
+}
+
+function pruneAutomaticVocabulary(scope: PatternScope) {
+  const stalePatternIds = patternLibraryStore.getState().patterns
+    .filter((pattern) => (pattern.id.startsWith("auto-") || LEGACY_STARTER_IDS.has(pattern.id)) && !scopeMatches(pattern.scope, scope))
+    .map((pattern) => pattern.id);
+  for (const id of stalePatternIds) {
+    patternLibraryStore.selectPattern(id);
+    patternLibraryStore.deleteActive();
+  }
+
+  const stalePathIds = smartPathStore.getState().presets
+    .filter((preset) => preset.id.startsWith("auto-") && !scopeMatches(preset.scope, scope))
+    .map((preset) => preset.id);
+  for (const id of stalePathIds) {
+    smartPathStore.selectPreset(id);
+    smartPathStore.deleteActive();
+  }
+}
 
 /**
  * Instala vocabulário GBA real para a IA.
@@ -13,6 +41,7 @@ import { smartPathStore, useSmartPath } from "@/lib/smartPathStore";
  * - mantém o starter pack canônico quando o scope suportar;
  * - com map.json ativo, extrai fachadas e trechos RAW do próprio mapa aberto;
  * - cria Smart Paths conservadores usando pisos caminháveis reais do mapa;
+ * - remove apenas vocabulário AUTOMÁTICO de outros tilesets;
  * - nunca duplica os IDs automáticos já instalados.
  */
 export function AiStarterPatternBootstrap() {
@@ -24,6 +53,7 @@ export function AiStarterPatternBootstrap() {
   useEffect(() => {
     if (!atlas || !library.hydrated || !paths.hydrated) return;
     const scope = { primary: atlas.primary, secondary: atlas.secondary };
+    pruneAutomaticVocabulary(scope);
 
     const candidates = [
       ...starterPatternsForScope(scope),
