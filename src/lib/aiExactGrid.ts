@@ -15,6 +15,10 @@ import {
 import type { AiMapCompileResult } from "./aiMapPlan";
 import type { AiMapReconstructionPlan } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
+import {
+  applyExactGridStructureMasks,
+  type StructureMaskStats,
+} from "./exactGridStructureMask";
 import { planMapTemplate } from "./mapTemplate";
 import type { MapPattern } from "./patternLibrary";
 import type { SavedRealAtlas } from "./realAtlasStore";
@@ -57,6 +61,7 @@ export interface AiExactGridPlan {
   touched: number[];
   layered: LayeredBasePlan | null;
   finish: LayeredFinishPlan | null;
+  structureMask: StructureMaskStats | null;
   errors: string[];
   warnings: string[];
 }
@@ -104,6 +109,7 @@ function emptyPlan(sourceMap: MapData, errors: string[] = []): AiExactGridPlan {
     touched: [],
     layered: null,
     finish: null,
+    structureMask: null,
     errors,
     warnings: [],
   };
@@ -211,8 +217,22 @@ export function compileAiExactGrid({
   }
 
   const finish = finishLayeredPromptMap(templatePlan.map, layered, atlas, smartPaths);
-  const map = finish.map;
   warnings.push(...templatePlan.warnings, ...finish.warnings);
+
+  const masked = applyExactGridStructureMasks({
+    map: finish.map,
+    sourceMap,
+    layered,
+    blueprint: compiled.blueprint,
+    patterns,
+    atlas,
+    reconstruction,
+    portMetatile,
+    smartPaths,
+    reservedCells,
+  });
+  const map = masked.map;
+  warnings.push(...masked.warnings);
 
   const recordById = new Map(atlas.records.map((record) => [record.id & METATILE_MASK, record]));
   const cells: ExactGridCell[] = [];
@@ -280,6 +300,7 @@ export function compileAiExactGrid({
     touched,
     layered,
     finish,
+    structureMask: masked.stats,
     errors,
     warnings,
   };
@@ -294,6 +315,7 @@ export function serializeAiExactGrid(grid: AiExactGridPlan) {
     resolved: grid.resolvedCount,
     total: grid.totalCount,
     ownerCounts: grid.ownerCounts,
+    structureMask: grid.structureMask,
     cells: grid.cells.map((cell) => ({
       x: cell.x,
       y: cell.y,
