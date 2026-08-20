@@ -2,10 +2,20 @@ import { AI_MAP_PLAN_FORMAT, parseAiMapPlanJson, type AiMapPlan } from "./aiMapP
 
 const COLLECTION_KEYS = ["structures", "routes", "warps", "connections"] as const;
 
+export interface AiProviderPatternPortRef {
+  id: string;
+  name: string;
+  kind: "door" | "entrance" | "exit" | "connection";
+  x: number;
+  y: number;
+  direction?: "north" | "east" | "south" | "west";
+}
+
 export interface AiProviderPatternRef {
   id: string;
   name: string;
   tags?: string[];
+  ports?: AiProviderPatternPortRef[];
 }
 
 export interface AiProviderPlanDefaults {
@@ -31,11 +41,7 @@ function normalizeText(value: string) {
 function normalizeCollection(value: unknown, key: string): unknown[] {
   if (Array.isArray(value)) return value;
   if (value == null) return [];
-  if (isRecord(value)) {
-    // Modelos às vezes devolvem um único item em vez de uma lista.
-    // Um objeto vazio significa "nenhum item"; um objeto preenchido vira lista de 1 item.
-    return Object.keys(value).length ? [value] : [];
-  }
+  if (isRecord(value)) return Object.keys(value).length ? [value] : [];
   throw new Error(`A IA retornou “${key}” em formato inválido; esperado uma lista JSON.`);
 }
 
@@ -76,7 +82,6 @@ function patternScore(
     }
   }
 
-  // Mentionar literalmente o Pattern no prompt reforça uma correspondência sem ser suficiente sozinho.
   if (patternName && promptKey.includes(patternName)) score += 25;
   if (patternId && promptKey.includes(patternId)) score += 25;
   return score;
@@ -114,10 +119,99 @@ function reconcileStructure(value: unknown, defaults: AiProviderPlanDefaults) {
   return pattern ? { ...value, pattern } : value;
 }
 
+function sourceIsUsable(value: unknown) {
+  if (!isRecord(value)) return false;
+  const hasAbsolute = Number.isInteger(Number(value["x"])) && Number.isInteger(Number(value["y"]));
+  const hasSemantic = typeof value["structure"] === "string" && value["structure"].trim().length > 0;
+  return hasAbsolute || hasSemantic;
+}
+
+function structureCues(structure: Record<string, unknown>) {
+  return [
+    firstNonEmptyString(structure, ["label"]),
+    firstNonEmptyString(structure, ["name"]),
+    firstNonEmptyString(structure, ["id"]),
+  ].filter((value, index, values) => value.length >= 4 && values.indexOf(value) === index);
+}
+
+function nearestStructureBeforeDestination(
+  destination: string,
+  structures: unknown[],
+  prompt: string,
+) {
+  const promptKey = prompt.toLocaleLowerCase("pt-BR");
+  const destinationIndex = promptKey.indexOf(destination.toLocaleLowerCase("pt-BR"));
+  if (destinationIndex < 0) return null;
+
+  const candidates = structures.flatMap((value) => {
+    if (!isRecord(value)) return [];
+    let nearest = -1;
+    for (const cue of structureCues(value)) {
+      const position = promptKey.lastIndexOf(cue.toLocaleLowerCase("pt-BR"), destinationIndex);
+      if (position > nearest) nearest = position;
+    }
+    if (nearest < 0) return [];
+    return [{ structure: value, position: nearest, distance: destinationIndex - nearest }];
+  }).filter((candidate) => candidate.distance <= 2200)
+    .sort((a, b) => a.distance - b.distance);
+
+  const best = candidates[0];
+  if (!best) return null;
+  const second = candidates[1];
+  if (second && second.distance === best.distance) return null;
+  return { structure: best.structure, position: best.position, destinationIndex };
+}
+
+function resolveUniqueEntrancePort(patternReference: string, defaults: AiProviderPlanDefaults) {
+  const key = normalizeText(patternReference);
+  const pattern = (defaults.patterns ?? []).find((candidate) => {
+    return normalizeText(candidate.id) === key || normalizeText(candidate.name) === key;
+  });
+  if (!pattern) return null;
+  const ports = pattern.ports ?? [];
+  const exactId = ports.filter((port) => normalizeText(port.id) === "entrada");
+  if (exactId.length === 1) return exactId[0]!.id;
+  const exactName = ports.filter((port) => normalizeText(port.name) === "entrada");
+  if (exactName.length === 1) return exactName[0]!.id;
+  const entrances = ports.filter((port) => port.kind === "door" || port.kind === "entrance");
+  return entrances.length === 1 ? entrances[0]!.id : null;
+}
+
+function explicitPortInPromptSegment(prompt: string, from: number, to: number) {
+  const segment = prompt.slice(Math.max(0, from), Math.max(from, to));
+  const semantic = segment.match(/porta\s+sem[aâ]ntica\s*:?\s*["“'‘]?([\p{L}\p{N}_-]+)/iu);
+  if (semantic?.[1]) return semantic[1].trim();
+  const named = segment.match(/(?:porta|entrada)\s+(?:principal\s+)?(?:deve\s+usar\s+)?(?:a\s+porta\s+)?["“'‘]([\p{L}\p{N}_-]+)["”'’]/iu);
+  return named?.[1]?.trim() ?? null;
+}
+
+function reconcileWarpSource(
+  value: unknown,
+  structures: unknown[],
+  defaults: AiProviderPlanDefaults,
+) {
+  if (!isRecord(value) || sourceIsUsable(value["source"])) return value;
+  const destination = firstNonEmptyString(value, ["destMap", "dest_map"]);
+  const prompt = defaults.prompt ?? "";
+  if (!destination || !prompt) return value;
+
+  const association = nearestStructureBeforeDestination(destination, structures, prompt);
+  if (!association) return value;
+  const structureId = firstNonEmptyString(association.structure, ["id"]);
+  const patternReference = firstNonEmptyString(association.structure, ["pattern"]);
+  if (!structureId || !patternReference) return value;
+
+  const port = resolveUniqueEntrancePort(patternReference, defaults)
+    ?? explicitPortInPromptSegment(prompt, association.position, association.destinationIndex);
+  if (!port) return value;
+  return { ...value, source: { structure: structureId, port } };
+}
+
 /**
  * Normaliza pequenas variações comuns de provedores de IA antes de entregar o
  * plano ao compilador. Além de item único -> lista, reconcilia apenas campos
- * técnicos determinísticos (formato/dimensões e Pattern com correspondência única).
+ * técnicos determinísticos. Warps sem source só são reparados quando destino,
+ * estrutura e porta podem ser associados sem ambiguidade ao prompt.
  */
 export function parseAiProviderPlan(
   source: string,
@@ -135,6 +229,8 @@ export function parseAiProviderPlan(
   for (const key of COLLECTION_KEYS) normalized[key] = normalizeCollection(parsed[key], key);
   normalized["structures"] = (normalized["structures"] as unknown[])
     .map((value) => reconcileStructure(value, defaults));
+  normalized["warps"] = (normalized["warps"] as unknown[])
+    .map((value) => reconcileWarpSource(value, normalized["structures"] as unknown[], defaults));
 
   const format = typeof parsed["format"] === "string" ? parsed["format"].trim() : "";
   normalized["format"] = format || AI_MAP_PLAN_FORMAT;

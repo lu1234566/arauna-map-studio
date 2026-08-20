@@ -24,6 +24,35 @@ const explicitPrompt = `Use exatamente o Pattern "Casa Emerald — entrada direi
 Use exatamente o Pattern "Casa Emerald — entrada esquerda" para a Casa do rival.
 Use exatamente o Pattern "Laboratório Emerald" para o Laboratório da Professora.`;
 
+const warpPrompt = `
+CASA DO JOGADOR
+Use exatamente o Pattern "Casa Emerald — entrada direita".
+ID lógico da estrutura: casa-jogador
+Nome visível: Casa do jogador
+A entrada principal deve usar a porta semântica: "entrada".
+Crie nesta entrada um warp para:
+destMap: MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F
+destWarpId: 1
+
+CASA DO RIVAL
+Use exatamente o Pattern "Casa Emerald — entrada esquerda".
+ID lógico da estrutura: casa-rival
+Nome visível: Casa do rival
+Use a porta semântica: "entrada".
+Crie nesta entrada um warp para:
+destMap: MAP_LITTLEROOT_TOWN_MAYS_HOUSE_1F
+destWarpId: 1
+
+LABORATÓRIO
+Use exatamente o Pattern "Laboratório Emerald".
+ID lógico da estrutura: laboratorio
+Nome visível: Laboratório da Professora
+Use a porta semântica: "entrada".
+Crie nesta entrada um warp para:
+destMap: MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB
+destWarpId: 0
+`;
+
 describe("AI provider plan normalization", () => {
   it("turns a singleton connection object into a one-item array", () => {
     const plan = parseAiProviderPlan(JSON.stringify({
@@ -93,6 +122,62 @@ describe("AI provider plan normalization", () => {
       "emerald-littleroot-birch-lab",
     ]);
     expect(plan.connections).toHaveLength(1);
+  });
+
+  it("repairs empty warp sources from explicit structure and semantic-port associations in the prompt", () => {
+    const plan = parseAiProviderPlan(JSON.stringify({
+      format: AI_MAP_PLAN_FORMAT,
+      name: "Vila Teste Arauna",
+      width: 20,
+      height: 20,
+      structures: [
+        { id: "casa-jogador", label: "Casa do jogador", pattern: "emerald-littleroot-house-west", x: 2, y: 4 },
+        { id: "casa-rival", label: "Casa do rival", pattern: "emerald-littleroot-house-east", x: 13, y: 4 },
+        { id: "laboratorio", label: "Laboratório da Professora", pattern: "emerald-littleroot-birch-lab", x: 3, y: 12 },
+      ],
+      routes: [],
+      warps: [
+        { source: {}, destMap: "MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F", destWarpId: "1" },
+        { source: {}, destMap: "MAP_LITTLEROOT_TOWN_MAYS_HOUSE_1F", destWarpId: "1" },
+        { source: {}, destMap: "MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB", destWarpId: "0" },
+      ],
+      connections: [{ direction: "north", map: "MAP_ROUTE101", offset: 0 }],
+      notes: [],
+    }), {
+      width: 20,
+      height: 20,
+      prompt: warpPrompt,
+      patterns: starterPatterns,
+    });
+
+    expect(plan.warps.map((warp) => warp.source)).toEqual([
+      { structure: "casa-jogador", port: "entrada" },
+      { structure: "casa-rival", port: "entrada" },
+      { structure: "laboratorio", port: "entrada" },
+    ]);
+  });
+
+  it("keeps an empty warp source blocked when the prompt does not name a port", () => {
+    const plan = parseAiProviderPlan(JSON.stringify({
+      format: AI_MAP_PLAN_FORMAT,
+      name: "Sem porta",
+      width: 20,
+      height: 20,
+      structures: [
+        { id: "lab", label: "Laboratório", pattern: "emerald-littleroot-birch-lab", x: 3, y: 12 },
+      ],
+      routes: [],
+      warps: [
+        { source: {}, destMap: "MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB", destWarpId: "0" },
+      ],
+      connections: [],
+      notes: [],
+    }), {
+      prompt: "Laboratório. Crie um warp para MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB.",
+      patterns: starterPatterns,
+    });
+
+    expect(plan.warps[0]?.source).toEqual({});
   });
 
   it("accepts common Pattern field aliases from providers", () => {
