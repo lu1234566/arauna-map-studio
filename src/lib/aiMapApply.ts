@@ -200,7 +200,7 @@ export function applyCompiledAiMap({
 
   const reconstructionEnabled = Boolean(editor.mapJsonDocument && isAiRemodelPrompt(prompt));
   const reconstruction = reconstructionEnabled
-    ? planAiMapReconstruction(editor.map, atlas, patterns, reservedCells)
+    ? planAiMapReconstruction(editor.map, atlas, patterns, reservedCells, smartPaths)
     : null;
   const sourceMap = reconstruction?.map ?? editor.map;
   const effective = reconstructionEnabled
@@ -295,7 +295,7 @@ export function applyCompiledAiMap({
 
   const reconstructionText = reconstructionEnabled
     ? reconstruction?.changedCount
-      ? ` Reconstrução de base: ${reconstruction.changedCount} célula(s) normalizadas antes da composição.`
+      ? ` Reconstrução contextual: ${reconstruction.changedCount} célula(s) normalizadas antes da composição (${reconstruction.urbanChangedCount} urbanas, ${reconstruction.baseChangedCount} de base comum).`
       : ` Reconstrução de base ativada, sem células seguras para normalizar.${reconstruction?.warnings.length ? ` ${reconstruction.warnings[0]}` : ""}`
     : "";
   const contextText = effective.removed
