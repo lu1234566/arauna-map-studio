@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AI_MAP_PLAN_FORMAT,
   compileAiMapPlan,
+  orthogonalizeRoutePoints,
   parseDetailedMapCommand,
   type AiMapPlan,
 } from "./aiMapPlan";
@@ -55,6 +56,53 @@ describe("AI map plan", () => {
     expect(result.valid).toBe(true);
     expect(result.blueprint?.routes[0]?.points).toEqual([{ x: 0, y: 13 }, { x: 5, y: 13 }]);
     expect(result.warps[0]).toMatchObject({ x: 5, y: 13, destWarpId: "0" });
+  });
+
+  it("repairs diagonal AI waypoints after resolving a semantic door", () => {
+    const plan: AiMapPlan = {
+      format: AI_MAP_PLAN_FORMAT,
+      name: "Porto teste",
+      width: 40,
+      height: 60,
+      structures: [{ id: "mart", label: "Poké Mart", pattern: "Casa Rural", x: 11, y: 23 }],
+      routes: [{
+        smartPath: "Estrada de Terra",
+        points: [
+          { x: 11, y: 27 },
+          { structure: "mart", port: "entrada" },
+          { x: 13, y: 27 },
+        ],
+      }],
+      warps: [],
+      connections: [],
+    };
+    const result = compileAiMapPlan(plan, [house()], [road()]);
+    expect(result.valid).toBe(true);
+    expect(result.blueprint?.routes[0]?.points).toEqual([
+      { x: 11, y: 27 },
+      { x: 13, y: 27 },
+      { x: 13, y: 26 },
+      { x: 13, y: 27 },
+    ]);
+    expect(result.warnings.some((message) => message.includes("cotovelo"))).toBe(true);
+  });
+
+  it("orthogonalizes diagonal coordinates and removes repeated waypoints", () => {
+    expect(orthogonalizeRoutePoints([
+      { x: 17, y: 39 },
+      { x: 21, y: 44 },
+      { x: 21, y: 44 },
+      { x: 21, y: 45 },
+    ])).toEqual({
+      points: [
+        { x: 17, y: 39 },
+        { x: 21, y: 39 },
+        { x: 21, y: 44 },
+        { x: 21, y: 45 },
+      ],
+      inserted: 1,
+      removedDuplicates: 1,
+    });
   });
 
   it("parses the precise local command syntax without an AI service", () => {
