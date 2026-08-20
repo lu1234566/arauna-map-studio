@@ -2,13 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { AI_MAP_PLAN_FORMAT, type AiMapPlan } from "./aiMapPlan";
 
-const pointSchema = z.object({
-  x: z.number().int().optional(),
-  y: z.number().int().optional(),
-  structure: z.string().optional(),
-  port: z.string().optional(),
-});
-
 const requestSchema = z.object({
   prompt: z.string().min(1).max(20000),
   width: z.number().int().min(1).max(512),
@@ -120,6 +113,18 @@ function stripFence(text: string) {
   return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
+function unmentionedDestinations(plan: AiMapPlan, prompt: string) {
+  const source = prompt.toLocaleUpperCase("pt-BR");
+  const destinations = [
+    ...plan.warps.map((warp) => warp.destMap),
+    ...plan.connections.map((connection) => connection.map),
+  ];
+  return Array.from(new Set(destinations
+    .map((destination) => destination.trim())
+    .filter(Boolean)
+    .filter((destination) => !source.includes(destination.toLocaleUpperCase("pt-BR")))));
+}
+
 function plannerInstructions(data: z.infer<typeof requestSchema>) {
   const patterns = data.patterns.map((pattern) => {
     const ports = pattern.ports.map((port) => `${port.id}:${port.name}@(${port.x},${port.y})/${port.kind}${port.direction ? `/${port.direction}` : ""}`).join(", ");
@@ -178,6 +183,14 @@ export const planMapWithGemini = createServerFn({ method: "POST" })
     if (!text) return { ok: false as const, configured: true as const, message: "Gemini não retornou um plano textual." };
     try {
       const plan = JSON.parse(stripFence(text)) as AiMapPlan;
+      const invented = unmentionedDestinations(plan, data.prompt);
+      if (invented.length) {
+        return {
+          ok: false as const,
+          configured: true as const,
+          message: `A IA tentou usar destino(s) que não aparecem no seu comando: ${invented.join(", ")}. O plano foi bloqueado.`,
+        };
+      }
       return { ok: true as const, configured: true as const, model, plan };
     } catch (error) {
       return {
