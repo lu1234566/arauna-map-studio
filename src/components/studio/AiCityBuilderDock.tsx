@@ -167,6 +167,7 @@ export function AiCityBuilderDock() {
     }
     const changes = mapTemplateStore.applyAt(0, 0);
     mapTemplateStore.setEnabled(false);
+    mapTemplateStore.setPanelOpen(false);
 
     let topologyApplied = 0;
     let topologyPending = 0;
@@ -203,6 +204,7 @@ export function AiCityBuilderDock() {
         : "";
     requestMapCameraFit();
     setMessage(`Mapa aplicado: ${changes} alteração(ões) de tile/camada.${topologyText}`);
+    setOpen(false);
   };
 
   return (
