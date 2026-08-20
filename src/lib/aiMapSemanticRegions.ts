@@ -1,5 +1,6 @@
-import { idx, rawValue, type MapData } from "./emeraldMap";
+import { getCollision, idx, METATILE_MASK, rawValue, type MapData } from "./emeraldMap";
 import { MAP_PATTERN_FORMAT, type MapPattern, type PatternScope } from "./patternLibrary";
+import { SMART_PATH_FORMAT, type SmartPathPreset } from "./smartPath";
 import type { VocabularyMapEvent } from "./aiMapVocabulary";
 
 function slug(value: string) {
@@ -70,6 +71,63 @@ export function deriveSemanticEventPatterns(
     kind: "raw",
     values: region.values,
     ports: [],
+    scope: { ...scope },
+    createdAt: now,
+    updatedAt: now,
+  }];
+}
+
+function mostCommon(counts: Map<number, number>, excluded?: number) {
+  return [...counts.entries()]
+    .filter(([id]) => id !== excluded)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+/**
+ * A célula imediatamente abaixo de uma porta externa é uma pista muito melhor
+ * de "rua/calçada" que simplesmente escolher o segundo piso mais frequente do
+ * mapa. Usamos os acessos dos warps reais para obter um Smart Path urbano
+ * conservador e compatível com o visual do mapa aberto.
+ */
+export function deriveSemanticEventSmartPaths(
+  map: MapData,
+  events: VocabularyMapEvent[],
+  mapName: string,
+  scope: PatternScope,
+): SmartPathPreset[] {
+  const groundCounts = new Map<number, number>();
+  for (let i = 0; i < map.metatiles.length; i++) {
+    if (getCollision(map.physical[i] ?? 0) !== 0) continue;
+    const id = (map.metatiles[i] ?? 0) & METATILE_MASK;
+    if (id !== 0) groundCounts.set(id, (groundCounts.get(id) ?? 0) + 1);
+  }
+  const erase = mostCommon(groundCounts);
+  if (erase == null) return [];
+
+  const approachCounts = new Map<number, number>();
+  for (const event of events.filter((item) => item.source === "warp")) {
+    for (const dy of [1, 2]) {
+      const x = event.x;
+      const y = event.y + dy;
+      if (x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
+      const i = idx(x, y, map.width);
+      if (getCollision(map.physical[i] ?? 0) !== 0) continue;
+      const id = (map.metatiles[i] ?? 0) & METATILE_MASK;
+      if (id === 0 || id === erase) continue;
+      approachCounts.set(id, (approachCounts.get(id) ?? 0) + 1);
+    }
+  }
+  const seed = mostCommon(approachCounts, erase);
+  if (seed == null || seed === erase) return [];
+
+  const now = new Date().toISOString();
+  const key = slug(mapName);
+  return [{
+    format: SMART_PATH_FORMAT,
+    id: `auto-${key}-smart-path-acessos-urbanos`,
+    name: "Via urbana pelos acessos reais",
+    variants: Array.from({ length: 16 }, () => seed),
+    eraseMetatile: erase,
     scope: { ...scope },
     createdAt: now,
     updatedAt: now,
