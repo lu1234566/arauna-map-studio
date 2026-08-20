@@ -8,7 +8,7 @@ import {
 } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
 import { editorStore } from "./editorStore";
-import { planMapTemplate, serializeMapTemplates } from "./mapTemplate";
+import { planMapTemplate, serializeMapTemplates, type MapTemplate } from "./mapTemplate";
 import { mapTemplateStore } from "./mapTemplateStore";
 import type { MapPattern } from "./patternLibrary";
 import type { SavedRealAtlas } from "./realAtlasStore";
@@ -20,6 +20,10 @@ const CONNECTION_DIRECTION = {
   south: "down",
   west: "left",
 } as const;
+
+const CONTEXT_PATCH_LIMIT = 2;
+
+type ContextPatchKind = "urban" | "green" | "coast";
 
 export interface ApplyAiMapResult {
   ok: boolean;
@@ -38,6 +42,44 @@ function connectionIndex(direction: string) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     return String((value as Record<string, unknown>)["direction"] ?? "") === direction;
   });
+}
+
+function contextPatchKind(pattern: MapPattern): ContextPatchKind | null {
+  const id = pattern.id.toLowerCase();
+  const tags = (pattern.tags ?? []).map((tag) => tag.toLowerCase());
+  if (!tags.includes("extraído do mapa") && !tags.includes("extraido do mapa")) return null;
+  if (id.includes("-urban-") || tags.some((tag) => tag === "rua" || tag === "cidade" || tag === "urbanismo")) return "urban";
+  if (id.includes("-green-") || tags.some((tag) => tag === "vegetação" || tag === "vegetacao" || tag === "verde")) return "green";
+  if (id.includes("-coast-") || tags.some((tag) => tag === "costa" || tag === "litoral")) return "coast";
+  return null;
+}
+
+/**
+ * Recortes RAW de contexto são úteis como acento, não como textura de preenchimento.
+ * Durante remodelagem ampla limitamos cada família a dois patches; prédios com
+ * warp-anchor/fixed-origin e demais Patterns semânticos não entram no limite.
+ */
+function limitContextPatches(template: MapTemplate, patterns: MapPattern[]) {
+  const byId = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  const used: Record<ContextPatchKind, number> = { urban: 0, green: 0, coast: 0 };
+  let removed = 0;
+  const elements = template.elements.filter((element) => {
+    if (element.type !== "pattern") return true;
+    const pattern = byId.get(element.patternId);
+    if (!pattern) return true;
+    const kind = contextPatchKind(pattern);
+    if (!kind) return true;
+    if (used[kind] >= CONTEXT_PATCH_LIMIT) {
+      removed++;
+      return false;
+    }
+    used[kind]++;
+    return true;
+  });
+  return {
+    template: removed ? { ...template, elements } : template,
+    removed,
+  };
 }
 
 function applyTargetMap(targetMap: MapData, touched: number[]) {
@@ -156,10 +198,13 @@ export function applyCompiledAiMap({
     ? planAiMapReconstruction(editor.map, atlas, patterns, reservedCells)
     : null;
   const sourceMap = reconstruction?.map ?? editor.map;
+  const effective = reconstructionEnabled
+    ? limitContextPatches(compiled.template, patterns)
+    : { template: compiled.template, removed: 0 };
   const currentScope = atlas ? { primary: atlas.primary, secondary: atlas.secondary } : undefined;
   const templatePlan = planMapTemplate(
     sourceMap,
-    compiled.template,
+    effective.template,
     0,
     0,
     patterns,
@@ -178,7 +223,7 @@ export function applyCompiledAiMap({
     };
   }
 
-  const imported = mapTemplateStore.importJson(serializeMapTemplates([compiled.template]));
+  const imported = mapTemplateStore.importJson(serializeMapTemplates([effective.template]));
   if (!imported.ok) {
     return {
       ok: false,
@@ -232,6 +277,9 @@ export function applyCompiledAiMap({
       ? ` Reconstrução de base: ${reconstruction.changedCount} célula(s) normalizadas antes da composição.`
       : ` Reconstrução de base ativada, sem células seguras para normalizar.${reconstruction?.warnings.length ? ` ${reconstruction.warnings[0]}` : ""}`
     : "";
+  const contextText = effective.removed
+    ? ` ${effective.removed} patch(es) RAW de contexto excedentes foram omitidos para evitar efeito mosaico.`
+    : "";
   const topologyText = topologyPending
     ? ` ${topologyPending} warp/conexão ficaram pendentes porque este mapa ainda não tem map.json aberto.`
     : topologyApplied
@@ -240,7 +288,7 @@ export function applyCompiledAiMap({
 
   return {
     ok: true,
-    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${topologyText}`,
+    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${contextText}${topologyText}`,
     changes,
     topologyApplied,
     topologyPending,
