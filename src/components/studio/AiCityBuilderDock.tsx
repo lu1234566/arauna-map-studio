@@ -1,8 +1,10 @@
-import { Bot, Braces, Check, Hammer, Sparkles, WandSparkles, X } from "lucide-react";
+import { Bot, Braces, Check, Download, Hammer, Sparkles, WandSparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { ExactGridPreview } from "@/components/studio/ExactGridPreview";
+import { compileAiExactGrid, serializeAiExactGrid } from "@/lib/aiExactGrid";
+import { applyExactGridToEditor } from "@/lib/aiExactGridApply";
 import { applyCompiledAiMap } from "@/lib/aiMapApply";
-import { planLayeredPromptBase } from "@/lib/aiLayeredPrompt";
 import { planAiMapIdentityBase } from "@/lib/aiMapIdentity";
 import {
   compileAiMapPlan,
@@ -14,8 +16,8 @@ import {
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
 import { isAiRemodelPrompt, planAiMapReconstruction } from "@/lib/aiMapReconstruction";
 import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
-import { getCollision, METATILE_MASK } from "@/lib/emeraldMap";
-import { useEditor } from "@/lib/editorStore";
+import { METATILE_MASK } from "@/lib/emeraldMap";
+import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
@@ -70,14 +72,6 @@ function canonicalizeLayerPrompt(value: string) {
     result.push(line);
   }
   return result.join("\n");
-}
-
-function axisRange(line: string, axis: "x" | "y") {
-  const match = line.match(new RegExp(`\\b${axis}\\s*[:=]\\s*(-?\\d+)\\s*(?:\\.\\.|…|ate|até|a|-)\\s*(-?\\d+)`, "i"));
-  if (!match) return null;
-  const a = Number(match[1]);
-  const b = Number(match[2]);
-  return { min: Math.min(a, b), max: Math.max(a, b) };
 }
 
 function roleForLayerLine(line: string) {
@@ -145,28 +139,13 @@ export function AiCityBuilderDock() {
       : null
   ), [reconstructionActive, reconstructionPreview, atlas?.createdAt, compatiblePatterns, reservedCells]);
 
+  // Exact Grid não aceita “qualquer piso NORMAL do range” como fallback semântico.
   const resolvedPrompt = useMemo(() => {
     if (!atlas || !reconstructionPreview) return canonicalPrompt;
     const records = new Map(atlas.records.map((record) => [record.id & METATILE_MASK, record]));
     const safe = (id: number) => {
       const record = records.get(id & METATILE_MASK);
       return Boolean(record && (record.behavior ?? -1) === 0 && (record.layerType ?? 0) === 0);
-    };
-    const dominantInRange = (line: string, excluded: Set<number>) => {
-      const xr = axisRange(line, "x");
-      const yr = axisRange(line, "y");
-      if (!xr || !yr) return null;
-      const counts = new Map<number, number>();
-      for (let y = Math.max(0, yr.min); y <= Math.min(editor.map.height - 1, yr.max); y++) {
-        for (let x = Math.max(0, xr.min); x <= Math.min(editor.map.width - 1, xr.max); x++) {
-          const cellIndex = y * editor.map.width + x;
-          if (getCollision(editor.map.physical[cellIndex] ?? 0) !== 0) continue;
-          const id = (editor.map.metatiles[cellIndex] ?? 0) & METATILE_MASK;
-          if (!id || excluded.has(id) || !safe(id)) continue;
-          counts.set(id, (counts.get(id) ?? 0) + 1);
-        }
-      }
-      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
     };
 
     const base = reconstructionPreview.baseMetatile;
@@ -177,32 +156,30 @@ export function AiCityBuilderDock() {
       if (!/(?:→|->|=>)/.test(line) || /(?:metatile|tile|id)?\s*0x[0-9a-f]{1,3}\b/i.test(line)) return line;
       const role = roleForLayerLine(line);
       if (!role || role === "preserve") return line;
-      const excluded = new Set<number>();
-      if (base != null) excluded.add(base & METATILE_MASK);
       let desired: number | null = null;
       if (role === "base") desired = base;
-      if (role === "urban") desired = urban ?? dominantInRange(line, excluded);
-      if (urban != null) excluded.add(urban & METATILE_MASK);
-      if (role === "green") desired = green ?? dominantInRange(line, excluded);
-      if (green != null) excluded.add(green & METATILE_MASK);
-      if (role === "port") desired = port ?? dominantInRange(line, excluded);
+      if (role === "urban") desired = urban;
+      if (role === "green") desired = green;
+      if (role === "port") desired = port;
       if (desired == null || !safe(desired)) return line;
       return line.replace(/(?:→|->|=>)\s*(.+)$/, `-> metatile ${hexMetatile(desired)}`);
     }).join("\n");
-  }, [canonicalPrompt, atlas?.createdAt, reconstructionPreview, identityPreview?.portMetatile, editor.map]);
+  }, [canonicalPrompt, atlas?.createdAt, reconstructionPreview, identityPreview?.portMetatile]);
 
-  const layeredPreview = useMemo(() => (
+  const exactGridPreview = useMemo(() => (
     reconstructionPreview && compiled?.valid
-      ? planLayeredPromptBase(
-          editor.map,
-          resolvedPrompt,
+      ? compileAiExactGrid({
+          sourceMap: editor.map,
+          prompt: resolvedPrompt,
+          compiled,
           atlas,
-          compatiblePatterns,
+          patterns: compatiblePatterns,
+          smartPaths: compatiblePaths,
           reservedCells,
-          reconstructionPreview,
-          identityPreview?.portMetatile ?? null,
-          compiled.blueprint,
-        )
+          reconstruction: reconstructionPreview,
+          portMetatile: identityPreview?.portMetatile ?? null,
+          canPaint: (x, y) => !editorStore.isProtected(x, y),
+        })
       : null
   ), [
     reconstructionPreview,
@@ -211,12 +188,17 @@ export function AiCityBuilderDock() {
     resolvedPrompt,
     atlas?.createdAt,
     compatiblePatterns,
+    compatiblePaths,
     reservedCells,
     identityPreview?.portMetatile,
+    editor.protectProgression,
+    editor.protectedCells,
   ]);
 
+  const layeredPreview = exactGridPreview?.layered ?? null;
   const layeredReady = !layeredPreview?.active || layeredPreview.errors.length === 0;
-  const planReady = Boolean(compiled?.valid && compiled.template && layeredReady);
+  const exactReady = !exactGridPreview?.active || exactGridPreview.valid;
+  const planReady = Boolean(compiled?.valid && compiled.template && layeredReady && exactReady);
 
   const vocabulary = useMemo(() => ({
     patterns: compatiblePatterns.map((pattern) => ({
@@ -303,6 +285,21 @@ export function AiCityBuilderDock() {
     }
   };
 
+  const exportExactGrid = () => {
+    if (!exactGridPreview?.active || !exactGridPreview.valid || typeof document === "undefined") return;
+    const source = serializeAiExactGrid(exactGridPreview);
+    const blob = new Blob([source], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${editor.mapMetadata?.name ?? "arauna-map"}-exact-grid-${exactGridPreview.checksum}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setMessage(`Exact Grid exportado: ${exactGridPreview.resolvedCount}/${exactGridPreview.totalCount} células; checksum ${exactGridPreview.checksum}.`);
+  };
+
   const applyPlan = () => {
     if (!plan || !compiled?.valid || !compiled.template) {
       setMessage("Aplicação indisponível: o plano estruturado ainda não está compilável.");
@@ -312,17 +309,29 @@ export function AiCityBuilderDock() {
       setMessage(`Aplicação bloqueada pelo preflight A+B: ${layeredPreview.errors.slice(0, 3).join(" ")}`);
       return;
     }
-    setMessage("Aplicando zone-first + finish layer ao mapa…");
+    if (exactGridPreview?.active && !exactGridPreview.valid) {
+      setMessage(`Aplicação bloqueada pelo Exact Grid: ${exactGridPreview.errors.slice(0, 3).join(" ")}`);
+      return;
+    }
+
     try {
-      const result = applyCompiledAiMap({
-        prompt: resolvedPrompt,
-        plan,
-        compiled,
-        atlas,
-        patterns: compatiblePatterns,
-        smartPaths: compatiblePaths,
-        reservedCells,
-      });
+      const result = exactGridPreview?.active
+        ? (() => {
+            setMessage(`Aplicando snapshot Exact Grid ${exactGridPreview.checksum}…`);
+            return applyExactGridToEditor(exactGridPreview, compiled);
+          })()
+        : (() => {
+            setMessage("Aplicando plano clássico ao mapa…");
+            return applyCompiledAiMap({
+              prompt: resolvedPrompt,
+              plan,
+              compiled,
+              atlas,
+              patterns: compatiblePatterns,
+              smartPaths: compatiblePaths,
+              reservedCells,
+            });
+          })();
       setMessage(result.message);
       if (!result.ok) return;
       requestMapCameraFit();
@@ -352,7 +361,7 @@ export function AiCityBuilderDock() {
             type="button"
             onClick={applyPlan}
             className="ml-auto inline-flex items-center gap-1 rounded border border-success/55 bg-success/15 px-2.5 py-1.5 text-[10px] font-semibold text-success hover:bg-success/25"
-            title="Aplicar imediatamente o plano A+B validado"
+            title={exactGridPreview?.active ? "Aplicar exatamente o snapshot Exact Grid validado" : "Aplicar plano validado"}
           >
             <Hammer className="size-3.5" /> Aplicar
           </button>
@@ -379,6 +388,11 @@ export function AiCityBuilderDock() {
                 {layeredPreview?.active && (
                   <SmallBadge good={layeredReady}>A+B {layeredPreview.parsed.zones.length} zonas</SmallBadge>
                 )}
+                {exactGridPreview?.active && (
+                  <SmallBadge good={exactGridPreview.valid}>
+                    EXACT {exactGridPreview.resolvedCount}/{exactGridPreview.totalCount}
+                  </SmallBadge>
+                )}
                 {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
               </div>
 
@@ -402,12 +416,20 @@ export function AiCityBuilderDock() {
 
               {reconstructionActive && (
                 <div className="max-h-24 overflow-y-auto rounded border border-primary/30 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-                  <b className="text-primary">Remodelagem ampla detectada.</b> Antes do Template, o Studio vai reconstruir somente piso NORMAL seguro: água/costa, colisão/elevação, warps, triggers e regiões ancoradas/fixas permanecem intactos. Pedidos pontuais não ativam esta etapa.
+                  <b className="text-primary">Remodelagem ampla detectada.</b> Antes do Template, o Studio deriva apenas vocabulário de piso real; em modo A+B a escrita final vem do Exact Grid. Água/costa, eventos reservados e física funcional permanecem protegidos.
                   {reconstructionPreview?.warnings[0] ? <span> {reconstructionPreview.warnings[0]}</span> : null}
                 </div>
               )}
 
-              {layeredPreview?.active && layeredPreview.errors.length ? (
+              {exactGridPreview?.active && exactGridPreview.errors.length ? (
+                <div className="max-h-24 overflow-y-auto rounded border border-destructive/35 bg-destructive/5 p-2 text-[9px] leading-relaxed text-destructive">
+                  <b>Exact Grid:</b> {exactGridPreview.errors.join(" ")}
+                </div>
+              ) : exactGridPreview?.active ? (
+                <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-success">
+                  Exact Grid válido: {exactGridPreview.resolvedCount}/{exactGridPreview.totalCount} células finais resolvidas; {exactGridPreview.changedCount} diferem do mapa aberto; checksum {exactGridPreview.checksum}.
+                </div>
+              ) : layeredPreview?.active && layeredPreview.errors.length ? (
                 <div className="max-h-24 overflow-y-auto rounded border border-destructive/35 bg-destructive/5 p-2 text-[9px] leading-relaxed text-destructive">
                   <b>Preflight A+B:</b> {layeredPreview.errors.join(" ")}
                 </div>
@@ -416,6 +438,19 @@ export function AiCityBuilderDock() {
                   Preflight A+B válido: {layeredPreview.assignedCount}/{layeredPreview.eligibleCount} células editáveis atribuídas; {layeredPreview.unsetCount} UNSET/preservadas.
                 </div>
               ) : null}
+
+              {exactGridPreview?.active && exactGridPreview.valid && (
+                <>
+                  <ExactGridPreview grid={exactGridPreview} atlas={atlas} />
+                  <button
+                    type="button"
+                    onClick={exportExactGrid}
+                    className="inline-flex w-full items-center justify-center gap-1 rounded border border-border bg-toolbar px-2 py-1.5 text-[9px] text-muted-foreground hover:bg-surface hover:text-foreground"
+                  >
+                    <Download className="size-3" /> Exportar Exact Grid JSON ({exactGridPreview.totalCount} células)
+                  </button>
+                </>
+              )}
 
               <div className="flex flex-wrap gap-1">
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
@@ -459,7 +494,9 @@ export function AiCityBuilderDock() {
                     )}>
                       <div className="flex items-center gap-1 font-semibold">
                         {planReady ? <Check className="size-3" /> : <X className="size-3" />}
-                        {planReady ? "Plano + camadas aplicáveis" : "Revisão necessária"}
+                        {planReady
+                          ? exactGridPreview?.active ? "Exact Grid aplicável" : "Plano aplicável"
+                          : "Revisão necessária"}
                       </div>
                       {plan && (
                         <div className="mt-1 space-y-0.5 opacity-90">
@@ -467,11 +504,12 @@ export function AiCityBuilderDock() {
                           <p>{plan.routes.length} rota(s)</p>
                           <p>{compiled?.warps.length ?? 0} warp(s)</p>
                           <p>{plan.connections.length} conexão(ões)</p>
+                          {exactGridPreview?.active && <p>{exactGridPreview.resolvedCount}/{exactGridPreview.totalCount} células exatas</p>}
                         </div>
                       )}
                     </div>
                     {compiled?.errors.length ? <div className="max-h-20 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{compiled.errors.join(" ")}</div> : null}
-                    {layeredPreview?.errors.length ? <div className="max-h-20 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{layeredPreview.errors.join(" ")}</div> : null}
+                    {exactGridPreview?.errors.length ? <div className="max-h-20 overflow-y-auto rounded border border-destructive/25 p-1.5 text-[8px] text-destructive">{exactGridPreview.errors.join(" ")}</div> : null}
                     {compiled?.warnings.length ? <div className="max-h-20 overflow-y-auto rounded border border-warning/25 p-1.5 text-[8px] text-warning">{compiled.warnings.join(" ")}</div> : null}
                   </div>
                 </div>
@@ -497,7 +535,7 @@ export function AiCityBuilderDock() {
               onClick={applyPlan}
               className="inline-flex w-full items-center justify-center gap-1 rounded border border-success/50 bg-success/10 px-2 py-2 text-[10px] font-semibold text-success hover:bg-success/20 disabled:pointer-events-none disabled:opacity-35"
             >
-              <Hammer className="size-3.5" /> Aplicar cidade no mapa
+              <Hammer className="size-3.5" /> {exactGridPreview?.active ? `Aplicar Exact Grid ${exactGridPreview.checksum}` : "Aplicar cidade no mapa"}
             </button>
           </div>
         </div>
