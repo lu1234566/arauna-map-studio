@@ -22,6 +22,7 @@ const atlas = {
     { id: 5, source: "primary", localId: 5, behavior: 0x10, layerType: 0, slot: 4 },
     { id: 6, source: "primary", localId: 6, behavior: 0x00, layerType: 1, slot: 5 },
     { id: 7, source: "primary", localId: 7, behavior: 0x00, layerType: 1, slot: 6 },
+    { id: 8, source: "primary", localId: 8, behavior: 0x00, layerType: 0, slot: 7 },
   ],
 } as SavedRealAtlas;
 
@@ -85,7 +86,47 @@ describe("AI post-template fragment polish", () => {
     );
 
     expect(result.clearedCount).toBe(0);
+    expect(result.islandClearedCount).toBe(0);
     expect(result.map.metatiles[protectedFragment]).toBe(6);
     expect(result.map.physical[protectedFragment]).toBe(0x3400);
+  });
+
+  it("clears a larger isolated collidable island surrounded by walkable ground", () => {
+    const map = createEmptyMap(16, 14, 1);
+    const island: number[] = [];
+    for (let y = 5; y <= 7; y++) {
+      for (let x = 6; x <= 9; x++) {
+        const cell = idx(x, y, map.width);
+        island.push(cell);
+        map.metatiles[cell] = 8;
+        map.physical[cell] = 0x3400;
+      }
+    }
+
+    const result = polishAiMapFragments(map, atlas, [layeredContext], [], [1, 2, 3, 4]);
+
+    expect(result.islandClearedCount).toBe(12);
+    for (const cell of island) {
+      expect(result.map.metatiles[cell]).toBe(1);
+      expect(result.map.physical[cell]).toBe(0x3000);
+    }
+  });
+
+  it("keeps a collidable island when it contains a supported layered composition", () => {
+    const map = createEmptyMap(14, 14, 1);
+    for (let y = 0; y < 3; y++) {
+      for (let x = 0; x < 3; x++) {
+        const cell = idx(x + 5, y + 5, map.width);
+        map.metatiles[cell] = layeredContext.values[y * 3 + x] ?? 1;
+        map.physical[cell] = 0x3400;
+      }
+    }
+
+    const result = polishAiMapFragments(map, atlas, [layeredContext], [], [1, 2, 3, 4]);
+
+    expect(result.islandClearedCount).toBe(0);
+    expect(result.layeredPreservedCount).toBeGreaterThan(0);
+    expect(result.map.metatiles[idx(6, 6, map.width)]).toBe(6);
+    expect(result.map.physical[idx(6, 6, map.width)]).toBe(0x3400);
   });
 });
