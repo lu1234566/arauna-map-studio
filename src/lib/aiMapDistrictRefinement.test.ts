@@ -90,7 +90,7 @@ function reconstruction(map = createEmptyMap(20, 14, 1)): AiMapReconstructionPla
 }
 
 describe("AI post-path district refinement", () => {
-  it("expands green districts away from urban paths and keeps the path corridor intact", () => {
+  it("turns a one-cell Smart Path into an urban street corridor and grows green blocks outside it", () => {
     const map = createEmptyMap(20, 14, 1);
     for (let y = 1; y <= 3; y++) {
       for (let x = 1; x <= 3; x++) map.metatiles[idx(x, y, map.width)] = 3;
@@ -108,10 +108,32 @@ describe("AI post-path district refinement", () => {
     );
 
     expect(result.active).toBe(true);
+    expect(result.urbanShoulderCount).toBeGreaterThan(0);
     expect(result.greenAddedCount).toBeGreaterThan(0);
-    expect(result.map.metatiles[idx(2, 7, map.width)]).toBe(6);
+    expect(result.map.metatiles[idx(10, 7, map.width)]).toBe(6);
+    expect(result.map.metatiles[idx(10, 6, map.width)]).toBe(2);
+    expect(result.map.metatiles[idx(10, 8, map.width)]).toBe(2);
     expect(result.map.metatiles[idx(3, 4, map.width)]).toBe(3);
-    expect(result.map.metatiles[idx(10, 9, map.width)]).toBe(1);
+  });
+
+  it("creates a compact urban approach around a warp without overwriting the warp cell", () => {
+    const map = createEmptyMap(16, 16, 1);
+    const warp = { x: 8, y: 8, kind: "warp" as const, label: "W0" };
+
+    const result = refineAiMapDistricts(
+      map,
+      atlas,
+      [green],
+      [warp],
+      [],
+      reconstruction(map),
+      null,
+    );
+
+    expect(result.urbanShoulderCount).toBeGreaterThan(0);
+    expect(result.map.metatiles[idx(8, 8, map.width)]).toBe(1);
+    expect(result.map.metatiles[idx(8, 9, map.width)]).toBe(2);
+    expect(result.map.metatiles[idx(10, 8, map.width)]).toBe(2);
   });
 
   it("reinforces a port promenade near water without changing immediate coast or reserved access", () => {
