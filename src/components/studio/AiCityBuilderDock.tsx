@@ -1,6 +1,7 @@
 import { Bot, Braces, Check, Hammer, Sparkles, WandSparkles, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { applyCompiledAiMap } from "@/lib/aiMapApply";
 import {
   compileAiMapPlan,
   parseAiMapPlanJson,
@@ -9,12 +10,10 @@ import {
   type AiMapPlan,
 } from "@/lib/aiMapPlan";
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
-import { gameReadyStructureConflicts } from "@/lib/aiMapGameReady";
+import { isAiRemodelPrompt } from "@/lib/aiMapReconstruction";
 import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
-import { editorStore, useEditor } from "@/lib/editorStore";
+import { useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
-import { serializeMapTemplates } from "@/lib/mapTemplate";
-import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import { useSmartPath } from "@/lib/smartPathStore";
@@ -27,13 +26,6 @@ warp porta "Casa do jogador"."entrada" -> MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F:
 warp porta "Laboratório"."entrada" -> MAP_LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB:0
 saida norte -> MAP_ROUTE101 offset 0`;
 
-const CONNECTION_DIRECTION = {
-  north: "up",
-  east: "right",
-  south: "down",
-  west: "left",
-} as const;
-
 function SmallBadge({ children, good }: { children: React.ReactNode; good?: boolean }) {
   return (
     <span className={cn(
@@ -43,16 +35,6 @@ function SmallBadge({ children, good }: { children: React.ReactNode; good?: bool
       {children}
     </span>
   );
-}
-
-function connectionIndex(direction: string) {
-  const document = editorStore.getState().mapJsonDocument;
-  const source = document?.["connections"];
-  const connections = Array.isArray(source) ? source : [];
-  return connections.findIndex((value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    return String((value as Record<string, unknown>)["direction"] ?? "") === direction;
-  });
 }
 
 export function AiCityBuilderDock() {
@@ -84,6 +66,8 @@ export function AiCityBuilderDock() {
     editor.map.width,
     editor.map.height,
   ), [editor.events, editor.mapJsonDocument, editor.map.width, editor.map.height]);
+
+  const reconstructionActive = Boolean(editor.mapJsonDocument && isAiRemodelPrompt(prompt));
 
   const vocabulary = useMemo(() => ({
     patterns: compatiblePatterns.map((pattern) => ({
@@ -172,70 +156,18 @@ export function AiCityBuilderDock() {
 
   const applyPlan = () => {
     if (!plan || !compiled?.valid || !compiled.template) return;
-    if (plan.width !== editor.map.width || plan.height !== editor.map.height) {
-      setMessage(`O plano mede ${plan.width}×${plan.height}, mas o mapa aberto mede ${editor.map.width}×${editor.map.height}. Ajuste o comando antes de aplicar.`);
-      return;
-    }
-
-    if (editor.mapJsonDocument) {
-      const conflicts = gameReadyStructureConflicts(compiled.blueprint, compatiblePatterns, reservedCells);
-      if (conflicts.length) {
-        setMessage(
-          `Aplicação bloqueada pela segurança de mapa real: ${conflicts.slice(0, 3).join(" ")} ` +
-            "Peça outra distribuição à IA ou ajuste o JSON sem cobrir eventos existentes.",
-        );
-        return;
-      }
-    }
-
-    const imported = mapTemplateStore.importJson(serializeMapTemplates([compiled.template]));
-    if (!imported.ok) {
-      setMessage(`Falha ao instalar Template: ${imported.message}`);
-      return;
-    }
-    if (!mapTemplateStore.setEnabled(true)) {
-      setMessage("O Template foi salvo, mas não pôde ser ativado. Verifique tileset/Patterns/Smart Paths.");
-      return;
-    }
-    const changes = mapTemplateStore.applyAt(0, 0);
-    mapTemplateStore.setEnabled(false);
-    mapTemplateStore.setPanelOpen(false);
-
-    let topologyApplied = 0;
-    let topologyPending = 0;
-    if (editorStore.getState().mapJsonDocument) {
-      for (const warp of compiled.warps) {
-        const existing = editorStore.getState().events.find(
-          (event) => event.source === "warp" && event.x === warp.x && event.y === warp.y,
-        );
-        const id = existing?.id ?? editorStore.createEvent("warp", warp.x, warp.y);
-        if (!id) continue;
-        editorStore.updateEventField(id, "dest_map", warp.destMap);
-        editorStore.updateEventField(id, "dest_warp_id", warp.destWarpId);
-        topologyApplied++;
-      }
-      for (const connection of compiled.connections) {
-        const direction = CONNECTION_DIRECTION[connection.direction];
-        let index = connectionIndex(direction);
-        if (index < 0) {
-          const created = editorStore.createConnection(direction);
-          if (created == null) continue;
-          index = created;
-        }
-        editorStore.updateConnection(index, "map", connection.map);
-        editorStore.updateConnection(index, "offset", connection.offset);
-        topologyApplied++;
-      }
-    } else {
-      topologyPending = compiled.warps.length + compiled.connections.length;
-    }
-    const topologyText = topologyPending
-      ? ` ${topologyPending} warp/conexão ficaram pendentes porque este mapa ainda não tem map.json aberto.`
-      : topologyApplied
-        ? ` ${topologyApplied} warp/conexão foram criados ou atualizados no map.json.`
-        : "";
+    const result = applyCompiledAiMap({
+      prompt,
+      plan,
+      compiled,
+      atlas,
+      patterns: compatiblePatterns,
+      smartPaths: compatiblePaths,
+      reservedCells,
+    });
+    setMessage(result.message);
+    if (!result.ok) return;
     requestMapCameraFit();
-    setMessage(`Mapa aplicado: ${changes} alteração(ões) de tile/camada.${topologyText}`);
     setOpen(false);
   };
 
@@ -266,6 +198,7 @@ export function AiCityBuilderDock() {
               <SmallBadge good={Boolean(editor.mapJsonDocument)}>{editor.mapJsonDocument ? "map.json ativo" : "sem map.json"}</SmallBadge>
               {editor.mapJsonDocument && <SmallBadge good>{reservedCells.length} células/eventos protegidos</SmallBadge>}
               {atlas && <SmallBadge good>{atlas.secondary.replace(/^gTileset_/, "")}</SmallBadge>}
+              {reconstructionActive && <SmallBadge good>Reconstrução de base ON</SmallBadge>}
               {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
             </div>
 
@@ -286,6 +219,12 @@ export function AiCityBuilderDock() {
               placeholder={'Ex.: "Laboratório no nordeste em (12,3), casa do jogador em (3,12), ligue a entrada da casa à praça e crie a saída norte para MAP_ROUTE101."'}
               className="h-36 w-full resize-y rounded border border-border bg-canvas p-2 text-[10px] leading-relaxed outline-none focus:border-primary/60"
             />
+
+            {reconstructionActive && (
+              <div className="rounded border border-primary/30 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
+                <b className="text-primary">Remodelagem ampla detectada.</b> Antes do Template, o Studio vai reconstruir somente piso NORMAL seguro: água/costa, colisão/elevação, warps, triggers e regiões ancoradas/fixas permanecem intactos. Pedidos pontuais não ativam esta etapa.
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-1">
               <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
