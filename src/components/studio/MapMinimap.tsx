@@ -1,7 +1,8 @@
-import { Map as MapIcon, Minus, Plus } from "lucide-react";
+import { Map as MapIcon, Maximize2, Minus, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TILE_PX } from "@/lib/demoAtlas";
 import { editorStore, useEditor } from "@/lib/editorStore";
+import { requestMapCameraFit } from "@/lib/mapCamera";
 import {
   atlasSourceRect,
   realAtlasStore,
@@ -163,6 +164,14 @@ export function MapMinimap() {
           <span className="font-mono text-[8px] text-muted-foreground">{state.map.width}×{state.map.height}</span>
         </div>
         <div className="ml-3 flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={requestMapCameraFit}
+            className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-surface hover:text-foreground"
+            title="Enquadrar mapa inteiro no editor"
+          >
+            <Maximize2 className="size-3" />
+          </button>
           <button
             type="button"
             onClick={() => editorStore.setZoom(state.zoom - 0.5)}
