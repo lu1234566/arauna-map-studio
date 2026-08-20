@@ -9,6 +9,8 @@ import {
   type AiMapPlan,
 } from "@/lib/aiMapPlan";
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
+import { gameReadyStructureConflicts } from "@/lib/aiMapGameReady";
+import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { serializeMapTemplates } from "@/lib/mapTemplate";
@@ -76,6 +78,13 @@ export function AiCityBuilderDock() {
     !preset.scope || Boolean(atlas && preset.scope.primary === atlas.primary && preset.scope.secondary === atlas.secondary)
   )), [pathState.presets, atlas?.primary, atlas?.secondary]);
 
+  const reservedCells = useMemo(() => deriveAiReservedCells(
+    editor.events,
+    editor.mapJsonDocument,
+    editor.map.width,
+    editor.map.height,
+  ), [editor.events, editor.mapJsonDocument, editor.map.width, editor.map.height]);
+
   const vocabulary = useMemo(() => ({
     patterns: compatiblePatterns.map((pattern) => ({
       id: pattern.id,
@@ -133,6 +142,7 @@ export function AiCityBuilderDock() {
           height: editor.map.height,
           patterns: vocabulary.patterns,
           smartPaths: vocabulary.smartPaths,
+          reservedCells,
         },
       });
       if (!response.ok) {
@@ -166,6 +176,18 @@ export function AiCityBuilderDock() {
       setMessage(`O plano mede ${plan.width}×${plan.height}, mas o mapa aberto mede ${editor.map.width}×${editor.map.height}. Ajuste o comando antes de aplicar.`);
       return;
     }
+
+    if (editor.mapJsonDocument) {
+      const conflicts = gameReadyStructureConflicts(compiled.blueprint, compatiblePatterns, reservedCells);
+      if (conflicts.length) {
+        setMessage(
+          `Aplicação bloqueada pela segurança de mapa real: ${conflicts.slice(0, 3).join(" ")} ` +
+            "Peça outra distribuição à IA ou ajuste o JSON sem cobrir eventos existentes.",
+        );
+        return;
+      }
+    }
+
     const imported = mapTemplateStore.importJson(serializeMapTemplates([compiled.template]));
     if (!imported.ok) {
       setMessage(`Falha ao instalar Template: ${imported.message}`);
@@ -242,17 +264,18 @@ export function AiCityBuilderDock() {
               <SmallBadge good={Boolean(compatiblePaths.length)}>{compatiblePaths.length}/{pathState.presets.length} Smart Paths compatíveis</SmallBadge>
               <SmallBadge>{editor.map.width}×{editor.map.height}</SmallBadge>
               <SmallBadge good={Boolean(editor.mapJsonDocument)}>{editor.mapJsonDocument ? "map.json ativo" : "sem map.json"}</SmallBadge>
+              {editor.mapJsonDocument && <SmallBadge good>{reservedCells.length} células/eventos protegidos</SmallBadge>}
               {atlas && <SmallBadge good>{atlas.secondary.replace(/^gTileset_/, "")}</SmallBadge>}
               {onlineModel && <SmallBadge good>{onlineModel}</SmallBadge>}
             </div>
 
             {editor.mapJsonDocument ? (
               <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-                Mapa real ativo. O Studio usa somente Patterns/Smart Paths compatíveis com <b className="text-foreground">{atlas?.primary ?? "tileset primary"} + {atlas?.secondary ?? "tileset secondary"}</b>. Fachadas e trechos do próprio mapa são adicionados automaticamente ao vocabulário da IA.
+                Mapa real ativo. O Studio usa somente Patterns/Smart Paths compatíveis com <b className="text-foreground">{atlas?.primary ?? "tileset primary"} + {atlas?.secondary ?? "tileset secondary"}</b>. Fachadas, trechos e eventos do próprio mapa entram automaticamente no planejamento, e uma verificação local bloqueia prédios sobre warps/triggers/NPCs.
               </div>
             ) : (
               <div className="rounded border border-warning/35 bg-warning/5 p-2 text-[9px] leading-relaxed text-warning">
-                Para gerar um mapa que possa entrar no jogo, prefira <b>Workspace → abrir o mapa real</b>. Um BIN isolado não informa layout/tileset, warps, NPCs ou conexões; por isso o atlas pode estar errado e o vocabulário automático fica limitado.
+                Para gerar um mapa que possa entrar no jogo, prefira <b>Workspace → abrir o mapa real</b>. Um BIN isolado não informa layout/tileset, warps, NPCs ou conexões; importe também o map.json ou use Workspace.
               </div>
             )}
 
