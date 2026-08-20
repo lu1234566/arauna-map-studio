@@ -1,6 +1,12 @@
 import { AI_MAP_PLAN_FORMAT, parseAiMapPlanJson, type AiMapPlan } from "./aiMapPlan";
 
 const COLLECTION_KEYS = ["structures", "routes", "warps", "connections"] as const;
+const DIRECTION_ALIASES: Record<string, string[]> = {
+  north: ["north", "norte", "up"],
+  east: ["east", "leste", "right"],
+  south: ["south", "sul", "down"],
+  west: ["west", "oeste", "left"],
+};
 
 export interface AiProviderPatternPortRef {
   id: string;
@@ -207,11 +213,48 @@ function reconcileWarpSource(
   return { ...value, source: { structure: structureId, port } };
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function explicitConnectionMapInPrompt(direction: string, prompt: string) {
+  const aliases = DIRECTION_ALIASES[normalizeText(direction)];
+  if (!aliases?.length || !prompt.trim()) return null;
+  const directionPattern = aliases.map(escapeRegex).join("|");
+  const expression = new RegExp(
+    `(?:sa[ií]da|conex[aã]o)[\\s\\S]{0,160}?\\b(?:${directionPattern})\\b[\\s\\S]{0,500}?\\b(MAP_[A-Z0-9_]+)\\b`,
+    "giu",
+  );
+  const destinations = new Set<string>();
+  for (const match of prompt.matchAll(expression)) {
+    const destination = match[1]?.trim();
+    if (destination) destinations.add(destination);
+  }
+  return destinations.size === 1 ? [...destinations][0]! : null;
+}
+
+function reconcileConnection(value: unknown, defaults: AiProviderPlanDefaults) {
+  if (!isRecord(value)) return value;
+  const direct = firstNonEmptyString(value, [
+    "map",
+    "destMap",
+    "dest_map",
+    "destination",
+    "destinationMap",
+  ]);
+  if (direct) return value["map"] === direct ? value : { ...value, map: direct };
+
+  const direction = firstNonEmptyString(value, ["direction", "dir"]);
+  const destination = explicitConnectionMapInPrompt(direction, defaults.prompt ?? "");
+  return destination ? { ...value, map: destination } : value;
+}
+
 /**
  * Normaliza pequenas variações comuns de provedores de IA antes de entregar o
  * plano ao compilador. Além de item único -> lista, reconcilia apenas campos
- * técnicos determinísticos. Warps sem source só são reparados quando destino,
- * estrutura e porta podem ser associados sem ambiguidade ao prompt.
+ * técnicos determinísticos. Warps e conexões incompletos só são reparados
+ * quando destino, estrutura/porta ou direção podem ser associados sem
+ * ambiguidade ao prompt original.
  */
 export function parseAiProviderPlan(
   source: string,
@@ -231,6 +274,8 @@ export function parseAiProviderPlan(
     .map((value) => reconcileStructure(value, defaults));
   normalized["warps"] = (normalized["warps"] as unknown[])
     .map((value) => reconcileWarpSource(value, normalized["structures"] as unknown[], defaults));
+  normalized["connections"] = (normalized["connections"] as unknown[])
+    .map((value) => reconcileConnection(value, defaults));
 
   const format = typeof parsed["format"] === "string" ? parsed["format"].trim() : "";
   normalized["format"] = format || AI_MAP_PLAN_FORMAT;
