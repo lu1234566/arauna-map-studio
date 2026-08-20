@@ -8,6 +8,18 @@ export interface PatternScope {
   secondary: string;
 }
 
+export type CardinalDirection = "north" | "east" | "south" | "west";
+export type PatternPortKind = "door" | "entrance" | "exit" | "connection";
+
+export interface PatternPort {
+  id: string;
+  name: string;
+  kind: PatternPortKind;
+  x: number;
+  y: number;
+  direction?: CardinalDirection;
+}
+
 export interface MapPattern {
   format: typeof MAP_PATTERN_FORMAT;
   id: string;
@@ -18,6 +30,7 @@ export interface MapPattern {
   height: number;
   kind: ClipboardKind;
   values: number[];
+  ports?: PatternPort[];
   scope?: PatternScope;
   createdAt: string;
   updatedAt: string;
@@ -29,12 +42,33 @@ export interface PatternValidation {
   warnings: string[];
 }
 
+const PORT_KINDS = new Set<PatternPortKind>(["door", "entrance", "exit", "connection"]);
+const DIRECTIONS = new Set<CardinalDirection>(["north", "east", "south", "west"]);
+
 function validValue(kind: ClipboardKind, value: number) {
   if (!Number.isInteger(value) || value < 0) return false;
   if (kind === "visual") return value <= METATILE_MASK;
   if (kind === "collision") return value <= 3;
   if (kind === "elevation") return value <= 15;
   return value <= 0xffff;
+}
+
+function parsePorts(value: unknown): PatternPort[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry, index) => {
+    const raw = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? entry as Record<string, unknown>
+      : {};
+    const direction = raw.direction == null ? undefined : String(raw.direction) as CardinalDirection;
+    return {
+      id: String(raw.id ?? `port-${index + 1}`),
+      name: String(raw.name ?? `Acesso ${index + 1}`),
+      kind: String(raw.kind ?? "entrance") as PatternPortKind,
+      x: Number(raw.x),
+      y: Number(raw.y),
+      ...(direction ? { direction } : {}),
+    };
+  });
 }
 
 export function validateMapPattern(pattern: MapPattern): PatternValidation {
@@ -59,6 +93,25 @@ export function validateMapPattern(pattern: MapPattern): PatternValidation {
     const invalid = pattern.values.filter((value) => !validValue(pattern.kind, value)).length;
     if (invalid) errors.push(`${invalid} valor(es) fora da faixa permitida para ${pattern.kind}.`);
   }
+
+  const portIds = new Set<string>();
+  for (const [index, port] of (pattern.ports ?? []).entries()) {
+    const label = `Acesso ${index + 1}`;
+    if (!port.id.trim()) errors.push(`${label}: id vazio.`);
+    else if (portIds.has(port.id)) errors.push(`${label}: id duplicado “${port.id}”.`);
+    else portIds.add(port.id);
+    if (!port.name.trim()) errors.push(`${label}: nome vazio.`);
+    if (!PORT_KINDS.has(port.kind)) errors.push(`${label}: tipo inválido “${String(port.kind)}”.`);
+    if (!Number.isInteger(port.x) || !Number.isInteger(port.y)) {
+      errors.push(`${label}: coordenadas relativas precisam ser inteiras.`);
+    } else if (port.x < 0 || port.y < 0 || port.x >= pattern.width || port.y >= pattern.height) {
+      errors.push(`${label}: (${port.x},${port.y}) está fora do pattern ${pattern.width}×${pattern.height}.`);
+    }
+    if (port.direction && !DIRECTIONS.has(port.direction)) {
+      errors.push(`${label}: direção inválida “${String(port.direction)}”.`);
+    }
+  }
+
   if (pattern.scope && (!pattern.scope.primary.trim() || !pattern.scope.secondary.trim())) {
     errors.push("Escopo de tileset incompleto.");
   }
@@ -84,6 +137,7 @@ export function patternFromClipboard(
     height: clipboard.height,
     kind: clipboard.kind,
     values: Array.from(clipboard.values),
+    ports: [],
     ...(scope ? { scope: { ...scope } } : {}),
     createdAt: now,
     updatedAt: now,
@@ -127,6 +181,7 @@ export function parseMapPatternJson(source: string): MapPattern[] {
       height: Number(raw.height),
       kind: String(raw.kind ?? "visual") as ClipboardKind,
       values: Array.isArray(raw.values) ? raw.values.map(Number) : [],
+      ports: parsePorts(raw.ports),
       ...(scope ? { scope } : {}),
       createdAt: String(raw.createdAt ?? new Date().toISOString()),
       updatedAt: String(raw.updatedAt ?? new Date().toISOString()),
