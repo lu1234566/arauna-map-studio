@@ -336,8 +336,8 @@ export function applyCompiledAiMap({
   const districtText = districts?.active && (districts.greenAddedCount || districts.portPromenadeCount)
     ? ` Bairros pós-vias: ${districts.greenAddedCount} célula(s) verdes e ${districts.portPromenadeCount} célula(s) de promenade portuária, preservando ${districts.pathCorridorCount} célula(s) de circulação.`
     : "";
-  const polishText = polish && (polish.clearedCount || polish.layeredPreservedCount)
-    ? ` Vizinhança GBA: ${polish.clearedCount} fragmento(s) órfão(s) removido(s) e ${polish.layeredPreservedCount} overlay(s) layered contextual(is) preservado(s).`
+  const polishText = polish && (polish.clearedCount || polish.islandClearedCount || polish.layeredPreservedCount)
+    ? ` Vizinhança GBA: ${polish.clearedCount} fragmento(s) contextual(is), ${polish.islandClearedCount} célula(s) de ilhas colidíveis isoladas removidas e ${polish.layeredPreservedCount} overlay(s) layered com suporte real preservado(s).`
     : "";
   const contextText = effective.removed
     ? ` ${effective.removed} patch(es) RAW de contexto excedentes foram omitidos para evitar efeito mosaico.`
