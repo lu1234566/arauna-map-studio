@@ -3,6 +3,7 @@ import { gameReadyStructureConflicts } from "./aiMapGameReady";
 import { refineAiMapDistricts } from "./aiMapDistrictRefinement";
 import { polishAiMapFragments } from "./aiMapFragmentPolish";
 import { planAiMapIdentityBase } from "./aiMapIdentity";
+import { finishLayeredPromptMap, planLayeredPromptBase } from "./aiLayeredPrompt";
 import type { AiMapCompileResult, AiMapPlan } from "./aiMapPlan";
 import {
   isAiRemodelPrompt,
@@ -60,8 +61,9 @@ function contextPatchKind(pattern: MapPattern): ContextPatchKind | null {
 
 /**
  * Recortes RAW de contexto são úteis como acento, não como textura de preenchimento.
- * Durante remodelagem ampla limitamos cada família a dois patches; prédios com
- * warp-anchor/fixed-origin e demais Patterns semânticos não entram no limite.
+ * Durante remodelagem ampla clássica limitamos cada família a dois patches.
+ * O pipeline por camadas não usa esse limite: o finish layer decide deterministicamente
+ * quais detalhes podem sobreviver dentro de cada zona.
  */
 function limitContextPatches(template: MapTemplate, patterns: MapPattern[]) {
   const byId = new Map(patterns.map((pattern) => [pattern.id, pattern]));
@@ -209,8 +211,32 @@ export function applyCompiledAiMap({
   const identity = reconstructionEnabled && reconstruction
     ? planAiMapIdentityBase(reconstructedMap, atlas, patterns, reservedCells, reconstruction)
     : null;
-  const sourceMap = identity?.map ?? reconstructedMap;
-  const effective = reconstructionEnabled
+
+  const layered = reconstructionEnabled && reconstruction
+    ? planLayeredPromptBase(
+        editor.map,
+        prompt,
+        atlas,
+        patterns,
+        reservedCells,
+        reconstruction,
+        identity?.portMetatile ?? null,
+        compiled.blueprint,
+      )
+    : null;
+  if (layered?.active && layered.errors.length) {
+    return {
+      ok: false,
+      message: `Aplicação bloqueada pelo compilador de camadas: ${layered.errors.slice(0, 3).join(" ")}`,
+      changes: 0,
+      topologyApplied: 0,
+      topologyPending: 0,
+      reconstruction,
+    };
+  }
+
+  const sourceMap = layered?.active ? layered.map : identity?.map ?? reconstructedMap;
+  const effective = reconstructionEnabled && !layered?.active
     ? limitContextPatches(compiled.template, patterns)
     : { template: compiled.template, removed: 0 };
 
@@ -265,7 +291,7 @@ export function applyCompiledAiMap({
   mapTemplateStore.setEnabled(false);
   mapTemplateStore.setPanelOpen(false);
 
-  const districts = reconstructionEnabled && reconstruction
+  const districts = !layered?.active && reconstructionEnabled && reconstruction
     ? refineAiMapDistricts(
         templatePlan.map,
         atlas,
@@ -277,23 +303,34 @@ export function applyCompiledAiMap({
       )
     : null;
   const districtMap = districts?.map ?? templatePlan.map;
+  const layeredFinish = layered?.active
+    ? finishLayeredPromptMap(districtMap, layered, atlas, smartPaths)
+    : null;
+  const finishedMap = layeredFinish?.map ?? districtMap;
+
   const surfaces = [
     reconstruction?.baseMetatile,
     reconstruction?.urbanMetatile,
     reconstruction?.greenMetatile,
     identity?.portMetatile,
   ];
-  const polish = reconstructionEnabled
-    ? polishAiMapFragments(districtMap, atlas, patterns, reservedCells, surfaces)
+  const polish = reconstructionEnabled && !layered?.active
+    ? polishAiMapFragments(finishedMap, atlas, patterns, reservedCells, surfaces)
     : null;
-  const finalMap = polish?.map ?? districtMap;
-  const touched = [
-    ...(reconstruction?.touched ?? []),
-    ...(identity?.touched ?? []),
-    ...templatePlan.touched,
-    ...(districts?.touched ?? []),
-    ...(polish?.touched ?? []),
-  ];
+  const finalMap = polish?.map ?? finishedMap;
+  const touched = layered?.active
+    ? [
+        ...layered.touched,
+        ...templatePlan.touched,
+        ...(layeredFinish?.touched ?? []),
+      ]
+    : [
+        ...(reconstruction?.touched ?? []),
+        ...(identity?.touched ?? []),
+        ...templatePlan.touched,
+        ...(districts?.touched ?? []),
+        ...(polish?.touched ?? []),
+      ];
   const changes = applyTargetMap(finalMap, touched);
 
   let topologyApplied = 0;
@@ -325,15 +362,24 @@ export function applyCompiledAiMap({
     topologyPending = compiled.warps.length + compiled.connections.length;
   }
 
-  const reconstructionText = reconstructionEnabled
+  const layeredText = layered?.active
+    ? ` Zone-first: ${layered.parsed.zones.filter((zone) => zone.kind === "ground").length} zona(s) de solo e ${layered.parsed.zones.filter((zone) => zone.kind === "road").length} corredor(es) controlaram ${layered.assignedCount}/${layered.eligibleCount} célula(s) editáveis; ${layered.unsetCount} permaneceram UNSET/preservadas.`
+    : "";
+  const finishText = layeredFinish?.active
+    ? ` Finish layer: ${layeredFinish.enforcedCount} célula(s) foram reimpostas ao material exato da zona, ${layeredFinish.pathPreservedCount} célula(s) de via e ${layeredFinish.detailPreservedCount} célula(s) de detalhe permitido foram preservadas.`
+    : "";
+  const detailText = layered?.active && (layered.detailPreservedCount || layered.detailRejectedCount)
+    ? ` Detalhes: ${layered.detailPreservedCount} placement(s) contextual(is) respeitaram sua zona e ${layered.detailRejectedCount} foram rejeitados por material/posição.`
+    : "";
+  const reconstructionText = reconstructionEnabled && !layered?.active
     ? reconstruction?.changedCount
       ? ` Reconstrução contextual: ${reconstruction.changedCount} célula(s) normalizadas antes da composição (${reconstruction.urbanChangedCount} urbanas, ${reconstruction.greenChangedCount} verdes, ${reconstruction.baseChangedCount} de base comum).`
       : ` Reconstrução de base ativada, sem células seguras para normalizar.${reconstruction?.warnings.length ? ` ${reconstruction.warnings[0]}` : ""}`
     : "";
-  const identityText = identity?.active && (identity.portChangedCount || identity.greenExpandedCount)
+  const identityText = !layered?.active && identity?.active && (identity.portChangedCount || identity.greenExpandedCount)
     ? ` Identidade portuária: ${identity.portChangedCount} acento(s) de porto e ${identity.greenExpandedCount} expansão(ões) verdes.`
     : "";
-  const districtText = districts?.active && (districts.greenAddedCount || districts.urbanShoulderCount || districts.portPromenadeCount)
+  const districtText = !layered?.active && districts?.active && (districts.greenAddedCount || districts.urbanShoulderCount || districts.portPromenadeCount)
     ? ` Quadras pós-vias: ${districts.urbanShoulderCount} célula(s) de calçadas/aproximações urbanas, ${districts.greenAddedCount} célula(s) verdes e ${districts.portPromenadeCount} célula(s) de promenade, preservando ${districts.pathCorridorCount} célula(s) de circulação.`
     : "";
   const polishText = polish && (polish.clearedCount || polish.islandClearedCount || polish.layeredPreservedCount)
@@ -350,7 +396,7 @@ export function applyCompiledAiMap({
 
   return {
     ok: true,
-    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${reconstructionText}${identityText}${districtText}${polishText}${contextText}${topologyText}`,
+    message: `Mapa aplicado: ${changes} alteração(ões) de tile/camada.${layeredText}${finishText}${detailText}${reconstructionText}${identityText}${districtText}${polishText}${contextText}${topologyText}`,
     changes,
     topologyApplied,
     topologyPending,
