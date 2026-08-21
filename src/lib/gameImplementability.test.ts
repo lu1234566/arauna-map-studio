@@ -10,11 +10,11 @@ const atlas: FingerprintAtlas = {
   records: [{ id: 1, behavior: 0x00, layerType: 0 }],
 };
 
-function openMap(width = 5, height = 5): MapData {
+function openMap(width = 5, height = 5, metatile = 1): MapData {
   return {
     width,
     height,
-    metatiles: Uint16Array.from({ length: width * height }, () => 1),
+    metatiles: Uint16Array.from({ length: width * height }, () => metatile),
     physical: Uint16Array.from({ length: width * height }, () => 0x3000),
   };
 }
@@ -66,7 +66,72 @@ describe("game implementability audit", () => {
     expect(has(report, "ROUNDTRIP_OK")).toBe(true);
   });
 
-  it("catches blocked and out-of-bounds warps plus invalid loaded destination", () => {
+  it("accepts vanilla null collections and MAP_DYNAMIC with symbolic warp id", () => {
+    const mapJson = baseJson();
+    mapJson.connections = null;
+    mapJson.warp_events = [
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "MAPJSON_CONNECTIONS_TYPE")).toBe(false);
+    expect(has(report, "WARP_DEST_ID_INVALID")).toBe(false);
+    expect(has(report, "WARP_DEST_UNVERIFIED")).toBe(false);
+    expect(has(report, "WARP_DYNAMIC_DEST_OK")).toBe(true);
+    expect(report.pass).toBe(true);
+  });
+
+  it("accepts a Slateport-style first connection-margin warp and verifies the neighbor tile", () => {
+    const map = openMap(40, 60);
+    const mapJson = baseJson();
+    mapJson.id = "MAP_SLATEPORT_CITY";
+    mapJson.name = "SlateportCity";
+    mapJson.layout = "LAYOUT_SLATEPORT_CITY";
+    mapJson.connections = [{ map: "MAP_ROUTE134", offset: 0, direction: "right" }];
+    mapJson.warp_events = [
+      { x: 40, y: 7, elevation: 0, dest_map: "MAP_SLATEPORT_CITY_HARBOR", dest_warp_id: "0" },
+    ];
+
+    const routeJson = baseJson("MAP_ROUTE134");
+    routeJson.connections = [{ map: "MAP_SLATEPORT_CITY", offset: 0, direction: "left" }];
+    const routeMap = openMap(80, 40, 2);
+    const routeAtlas: FingerprintAtlas = {
+      primary: "gTileset_General",
+      secondary: "gTileset_Pacifidlog",
+      records: [{ id: 2, behavior: 0x15, layerType: 0 }], // MB_OCEAN_WATER
+    };
+
+    const harborJson = baseJson("MAP_SLATEPORT_CITY_HARBOR");
+    harborJson.warp_events = [
+      { x: 1, y: 1, elevation: 0, dest_map: "MAP_SLATEPORT_CITY", dest_warp_id: "0" },
+    ];
+
+    const report = auditGameImplementability({
+      map,
+      mapJson,
+      atlas,
+      workspaceContext: {
+        sourceMapId: "MAP_SLATEPORT_CITY",
+        maps: {
+          MAP_ROUTE134: {
+            map: routeMap,
+            mapJson: routeJson,
+            width: 80,
+            height: 40,
+            atlas: routeAtlas,
+          },
+          MAP_SLATEPORT_CITY_HARBOR: { mapJson: harborJson },
+        },
+      },
+    });
+
+    expect(has(report, "WARP_OUT_OF_BOUNDS")).toBe(false);
+    expect(has(report, "WARP_EDGE_TARGET_OK")).toBe(true);
+    expect(has(report, "WARP_EDGE_TARGET_BLOCKED")).toBe(false);
+    expect(has(report, "WARP_EDGE_TARGET_UNKNOWN")).toBe(false);
+    expect(has(report, "WARP_RECIPROCAL_OK")).toBe(true);
+  });
+
+  it("catches blocked and truly out-of-bounds warps plus invalid loaded destination", () => {
     const map = openMap();
     map.physical[1 * map.width + 1] = 0x3400;
     const mapJson = baseJson();
@@ -131,10 +196,7 @@ describe("game implementability audit", () => {
   it("checks accessibility only inside the border interval selected by connection offset", () => {
     const map = openMap();
     map.physical.fill(0x3400);
-    // Main component reaches an irrelevant opening on the right border at y=0.
     for (let x = 0; x < map.width; x++) map.physical[x] = 0x3000;
-    // The actual overlap for offset 3 against a height-2 neighbor is y=3..4.
-    // Keep only y=4 open there, isolated from the main component.
     map.physical[4 * map.width + 4] = 0x3000;
 
     const mapJson = baseJson();
@@ -153,6 +215,45 @@ describe("game implementability audit", () => {
     });
     expect(has(report, "ACCESS_CONNECTION_ISOLATED")).toBe(true);
     expect(report.pass).toBe(false);
+  });
+
+  it("treats recognized ocean traversal as verified conditional, not unknown", () => {
+    const waterAtlas: FingerprintAtlas = {
+      primary: "gTileset_General",
+      secondary: "gTileset_Slateport",
+      records: [{ id: 1, behavior: 0x15, layerType: 0 }],
+    };
+    const mapJson = baseJson();
+    mapJson.connections = [{ map: "MAP_B", offset: 0, direction: "right" }];
+    const neighbor = baseJson("MAP_B");
+    neighbor.connections = [{ map: "MAP_A", offset: 0, direction: "left" }];
+    const report = auditGameImplementability({
+      map: openMap(),
+      mapJson,
+      atlas: waterAtlas,
+      workspaceContext: {
+        sourceMapId: "MAP_A",
+        maps: { MAP_B: { mapJson: neighbor, width: 5, height: 5 } },
+      },
+    });
+    expect(has(report, "CONNECTION_BORDER_CONDITIONAL_OK")).toBe(true);
+    expect(has(report, "CONNECTION_BORDER_UNKNOWN")).toBe(false);
+    expect(has(report, "ACCESS_CONNECTION_REQUIRES_UNKNOWN")).toBe(false);
+  });
+
+  it("does not turn a recognized warp-door behavior into an unresolved warning", () => {
+    const doorAtlas: FingerprintAtlas = {
+      primary: "gTileset_General",
+      secondary: "gTileset_Slateport",
+      records: [{ id: 1, behavior: 0x69, layerType: 0 }], // MB_ANIMATED_DOOR
+    };
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas: doorAtlas });
+    expect(has(report, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR")).toBe(false);
+    expect(has(report, "ACCESS_WARP_ENGINE_BEHAVIOR_OK")).toBe(true);
   });
 
   it("catches NPC spawn collision and movement range leaving map", () => {
@@ -209,14 +310,14 @@ describe("game implementability audit", () => {
     map.physical[0] = 0x3000;
     const mapJson = baseJson();
     mapJson.warp_events = [
-      { x: 0, y: 0, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "-1" },
+      { x: 0, y: 0, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
     ];
     const report = auditGameImplementability({ map, mapJson, atlas });
     expect(has(report, "ACCESS_WARP_ISOLATED")).toBe(true);
     expect(report.pass).toBe(false);
   });
 
-  it("never hides uncertainty when no strict-passable component exists", () => {
+  it("never hides uncertainty when no verified component exists", () => {
     const unknownAtlas: FingerprintAtlas = {
       primary: "gTileset_General",
       secondary: "gTileset_Slateport",
@@ -224,10 +325,11 @@ describe("game implementability audit", () => {
     };
     const mapJson = baseJson();
     mapJson.warp_events = [
-      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "-1" },
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
     ];
     const report = auditGameImplementability({ map: openMap(), mapJson, atlas: unknownAtlas });
-    expect(has(report, "ACCESS_NO_STRICT_COMPONENT")).toBe(true);
+    expect(has(report, "ACCESS_NO_VERIFIED_COMPONENT")).toBe(true);
+    expect(has(report, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR")).toBe(true);
     expect(report.fullyVerified).toBe(false);
   });
 
