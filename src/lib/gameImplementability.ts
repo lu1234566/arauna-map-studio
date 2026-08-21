@@ -108,6 +108,7 @@ export interface GameImplementabilityInput {
     primary?: string | null;
     secondary?: string | null;
     atlasFingerprint?: string | null;
+    atlasRecordCount?: number | null;
   } | null;
   workspaceContext?: ImplementabilityWorkspaceContext | null;
   bundle?: AraunaCityBundle | null;
@@ -173,6 +174,9 @@ const SYMBOLIC_WARP_IDS: Record<string, number> = {
   WARP_ID_DYNAMIC: 0x7f,
 };
 
+/** MetatileBehavior_IsWarpDoor no pokeemerald retorna true só para MB_ANIMATED_DOOR. */
+const MB_ANIMATED_DOOR = 0x69;
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -196,6 +200,13 @@ function integerLike(value: unknown): number | null {
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+/** mapjson aceita tokens C como string e também escalares numéricos. */
+function asmScalar(value: unknown): string | null {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
 }
 
 function inBounds(map: MapData, x: number, y: number): boolean {
@@ -243,6 +254,10 @@ function resolveWorkspaceContext(
   const active = getWorkspaceAuditContext();
   const mapId = text(input.mapJson?.id);
   if (!active || !mapId || active.sourceMapId !== mapId) return null;
+  // Um contexto coletado antes de editar/importar outro documento com o mesmo
+  // MAP_* não pode certificar a versão nova. O Workspace guarda a referência
+  // exata do documento em memória usado para montar o contexto.
+  if (active.maps[mapId]?.mapJson !== input.mapJson) return null;
   return active;
 }
 
@@ -292,7 +307,11 @@ function auditGrid(input: GameImplementabilityInput, issues: ImplementabilityIss
   }
 }
 
-function auditTilesets(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
+function auditTilesets(
+  input: GameImplementabilityInput,
+  issues: ImplementabilityIssue[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+) {
   const { map, atlas, declaredTilesets } = input;
   if (!atlas) {
     issue(issues, "ATLAS_NOT_LOADED", "warning", "tilesets", "Atlas GBA real não está carregado; metatiles e behaviors não podem ser certificados.");
@@ -317,7 +336,57 @@ function auditTilesets(input: GameImplementabilityInput, issues: Implementabilit
     issue(issues, "ATLAS_METATILES_OK", "info", "tilesets", `Todos os metatiles usados existem no atlas ativo (${atlas.records.length} registros).`);
   }
 
+  const mapId = text(input.mapJson?.id);
+  const expectedAtlas = mapId ? workspaceContext?.maps[mapId]?.atlas : null;
+  if (!expectedAtlas) {
+    const loadError = mapId ? workspaceContext?.loadErrors?.[mapId] : null;
+    issue(
+      issues,
+      "ATLAS_LAYOUT_UNVERIFIED",
+      "warning",
+      "tilesets",
+      `O par de tilesets do layout real não foi certificado pelo Workspace${loadError ? ` (${loadError})` : ""}; o atlas ativo sozinho não prova que pertence a este layout.`,
+    );
+  } else {
+    const expectedFingerprint = atlasFingerprint(expectedAtlas);
+    const activeFingerprint = atlasFingerprint(atlas);
+    if (
+      atlas.primary !== expectedAtlas.primary ||
+      atlas.secondary !== expectedAtlas.secondary ||
+      activeFingerprint !== expectedFingerprint
+    ) {
+      issue(
+        issues,
+        "ATLAS_LAYOUT_MISMATCH",
+        "error",
+        "tilesets",
+        `Atlas ativo (${atlas.primary ?? "?"} + ${atlas.secondary ?? "?"}, ${activeFingerprint}) difere do par exigido por layouts.json (${expectedAtlas.primary ?? "?"} + ${expectedAtlas.secondary ?? "?"}, ${expectedFingerprint}).`,
+      );
+    } else {
+      issue(
+        issues,
+        "ATLAS_LAYOUT_OK",
+        "info",
+        "tilesets",
+        `Atlas ativo corresponde ao par real de layouts.json: ${atlas.primary} + ${atlas.secondary} (${activeFingerprint}).`,
+      );
+    }
+  }
+
   if (!declaredTilesets) return;
+  if (
+    !declaredTilesets.primary ||
+    !declaredTilesets.secondary ||
+    !declaredTilesets.atlasFingerprint
+  ) {
+    issue(
+      issues,
+      "ATLAS_DECLARATION_INCOMPLETE",
+      "warning",
+      "tilesets",
+      "O bundle não declara primary + secondary + atlasFingerprint completos; pode ser importado para revisão, mas não certificado como Game-ready.",
+    );
+  }
   if (declaredTilesets.primary && atlas.primary && declaredTilesets.primary !== atlas.primary) {
     issue(issues, "ATLAS_PRIMARY_MISMATCH", "error", "tilesets", `Primary do bundle (${declaredTilesets.primary}) difere do atlas (${atlas.primary}).`);
   }
@@ -329,6 +398,19 @@ function auditTilesets(input: GameImplementabilityInput, issues: Implementabilit
     if (active !== declaredTilesets.atlasFingerprint) {
       issue(issues, "ATLAS_FINGERPRINT_MISMATCH", "error", "tilesets", `Fingerprint do atlas ativo (${active}) difere do bundle (${declaredTilesets.atlasFingerprint}).`);
     }
+  }
+  if (
+    declaredTilesets.atlasRecordCount !== undefined &&
+    declaredTilesets.atlasRecordCount !== null &&
+    declaredTilesets.atlasRecordCount !== atlas.records.length
+  ) {
+    issue(
+      issues,
+      "ATLAS_RECORD_COUNT_MISMATCH",
+      "error",
+      "tilesets",
+      `Bundle declara ${declaredTilesets.atlasRecordCount} registros de atlas; ativo possui ${atlas.records.length}.`,
+    );
   }
 }
 
@@ -441,6 +523,34 @@ function auditEdgeWarpTransition(
   issue(issues, "WARP_EDGE_CONNECTION_MISMATCH", "error", "warps", `Warp ${eventIndex} está na margem ${direction}, mas nenhuma conexão dessa borda cobre sua coordenada após aplicar o offset.`, loc);
 }
 
+function bgInteractionPoints(entry: Record<string, unknown>, point: MapPoint): MapPoint[] {
+  if (entry.type !== "sign") {
+    return [
+      { x: point.x + 1, y: point.y },
+      { x: point.x - 1, y: point.y },
+      { x: point.x, y: point.y + 1 },
+      { x: point.x, y: point.y - 1 },
+    ];
+  }
+  switch (entry.player_facing_dir) {
+    case "BG_EVENT_PLAYER_FACING_NORTH":
+      return [{ x: point.x, y: point.y + 1 }];
+    case "BG_EVENT_PLAYER_FACING_SOUTH":
+      return [{ x: point.x, y: point.y - 1 }];
+    case "BG_EVENT_PLAYER_FACING_EAST":
+      return [{ x: point.x - 1, y: point.y }];
+    case "BG_EVENT_PLAYER_FACING_WEST":
+      return [{ x: point.x + 1, y: point.y }];
+    default:
+      return [
+        { x: point.x + 1, y: point.y },
+        { x: point.x - 1, y: point.y },
+        { x: point.x, y: point.y + 1 },
+        { x: point.x, y: point.y - 1 },
+      ];
+  }
+}
+
 function auditEvents(
   input: GameImplementabilityInput,
   issues: ImplementabilityIssue[],
@@ -478,7 +588,19 @@ function auditEvents(
 
     const loc = { eventSource: "warp" as const, eventIndex, ...point };
     if (inside && (collisionAt(map, point.x, point.y) ?? 0) > 0) {
-      issue(issues, "WARP_BLOCKED", "error", "warps", `Warp ${eventIndex} está sobre collision > 0.`, loc);
+      const tile = input.atlas ? cellPassability(map, point.x, point.y, input.atlas) : null;
+      if (tile?.behavior === MB_ANIMATED_DOOR) {
+        issue(
+          issues,
+          "WARP_ANIMATED_DOOR_COLLISION_OK",
+          "info",
+          "warps",
+          `Warp ${eventIndex} está em porta animada com collision > 0; TryDoorWarp aciona esse warp a partir da célula em frente sem exigir que o jogador ocupe o tile da porta.`,
+          loc,
+        );
+      } else {
+        issue(issues, "WARP_BLOCKED", "error", "warps", `Warp ${eventIndex} está sobre collision > 0 sem uma regra de entrada de porta animada reconhecida.`, loc);
+      }
     } else if (edge) {
       auditEdgeWarpTransition(input, issues, workspaceContext, eventIndex, point);
     }
@@ -578,6 +700,36 @@ function auditEvents(
       return;
     }
     const loc = { eventSource: "object" as const, eventIndex, ...point };
+    const objectType = text(entry.type);
+    if (objectType === "clone") {
+      issue(
+        issues,
+        "NPC_CLONE_UNSUPPORTED_EMERALD",
+        "error",
+        "npcs",
+        `Object event ${eventIndex} usa type=clone. O próprio macro clone_event do projeto documenta que o handling não existe no Emerald padrão e é exclusivo de FRLG.`,
+        loc,
+      );
+      return;
+    }
+    if (objectType && objectType !== "object") {
+      issue(issues, "NPC_TYPE_INVALID", "error", "npcs", `Object event ${eventIndex} possui type=${objectType}; mapjson aceita somente object/clone.`, loc);
+      return;
+    }
+
+    for (const key of [
+      "graphics_id",
+      "movement_type",
+      "trainer_type",
+      "trainer_sight_or_berry_tree_id",
+      "script",
+      "flag",
+    ] as const) {
+      if (!asmScalar(entry[key])) {
+        issue(issues, "NPC_REQUIRED_FIELD_MISSING", "error", "npcs", `Object event ${eventIndex}: campo obrigatório ${key} ausente/vazio para object_event.`, loc);
+      }
+    }
+
     const elevation = eventElevation(entry);
     if (elevation === null) {
       issue(issues, "NPC_ELEVATION_INVALID", "error", "npcs", `NPC ${eventIndex} possui elevation inválida (${String(entry.elevation)}); esperado inteiro 0–15.`, loc);
@@ -661,21 +813,61 @@ function auditEvents(
       seenCells.set(cellKey, current);
 
       if (eventSource === "coord") {
-        const signature = `${cellKey}|${String(entry.var ?? entry.trigger ?? "")}|${String(entry.var_value ?? entry.index ?? "")}`;
-        const same = exactConditions.get(signature) ?? [];
-        same.push(eventIndex);
-        exactConditions.set(signature, same);
+        const coordType = text(entry.type);
+        let signature: string | null = null;
+        if (coordType === "trigger") {
+          const variable = asmScalar(entry.var);
+          const value = asmScalar(entry.var_value);
+          const script = asmScalar(entry.script);
+          if (!variable || !value || !script) {
+            issue(issues, "COORD_TRIGGER_FIELDS_INVALID", "error", "triggers", `coord_events[${eventIndex}] type=trigger exige var, var_value e script não vazios.`, { eventSource, eventIndex, ...point });
+          }
+          signature = `${cellKey}|trigger|${variable ?? "?"}|${value ?? "?"}`;
+        } else if (coordType === "weather") {
+          const weather = asmScalar(entry.weather);
+          if (!weather) {
+            issue(issues, "COORD_WEATHER_FIELDS_INVALID", "error", "triggers", `coord_events[${eventIndex}] type=weather exige campo weather.`, { eventSource, eventIndex, ...point });
+          } else if (KNOWN_POKEEMERALD_WEATHER.has(weather)) {
+            issue(issues, "COORD_WEATHER_KNOWN", "info", "triggers", `coord weather ${eventIndex} preserva clima reconhecido ${weather}.`, { eventSource, eventIndex, ...point });
+          } else if (weather.startsWith("WEATHER_")) {
+            issue(issues, "COORD_WEATHER_UNVERIFIED", "warning", "triggers", `coord weather ${eventIndex} usa ${weather}; parece constante customizada e precisa existir no código do jogo.`, { eventSource, eventIndex, ...point });
+          } else {
+            issue(issues, "COORD_WEATHER_INVALID_SYMBOL", "error", "triggers", `coord weather ${eventIndex} usa símbolo inválido ${weather}.`, { eventSource, eventIndex, ...point });
+          }
+          signature = `${cellKey}|weather|${weather ?? "?"}`;
+        } else {
+          issue(issues, "COORD_TYPE_INVALID", "error", "triggers", `coord_events[${eventIndex}] possui type=${String(entry.type)}; mapjson aceita somente trigger ou weather.`, { eventSource, eventIndex, ...point });
+        }
+        if (signature) {
+          const same = exactConditions.get(signature) ?? [];
+          same.push(eventIndex);
+          exactConditions.set(signature, same);
+        }
       }
 
       if (eventSource === "bg") {
-        const neighbours = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
-        const accessible = neighbours.some(([dx, dy]) => {
-          const x = point.x + dx;
-          const y = point.y + dy;
-          return inBounds(map, x, y) && (collisionAt(map, x, y) ?? 1) === 0;
-        });
+        const bgType = text(entry.type);
+        if (bgType === "sign") {
+          if (!asmScalar(entry.player_facing_dir) || !asmScalar(entry.script)) {
+            issue(issues, "BG_SIGN_FIELDS_INVALID", "error", "triggers", `bg_events[${eventIndex}] type=sign exige player_facing_dir e script.`, { eventSource, eventIndex, ...point });
+          }
+        } else if (bgType === "hidden_item") {
+          if (!asmScalar(entry.item) || !asmScalar(entry.flag)) {
+            issue(issues, "BG_HIDDEN_ITEM_FIELDS_INVALID", "error", "triggers", `bg_events[${eventIndex}] type=hidden_item exige item e flag.`, { eventSource, eventIndex, ...point });
+          }
+        } else if (bgType === "secret_base") {
+          if (!asmScalar(entry.secret_base_id)) {
+            issue(issues, "BG_SECRET_BASE_FIELDS_INVALID", "error", "triggers", `bg_events[${eventIndex}] type=secret_base exige secret_base_id.`, { eventSource, eventIndex, ...point });
+          }
+        } else {
+          issue(issues, "BG_TYPE_INVALID", "error", "triggers", `bg_events[${eventIndex}] possui type=${String(entry.type)}; mapjson aceita sign, hidden_item ou secret_base.`, { eventSource, eventIndex, ...point });
+        }
+
+        const accessible = bgInteractionPoints(entry, point).some(
+          ({ x, y }) => inBounds(map, x, y) && (collisionAt(map, x, y) ?? 1) === 0,
+        );
         if (!accessible) {
-          issue(issues, "BG_NO_ADJACENT_ACCESS", "warning", "triggers", `BG event ${eventIndex} não possui vizinho collision=0 para interação evidente.`, { eventSource, eventIndex, ...point });
+          issue(issues, "BG_NO_ADJACENT_ACCESS", "warning", "triggers", `BG event ${eventIndex} não possui posição de interação collision=0 compatível com seu facing/tipo.`, { eventSource, eventIndex, ...point });
         }
       }
     });
@@ -683,12 +875,12 @@ function auditEvents(
     if (eventSource === "coord") {
       for (const [signature, indexes] of exactConditions) {
         if (indexes.length > 1) {
-          issue(issues, "COORD_DUPLICATE_CONDITION", "warning", "triggers", `coord_events ${indexes.join(", ")} repetem a mesma posição/elevation/condição (${signature}); o primeiro script compatível pode sombrear os demais.`);
+          issue(issues, "COORD_DUPLICATE_CONDITION", "warning", "triggers", `coord_events ${indexes.join(", ")} repetem a mesma posição/elevation/tipo/condição (${signature}); a duplicação deve ser revisada.`);
         }
       }
       for (const [cell, indexes] of seenCells) {
         if (indexes.length > 1) {
-          issue(issues, "COORD_SHARED_CELL_CONDITIONAL_OK", "info", "triggers", `coord_events ${indexes.join(", ")} compartilham ${cell}; múltiplos var/var_value na mesma célula são suportados pelo engine e comuns em mapas vanilla.`);
+          issue(issues, "COORD_SHARED_CELL_CONDITIONAL_OK", "info", "triggers", `coord_events ${indexes.join(", ")} compartilham ${cell}; múltiplas condições ou weather events na mesma célula são representáveis pelo engine.`);
         }
       }
     } else {
@@ -889,7 +1081,12 @@ function auditAccessibility(
     if (!point || !accessPoint) return;
     const cell = idx(accessPoint.x, accessPoint.y, map.width);
     const state = grid.states[cell] ?? "unknown";
-    if (state === "blocked") return;
+    if (state === "blocked") {
+      // Animated doors can legally trigger from the cell in front; auditEvents
+      // already certifies that special case against the behavior.
+      if (atlas && cellPassability(map, accessPoint.x, accessPoint.y, atlas).behavior === MB_ANIMATED_DOOR) return;
+      return;
+    }
 
     const lenientLabel = lenient[cell] ?? -1;
     if (lenientLabel < 0) {
@@ -989,7 +1186,7 @@ export function auditGameImplementability(input: GameImplementabilityInput): Gam
   const workspaceContext = resolveWorkspaceContext(input);
 
   auditGrid(input, issues);
-  auditTilesets(input, issues);
+  auditTilesets(input, issues, workspaceContext);
   auditMapJson(input, issues);
   auditWeather(input.mapJson, issues);
   auditEvents(input, issues, workspaceContext);
