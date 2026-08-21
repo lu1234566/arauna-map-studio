@@ -20,9 +20,18 @@ function nonEmptyText(value: unknown): string | null {
   return typeof value === "string" && value.trim().length ? value : null;
 }
 
+export function sharedEventsContextKey(name: string): string {
+  return `@shared-events:${name}`;
+}
+
+export function referencedWorkspaceSharedEventNames(document: EditableMapJson): string[] {
+  const shared = nonEmptyText(document.shared_events_map);
+  return shared ? [shared] : [];
+}
+
 /**
- * Retorna somente dependências diretas necessárias para verificar o mapa
- * atual: destinos de warps estáticos e mapas vizinhos das connections.
+ * Retorna somente dependências diretas necessárias para verificar o mapa:
+ * destinos de warps estáticos e mapas vizinhos das connections.
  * MAP_DYNAMIC é resolvido pelo save/engine e nunca representa um arquivo.
  */
 export function referencedWorkspaceMapIds(document: EditableMapJson): string[] {
@@ -55,6 +64,15 @@ function workspaceMapById(workspace: AraunaWorkspace): Map<string, WorkspaceMap>
   return byId;
 }
 
+function workspaceMapByName(workspace: AraunaWorkspace): Map<string, WorkspaceMap> {
+  const byName = new Map<string, WorkspaceMap>();
+  for (const map of workspace.maps) {
+    if (!byName.has(map.name)) byName.set(map.name, map);
+    if (!byName.has(map.directory)) byName.set(map.directory, map);
+  }
+  return byName;
+}
+
 function fileForPath(workspace: AraunaWorkspace, path: string): File | undefined {
   return workspace.files.get(path) ?? workspace.filesLower.get(path.toLowerCase());
 }
@@ -83,7 +101,7 @@ async function loadLightweightAuditAtlas(
     const primaryFile = fileForPath(workspace, `${primaryDir.path}/metatile_attributes.bin`);
     const secondaryFile = fileForPath(workspace, `${secondaryDir.path}/metatile_attributes.bin`);
     if (!primaryFile || !secondaryFile) {
-      throw new Error("metatile_attributes.bin ausente em um dos tilesets do mapa vizinho");
+      throw new Error("metatile_attributes.bin ausente em um dos tilesets do mapa");
     }
 
     const [primary, secondary] = await Promise.all([
@@ -144,15 +162,47 @@ async function currentMapAuditEntry(
   return entry;
 }
 
+async function loadSharedEventsDocument(
+  workspace: AraunaWorkspace,
+  byName: Map<string, WorkspaceMap>,
+  sharedName: string,
+  maps: ImplementabilityWorkspaceContext["maps"],
+  loadErrors: Record<string, string>,
+): Promise<EditableMapJson | null> {
+  const key = sharedEventsContextKey(sharedName);
+  const descriptor = byName.get(sharedName);
+  if (!descriptor) {
+    loadErrors[key] = `shared_events_map ${sharedName} não encontrado no Workspace`;
+    return null;
+  }
+  if (descriptor.error) {
+    loadErrors[key] = descriptor.error;
+    return null;
+  }
+  const file = fileForMap(workspace, descriptor);
+  if (!file) {
+    loadErrors[key] = `arquivo ${descriptor.path} não encontrado`;
+    return null;
+  }
+  try {
+    const mapJson = parseEditableMapJson(await file.text());
+    maps[key] = { mapJson };
+    return mapJson;
+  } catch (error) {
+    loadErrors[key] = error instanceof Error ? error.message : String(error);
+    return null;
+  }
+}
+
 /**
- * Carrega somente as dependências diretas. Nenhum mapa é aberto no editor e
- * nenhum evento é renumerado. Além do map.json, carregamos o map.bin e apenas
- * os atributos dos tilesets (sem PNG/paletas) para auditar tiles de margem de
- * conexão como o warp vanilla (40,7) de SlateportCity.
+ * Carrega somente dependências necessárias para a auditoria. Nenhum mapa é
+ * aberto no editor e nenhum evento é renumerado.
  *
- * Para o mapa atual, o documento EM MEMÓRIA continua autoritativo, mas também
- * carregamos as dimensões e o fingerprint leve do par de tilesets definido em
- * layouts.json. Isso permite provar que o atlas ativo pertence ao layout real.
+ * Além de destinos de warp/connections, respeitamos `shared_events_map`: o
+ * MapHeader do pokeemerald aponta diretamente para `<shared>_MapEvents`, então
+ * os NPCs/warps/triggers efetivos podem morar em outro map.json. O documento
+ * compartilhado é armazenado sob uma chave interna `@shared-events:*` e suas
+ * próprias dependências de warp também entram no contexto.
  */
 export async function buildWorkspaceAuditContext(
   workspace: AraunaWorkspace,
@@ -162,7 +212,9 @@ export async function buildWorkspaceAuditContext(
   const maps: ImplementabilityWorkspaceContext["maps"] = {};
   const loadErrors: Record<string, string> = {};
   const byId = workspaceMapById(workspace);
+  const byName = workspaceMapByName(workspace);
   const atlasCache = new Map<string, Promise<FingerprintAtlas>>();
+  const dependencyIds = new Set(referencedWorkspaceMapIds(currentDocument));
 
   if (sourceMapId) {
     maps[sourceMapId] = await currentMapAuditEntry(
@@ -175,7 +227,20 @@ export async function buildWorkspaceAuditContext(
     );
   }
 
-  for (const id of referencedWorkspaceMapIds(currentDocument)) {
+  for (const sharedName of referencedWorkspaceSharedEventNames(currentDocument)) {
+    const sharedDocument = await loadSharedEventsDocument(
+      workspace,
+      byName,
+      sharedName,
+      maps,
+      loadErrors,
+    );
+    if (sharedDocument) {
+      for (const id of referencedWorkspaceMapIds(sharedDocument)) dependencyIds.add(id);
+    }
+  }
+
+  for (const id of [...dependencyIds].sort()) {
     // Self-warp/self-connection usa o documento em memória acima. Nunca o
     // substituímos por uma cópia possivelmente stale do arquivo em disco.
     if (id === sourceMapId) continue;
