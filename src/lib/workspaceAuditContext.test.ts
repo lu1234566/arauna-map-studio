@@ -4,7 +4,9 @@ import {
   clearWorkspaceAuditContext,
   getWorkspaceAuditContext,
   referencedWorkspaceMapIds,
+  referencedWorkspaceSharedEventNames,
   setWorkspaceAuditContext,
+  sharedEventsContextKey,
 } from "./workspaceAuditContext";
 
 afterEach(() => clearWorkspaceAuditContext());
@@ -37,9 +39,20 @@ describe("workspaceAuditContext", () => {
       warp_events: [{ x: 1, y: 1, dest_map: "MAP_A", dest_warp_id: "0" }],
       connections: [],
     };
-    // buildWorkspaceAuditContext deliberately skips reloading this id from disk
-    // and keeps the current in-memory document authoritative.
     expect(referencedWorkspaceMapIds(document)).toEqual(["MAP_A"]);
+  });
+
+  it("tracks shared_events_map by map name without pretending it is a MAP_* id", () => {
+    const document: EditableMapJson = {
+      id: "MAP_CONTEST_HALL_CUTE",
+      name: "ContestHallCute",
+      layout: "LAYOUT_CONTEST_HALL_CUTE",
+      shared_events_map: "ContestHall",
+      connections: null,
+    };
+    expect(referencedWorkspaceSharedEventNames(document)).toEqual(["ContestHall"]);
+    expect(referencedWorkspaceMapIds(document)).toEqual([]);
+    expect(sharedEventsContextKey("ContestHall")).toBe("@shared-events:ContestHall");
   });
 
   it("keeps active context explicit and clearable", () => {
