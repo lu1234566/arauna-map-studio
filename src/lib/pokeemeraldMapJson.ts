@@ -30,7 +30,14 @@ export interface PokeemeraldMapMetadata {
   layout: string;
   music: string | null;
   regionMapSection: string | null;
+  weather: string | null;
   mapType: string | null;
+  battleScene: string | null;
+  requiresFlash: boolean | null;
+  allowCycling: boolean | null;
+  allowEscaping: boolean | null;
+  allowRunning: boolean | null;
+  showMapName: boolean | null;
   connections: ParsedConnection[];
   events: ParsedMapEvent[];
   protectedCells: ParsedProtectedCell[];
@@ -64,6 +71,10 @@ function integer(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+function bool(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 function coord(entry: JsonRecord): { x: number; y: number } | null {
   const x = integer(entry.x);
   const y = integer(entry.y);
@@ -76,7 +87,7 @@ function compact(parts: Array<string | null | undefined>): string {
 
 function requireString(root: JsonRecord, key: string): string {
   const value = text(root[key]);
-  if (!value) throw new MapJsonParseError(`map.json inválido: campo obrigatório \"${key}\" ausente.`);
+  if (!value) throw new MapJsonParseError(`map.json inválido: campo obrigatório "${key}" ausente.`);
   return value;
 }
 
@@ -103,7 +114,9 @@ function editableId(source: MapEventSource, index: number) {
  * Interpreta data/maps/<MapName>/map.json do pokeemerald.
  *
  * O arquivo não contém os metatiles do layout: ele complementa map.bin com
- * warps, object events, coord events, background events e conexões.
+ * propriedades do mapa, warps, object events, coord events, background events
+ * e conexões. Campos desconhecidos continuam preservados pelo EditableMapJson;
+ * esta projeção é somente para o inspector/validação.
  */
 export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata {
   let parsed: unknown;
@@ -180,6 +193,10 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
       label,
       detail,
     });
+    // O ponto de spawn de um object event é parte da lógica da história. Não
+    // protegemos todo o movement_range (pode conter cenário), mas impedimos que
+    // uma pintura casual destrua exatamente a célula em que o NPC nasce.
+    addProtected(protectedByCoord, point.x, point.y, `${label}: NPC/object spawn`);
   });
 
   coordEntries.forEach((raw, index) => {
@@ -250,7 +267,14 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
     layout,
     music: text(root.music),
     regionMapSection: text(root.region_map_section),
+    weather: text(root.weather),
     mapType: text(root.map_type),
+    battleScene: text(root.battle_scene),
+    requiresFlash: bool(root.requires_flash),
+    allowCycling: bool(root.allow_cycling),
+    allowEscaping: bool(root.allow_escaping),
+    allowRunning: bool(root.allow_running),
+    showMapName: bool(root.show_map_name),
     connections,
     events,
     protectedCells: Array.from(protectedByCoord.values()),
