@@ -1,8 +1,15 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, Download, FileJson2, ShieldCheck, Upload } from "lucide-react";
+import { serializeCityBundle } from "@/lib/araunaCityBundle";
+import { withSharedEventsSnapshot } from "@/lib/cityBundleDependencies";
 import { editorStore, useEditor } from "@/lib/editorStore";
+import { auditGameImplementability } from "@/lib/gameImplementability";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { useRealAtlas } from "@/lib/realAtlasStore";
+import {
+  getWorkspaceAuditContext,
+  sharedEventsContextKey,
+} from "@/lib/workspaceAuditContext";
 import { cn } from "@/lib/utils";
 
 function downloadText(source: string, fileName: string) {
@@ -38,8 +45,6 @@ export function CityBundleDock() {
     }
     if (previousAtlasRef.current !== key) {
       previousAtlasRef.current = key;
-      // Um PASS foi calculado contra um atlas específico. Trocar/limpar atlas
-      // invalida imediatamente esse selo para não manter um Game-ready stale.
       editorStore.clearValidation();
       editorStore.setMessage("Atlas alterado. Rode Validar novamente antes de considerar o mapa implementável.");
     }
@@ -50,7 +55,6 @@ export function CityBundleDock() {
     const before = editorStore.getState();
     const result = editorStore.importCityBundle(source, file.name);
     if (!result.ok) {
-      // importCityBundle é transacional e não altera state/history na falha.
       if (editorStore.getState() !== before) {
         console.error("Arauna City import violated atomicity invariant");
       }
@@ -66,12 +70,48 @@ export function CityBundleDock() {
       window.alert(`Não foi possível montar a Cidade JSON.\n\n${result.message}`);
       return;
     }
-    const base = safeName(result.bundle.identity.name);
-    downloadText(result.source, `${base}.arauna-city.json`);
+
+    let bundle = result.bundle;
+    let source = result.source;
+    let gameAudit = result.gameAudit;
+    const document = state.mapJsonDocument;
+    const sharedName = typeof document?.shared_events_map === "string"
+      ? document.shared_events_map.trim()
+      : "";
+
+    if (sharedName) {
+      const context = getWorkspaceAuditContext();
+      const sharedDocument = context?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
+      if (!sharedDocument) {
+        window.alert(
+          `Exportação bloqueada por segurança.\n\n` +
+          `Este mapa usa shared_events_map=${sharedName}, mas a fonte compartilhada não está carregada no contexto de auditoria. ` +
+          `Abra o Workspace e rode Validar para que o Studio possa embutir um snapshot íntegro dos NPCs/warps/triggers efetivos.`,
+        );
+        return;
+      }
+
+      bundle = {
+        ...bundle,
+        semantics: withSharedEventsSnapshot(bundle.semantics, sharedName, sharedDocument),
+      };
+      source = serializeCityBundle(bundle);
+      gameAudit = auditGameImplementability({
+        map: state.map,
+        mapJson: document,
+        atlas,
+        bundle,
+        declaredTilesets: bundle.tilesets,
+        workspaceContext: context,
+      });
+    }
+
+    const base = safeName(bundle.identity.name);
+    downloadText(source, `${base}.arauna-city.json`);
     editorStore.setMessage(
-      result.gameAudit.implementable
+      gameAudit.implementable
         ? `Cidade JSON exportada: ${base}.arauna-city.json — IMPLEMENTÁVEL NO JOGO.`
-        : `Cidade JSON exportada para revisão. Auditoria: ${result.gameAudit.counts.errors} erro(s), ${result.gameAudit.counts.warnings} aviso(s); dependências externas podem continuar parciais.`,
+        : `Cidade JSON exportada para revisão. Auditoria: ${gameAudit.counts.errors} erro(s), ${gameAudit.counts.warnings} aviso(s); dependências externas podem continuar parciais.`,
     );
   };
 
