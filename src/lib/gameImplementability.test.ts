@@ -51,7 +51,7 @@ function severity(report: ReturnType<typeof auditGameImplementability>, code: st
 }
 
 describe("game implementability audit", () => {
-  it("can reach fully verified game-ready for a self-contained valid map", () => {
+  it("can reach fully verified game-ready only with layout-backed atlas proof", () => {
     const map = openMap();
     const mapJson = baseJson();
     const bundle = buildCityBundle({ map, mapJson, atlas, createdAt: "2026-08-21T00:00:00.000Z" });
@@ -61,13 +61,94 @@ describe("game implementability audit", () => {
       atlas,
       bundle,
       declaredTilesets: bundle.tilesets,
+      workspaceContext: {
+        sourceMapId: "MAP_A",
+        maps: {
+          MAP_A: { map, mapJson, width: 5, height: 5, atlas },
+        },
+      },
     });
     expect(report.counts.errors).toBe(0);
     expect(report.counts.warnings).toBe(0);
     expect(report.fullyVerified).toBe(true);
     expect(report.implementable).toBe(true);
+    expect(has(report, "ATLAS_LAYOUT_OK")).toBe(true);
+    expect(has(report, "MAPJSON_COMPILE_CONTRACT_OK")).toBe(true);
     expect(has(report, "WEATHER_KNOWN")).toBe(true);
     expect(has(report, "ROUNDTRIP_OK")).toBe(true);
+  });
+
+  it("never calls an atlas game-ready when layouts.json proof is missing", () => {
+    const map = openMap();
+    const mapJson = baseJson();
+    const bundle = buildCityBundle({ map, mapJson, atlas });
+    const report = auditGameImplementability({
+      map,
+      mapJson,
+      atlas,
+      bundle,
+      declaredTilesets: bundle.tilesets,
+    });
+    expect(has(report, "ATLAS_LAYOUT_UNVERIFIED")).toBe(true);
+    expect(report.pass).toBe(true);
+    expect(report.implementable).toBe(false);
+  });
+
+  it("rejects map.json header fields that tools/mapjson requires", () => {
+    const mapJson = baseJson();
+    delete mapJson.music;
+    delete mapJson.region_map_section;
+    delete mapJson.battle_scene;
+    mapJson.allow_running = "TRUE";
+
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "MAPJSON_MUSIC_MISSING")).toBe(true);
+    expect(has(report, "MAPJSON_REGION_MAP_SECTION_MISSING")).toBe(true);
+    expect(has(report, "MAPJSON_BATTLE_SCENE_MISSING")).toBe(true);
+    expect(has(report, "MAPJSON_ALLOW_RUNNING_TYPE")).toBe(true);
+    expect(has(report, "MAPJSON_COMPILE_CONTRACT_OK")).toBe(false);
+    expect(report.pass).toBe(false);
+  });
+
+  it("accepts vanilla coord_weather_event constants from Route113", () => {
+    const mapJson = baseJson();
+    mapJson.coord_events = [
+      {
+        type: "weather",
+        x: 2,
+        y: 2,
+        elevation: 3,
+        weather: "COORD_EVENT_WEATHER_VOLCANIC_ASH",
+      },
+      {
+        type: "weather",
+        x: 3,
+        y: 2,
+        elevation: 3,
+        weather: "COORD_EVENT_WEATHER_SUNNY",
+      },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "COORD_WEATHER_KNOWN")).toBe(true);
+    expect(has(report, "COORD_WEATHER_INVALID_SYMBOL")).toBe(false);
+    expect(has(report, "COORD_WEATHER_WRONG_CONSTANT_FAMILY")).toBe(false);
+    expect(report.pass).toBe(true);
+  });
+
+  it("rejects WEATHER_* in coord_weather_event because Emerald uses COORD_EVENT_WEATHER_* there", () => {
+    const mapJson = baseJson();
+    mapJson.coord_events = [
+      {
+        type: "weather",
+        x: 2,
+        y: 2,
+        elevation: 3,
+        weather: "WEATHER_SUNNY",
+      },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "COORD_WEATHER_WRONG_CONSTANT_FAMILY")).toBe(true);
+    expect(report.pass).toBe(false);
   });
 
   it("accepts vanilla null collections and MAP_DYNAMIC with symbolic warp id", () => {
@@ -101,7 +182,7 @@ describe("game implementability audit", () => {
     const routeAtlas: FingerprintAtlas = {
       primary: "gTileset_General",
       secondary: "gTileset_Pacifidlog",
-      records: [{ id: 2, behavior: 0x15, layerType: 0 }], // MB_OCEAN_WATER
+      records: [{ id: 2, behavior: 0x15, layerType: 0 }],
     };
 
     const harborJson = baseJson("MAP_SLATEPORT_CITY_HARBOR");
@@ -116,6 +197,7 @@ describe("game implementability audit", () => {
       workspaceContext: {
         sourceMapId: "MAP_SLATEPORT_CITY",
         maps: {
+          MAP_SLATEPORT_CITY: { map, mapJson, width: 40, height: 60, atlas },
           MAP_ROUTE134: {
             map: routeMap,
             mapJson: routeJson,
@@ -253,7 +335,7 @@ describe("game implementability audit", () => {
     const doorAtlas: FingerprintAtlas = {
       primary: "gTileset_General",
       secondary: "gTileset_Slateport",
-      records: [{ id: 1, behavior: 0x69, layerType: 0 }], // MB_ANIMATED_DOOR
+      records: [{ id: 1, behavior: 0x69, layerType: 0 }],
     };
     const mapJson = baseJson();
     mapJson.warp_events = [
@@ -437,6 +519,27 @@ describe("game implementability audit", () => {
       },
     });
     expect(has(mismatch, "ATLAS_PRIMARY_MISMATCH")).toBe(true);
+  });
+
+  it("detects atlas mismatch against the layout proof, independent of bundle declaration", () => {
+    const map = openMap();
+    const mapJson = baseJson();
+    const otherAtlas: FingerprintAtlas = {
+      primary: "gTileset_General",
+      secondary: "gTileset_Petalburg",
+      records: [{ id: 1, behavior: 0x00, layerType: 0 }],
+    };
+    const report = auditGameImplementability({
+      map,
+      mapJson,
+      atlas,
+      workspaceContext: {
+        sourceMapId: "MAP_A",
+        maps: { MAP_A: { map, mapJson, width: 5, height: 5, atlas: otherAtlas } },
+      },
+    });
+    expect(has(report, "ATLAS_LAYOUT_MISMATCH")).toBe(true);
+    expect(report.pass).toBe(false);
   });
 
   it("rejects a valid bundle that no longer matches the audited editor state", () => {
