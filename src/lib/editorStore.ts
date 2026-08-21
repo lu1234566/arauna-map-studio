@@ -133,7 +133,14 @@ interface EditorSnapshot {
 const STORAGE_MAP = "arauna.map.v3";
 const STORAGE_PREFS = "arauna.prefs.v1";
 const MAX_HISTORY = 100;
-const VALID_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right"]);
+const VALID_CONNECTION_DIRECTIONS = new Set([
+  "up",
+  "down",
+  "left",
+  "right",
+  "dive",
+  "emerge",
+]);
 
 function defaultMap(): MapData {
   return createEmptyMap(20, 20, 0x000);
