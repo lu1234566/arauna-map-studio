@@ -135,7 +135,7 @@ describe("arauna-city-v1", () => {
 
   it("parse rejects unsupported version and invalid arrays before compile", () => {
     const source = buildCityBundle({ map: map(), mapJson: mapJson() });
-    const version = cloneBundle(source) as AraunaCityBundle & { version: number };
+    const version = cloneBundle(source) as unknown as Record<string, unknown>;
     version.version = 2;
     expect(() => parseCityBundle(version)).toThrow(CityBundleError);
 
