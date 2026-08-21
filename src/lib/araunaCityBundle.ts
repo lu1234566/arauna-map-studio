@@ -210,7 +210,8 @@ export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, item]) => item !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b))
+    // Ordenação binária por code units: independente de locale/idioma do browser.
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`);
   return `{${entries.join(",")}}`;
 }
@@ -462,10 +463,18 @@ function connectionContractMetadataMatches(bundle: AraunaCityBundle): boolean {
     const connection = isRecord(raw) ? raw : {};
     const contract = bundle.connectionContracts[index];
     if (!contract || contract.index !== index) return false;
+    const direction = typeof connection.direction === "string" ? connection.direction : null;
+    const expectedBorderCells = borderCells(
+      bundle.identity.width,
+      bundle.identity.height,
+      direction,
+    ).length;
     return (
       contract.map === (typeof connection.map === "string" ? connection.map : null) &&
-      contract.direction === (typeof connection.direction === "string" ? connection.direction : null) &&
-      contract.offset === (Number.isInteger(connection.offset) ? (connection.offset as number) : null)
+      contract.direction === direction &&
+      contract.offset === (Number.isInteger(connection.offset) ? (connection.offset as number) : null) &&
+      contract.borderCells === expectedBorderCells &&
+      contract.openCells + contract.conditionalCells <= contract.borderCells
     );
   });
 }
@@ -515,10 +524,18 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
     });
   }
 
+  const derivedProtected = parsePokeemeraldMapJson(stringifyMapJson(bundle.mapJson)).protectedCells;
+  if (canonicalJson(bundle.protectedCells) !== canonicalJson(derivedProtected)) {
+    issues.push({
+      code: "BUNDLE_PROTECTED_CELLS_MISMATCH",
+      message: "protectedCells não corresponde aos warps/NPCs/triggers/BG events derivados do mapJson.",
+    });
+  }
+
   if (!connectionContractMetadataMatches(bundle)) {
     issues.push({
       code: "BUNDLE_CONNECTION_CONTRACT_MISMATCH",
-      message: "connectionContracts não corresponde ao array connections do mapJson.",
+      message: "connectionContracts não corresponde ao array connections/geometria do mapJson.",
     });
   }
 
