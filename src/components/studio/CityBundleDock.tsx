@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { AlertTriangle, Download, FileJson2, ShieldCheck, Upload } from "lucide-react";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
+import { useRealAtlas } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
 
 function downloadText(source: string, fileName: string) {
@@ -24,8 +25,25 @@ function safeName(value: string) {
  */
 export function CityBundleDock() {
   const state = useEditor();
+  const atlas = useRealAtlas();
   const inputRef = useRef<HTMLInputElement>(null);
+  const previousAtlasRef = useRef<string | null | undefined>(undefined);
   const audit = state.gameAudit;
+
+  useEffect(() => {
+    const key = atlas?.createdAt ?? null;
+    if (previousAtlasRef.current === undefined) {
+      previousAtlasRef.current = key;
+      return;
+    }
+    if (previousAtlasRef.current !== key) {
+      previousAtlasRef.current = key;
+      // Um PASS foi calculado contra um atlas específico. Trocar/limpar atlas
+      // invalida imediatamente esse selo para não manter um Game-ready stale.
+      editorStore.clearValidation();
+      editorStore.setMessage("Atlas alterado. Rode Validar novamente antes de considerar o mapa implementável.");
+    }
+  }, [atlas?.createdAt]);
 
   const importBundle = async (file: File) => {
     const source = await file.text();
