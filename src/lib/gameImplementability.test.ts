@@ -128,6 +128,33 @@ describe("game implementability audit", () => {
     expect(report.pass).toBe(false);
   });
 
+  it("checks accessibility only inside the border interval selected by connection offset", () => {
+    const map = openMap();
+    map.physical.fill(0x3400);
+    // Main component reaches an irrelevant opening on the right border at y=0.
+    for (let x = 0; x < map.width; x++) map.physical[x] = 0x3000;
+    // The actual overlap for offset 3 against a height-2 neighbor is y=3..4.
+    // Keep only y=4 open there, isolated from the main component.
+    map.physical[4 * map.width + 4] = 0x3000;
+
+    const mapJson = baseJson();
+    mapJson.connections = [{ map: "MAP_B", offset: 3, direction: "right" }];
+    const neighbor = baseJson("MAP_B");
+    neighbor.connections = [{ map: "MAP_A", offset: -3, direction: "left" }];
+
+    const report = auditGameImplementability({
+      map,
+      mapJson,
+      atlas,
+      workspaceContext: {
+        sourceMapId: "MAP_A",
+        maps: { MAP_B: { mapJson: neighbor, width: 2, height: 2 } },
+      },
+    });
+    expect(has(report, "ACCESS_CONNECTION_ISOLATED")).toBe(true);
+    expect(report.pass).toBe(false);
+  });
+
   it("catches NPC spawn collision and movement range leaving map", () => {
     const map = openMap();
     map.physical[0] = 0x3400;
