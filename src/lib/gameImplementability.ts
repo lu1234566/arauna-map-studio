@@ -199,7 +199,9 @@ function arraysEqual(a: Uint16Array, b: Uint16Array): boolean {
   return true;
 }
 
-function resolveWorkspaceContext(input: GameImplementabilityInput): ImplementabilityWorkspaceContext | null {
+function resolveWorkspaceContext(
+  input: GameImplementabilityInput,
+): ImplementabilityWorkspaceContext | null {
   const explicit = input.workspaceContext ?? null;
   if (explicit) return explicit;
   const active = getWorkspaceAuditContext();
@@ -211,7 +213,12 @@ function resolveWorkspaceContext(input: GameImplementabilityInput): Implementabi
 function auditGrid(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
   const { map } = input;
   const expected = map.width * map.height;
-  if (!Number.isInteger(map.width) || !Number.isInteger(map.height) || map.width <= 0 || map.height <= 0) {
+  if (
+    !Number.isInteger(map.width) ||
+    !Number.isInteger(map.height) ||
+    map.width <= 0 ||
+    map.height <= 0
+  ) {
     issue(issues, "GRID_DIMENSIONS", "error", "grid", `Dimensão inválida: ${map.width}×${map.height}.`);
     return;
   }
@@ -230,7 +237,12 @@ function auditGrid(input: GameImplementabilityInput, issues: ImplementabilityIss
       issue(issues, "GRID_METATILE_RANGE", "error", "grid", `Metatile ${metatile} fora de 0x000–0x3FF na célula ${i}.`);
       break;
     }
-    if (!Number.isInteger(physical) || physical < 0 || physical > PHYSICAL_MASK || (physical & ~PHYSICAL_MASK) !== 0) {
+    if (
+      !Number.isInteger(physical) ||
+      physical < 0 ||
+      physical > PHYSICAL_MASK ||
+      (physical & ~PHYSICAL_MASK) !== 0
+    ) {
       issue(issues, "GRID_PHYSICAL_RANGE", "error", "grid", `Bits físicos 0x${physical.toString(16)} inválidos na célula ${i}.`);
       break;
     }
@@ -548,15 +560,42 @@ function auditConnections(
       return;
     }
 
-    const reciprocal = array(neighbor.mapJson.connections).some((candidate) => {
+    const reciprocalCandidates = array(neighbor.mapJson.connections).flatMap((candidate) => {
       const connection = record(candidate);
-      return connection && text(connection.map) === currentMapId && text(connection.direction) === OPPOSITE_DIRECTION[direction];
+      if (
+        !connection ||
+        text(connection.map) !== currentMapId ||
+        text(connection.direction) !== OPPOSITE_DIRECTION[direction]
+      ) {
+        return [];
+      }
+      return [connection];
     });
-    if (!reciprocal) {
+
+    if (!reciprocalCandidates.length) {
       issue(issues, "CONNECTION_RECIPROCAL_MISSING", "error", "connections", `${destMap} não possui conexão ${OPPOSITE_DIRECTION[direction]} de volta para ${currentMapId}.`);
-    } else {
-      issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} ↔ ${destMap} possui conexão recíproca.`);
+      return;
     }
+
+    // fieldmap.c aplica o offset ao trocar de mapa; no par recíproco o valor
+    // precisa ter sinal oposto. Ex.: Route118 up +40 ↔ Route119 down -40.
+    // Só certificamos o offset quando ambos os lados são inteiros.
+    if (offset === null) return;
+    const reciprocalOffsets = reciprocalCandidates
+      .map((connection) => integer(connection.offset))
+      .filter((value): value is number => value !== null);
+    if (!reciprocalOffsets.includes(-offset)) {
+      issue(
+        issues,
+        "CONNECTION_RECIPROCAL_OFFSET_MISMATCH",
+        "error",
+        "connections",
+        `${destMap} retorna para ${currentMapId}, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}.`,
+      );
+      return;
+    }
+
+    issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} offset ${offset} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} offset ${-offset} verificados.`);
   });
 }
 
@@ -639,7 +678,7 @@ function auditAccessibility(input: GameImplementabilityInput, issues: Implementa
     if (!point || !inBounds(map, point.x, point.y)) return;
     const cell = idx(point.x, point.y, map.width);
     const state = grid.states[cell] ?? "unknown";
-    if (state === "blocked") return; // Já reportado no audit de warps.
+    if (state === "blocked") return;
 
     const lenientLabel = lenient[cell] ?? -1;
     if (lenientLabel < 0 || (mainLenient >= 0 && lenientLabel !== mainLenient)) {
