@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { CityBundleDock } from "@/components/studio/CityBundleDock";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
 import { Gen3LibraryLauncher } from "@/components/studio/Gen3LibraryLauncher";
@@ -137,6 +138,7 @@ function Index() {
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <MapCanvas />
           <MapMinimap />
+          <CityBundleDock />
           <StampOverlay />
           <SmartPathOverlay />
           <PatternOverlay />
@@ -154,7 +156,13 @@ function Index() {
           <Gen3LibraryLauncher />
         </main>
         <Inspector />
-        {state.validation && <ValidationPanel report={state.validation} onClose={() => editorStore.clearValidation()} />}
+        {state.validation && (
+          <ValidationPanel
+            report={state.validation}
+            gameAudit={state.gameAudit}
+            onClose={() => editorStore.clearValidation()}
+          />
+        )}
       </div>
       <StatusBar />
     </div>
