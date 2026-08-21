@@ -207,10 +207,10 @@ describe("Exact Grid compiler", () => {
       portMetatile: 4,
     });
     const json = serializeAiExactGrid(exact);
-    expect(json).toContain('\"format\": \"arauna-exact-grid-v1\"');
-    expect(json).toContain('\"metatile\": \"0x');
-    expect(json).toContain('\"owner\": \"structure\"');
-    expect(json).toContain('\"structureMask\"');
+    expect(json).toContain('"format": "arauna-exact-grid-v1"');
+    expect(json).toContain('"metatile": "0x');
+    expect(json).toContain('"owner": "structure"');
+    expect(json).toContain('"structureMask"');
   });
 
   it("fails closed when strict layers leave editable cells UNSET", () => {
