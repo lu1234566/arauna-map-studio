@@ -76,6 +76,8 @@ export interface GameImplementabilityReport {
 export interface WorkspaceAuditMap {
   map?: MapData;
   mapJson: EditableMapJson;
+  width?: number;
+  height?: number;
 }
 
 export interface ImplementabilityWorkspaceContext {
@@ -135,12 +137,22 @@ export const KNOWN_POKEEMERALD_WEATHER = new Set([
   "WEATHER_ROUTE123_CYCLE",
 ]);
 
-const VALID_DIRECTIONS = new Set(["up", "down", "left", "right"]);
+const BORDER_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right"]);
+const VALID_CONNECTION_DIRECTIONS = new Set([
+  "up",
+  "down",
+  "left",
+  "right",
+  "dive",
+  "emerge",
+]);
 const OPPOSITE_DIRECTION: Record<string, string> = {
   up: "down",
   down: "up",
   left: "right",
   right: "left",
+  dive: "emerge",
+  emerge: "dive",
 };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -505,6 +517,29 @@ function auditEvents(
   }
 }
 
+function connectionOverlapBorder(
+  map: MapData,
+  direction: string,
+  offset: number,
+  neighbor: WorkspaceAuditMap,
+): { cells: { x: number; y: number }[]; dimensionKnown: boolean } {
+  const border = borderCells(map.width, map.height, direction);
+  const destinationAxisSize = direction === "up" || direction === "down"
+    ? neighbor.width
+    : neighbor.height;
+  if (!destinationAxisSize || destinationAxisSize <= 0) {
+    return { cells: border, dimensionKnown: false };
+  }
+  return {
+    cells: border.filter((point) => {
+      const coordinate = direction === "up" || direction === "down" ? point.x : point.y;
+      const destinationCoordinate = coordinate - offset;
+      return destinationCoordinate >= 0 && destinationCoordinate < destinationAxisSize;
+    }),
+    dimensionKnown: true,
+  };
+}
+
 function auditConnections(
   input: GameImplementabilityInput,
   issues: ImplementabilityIssue[],
@@ -526,7 +561,7 @@ function auditConnections(
     const direction = text(entry.direction);
     const destMap = text(entry.map);
     const offset = integer(entry.offset);
-    if (!direction || !VALID_DIRECTIONS.has(direction)) {
+    if (!direction || !VALID_CONNECTION_DIRECTIONS.has(direction)) {
       issue(issues, "CONNECTION_DIRECTION_INVALID", "error", "connections", `Conexão ${index}: direção inválida (${String(entry.direction)}).`);
       return;
     }
@@ -543,17 +578,37 @@ function auditConnections(
     }
     seen.add(signature);
 
-    const border = borderCells(map.width, map.height, direction);
-    const nonBlocked = border.filter((point) => grid.at(point.x, point.y) !== "blocked");
-    const strict = border.filter((point) => grid.at(point.x, point.y) === "passable");
-    if (!nonBlocked.length) {
-      issue(issues, "CONNECTION_BORDER_CLOSED", "error", "connections", `Conexão ${direction} não possui nenhuma célula não-bloqueada na borda correspondente.`);
-    } else if (!strict.length) {
-      issue(issues, "CONNECTION_BORDER_CONDITIONAL", "warning", "connections", `Conexão ${direction} possui ${nonBlocked.length} abertura(s), mas nenhuma foi confirmada como passable pelo behavior/atlas.`);
+    const neighbor = destMap ? workspaceContext?.maps[destMap] : undefined;
+
+    if (BORDER_CONNECTION_DIRECTIONS.has(direction)) {
+      const baseBorder = borderCells(map.width, map.height, direction);
+      let relevantBorder = baseBorder;
+      if (offset !== null && neighbor) {
+        const overlap = connectionOverlapBorder(map, direction, offset, neighbor);
+        relevantBorder = overlap.cells;
+        if (!overlap.dimensionKnown) {
+          issue(issues, "CONNECTION_GEOMETRY_UNVERIFIED", "warning", "connections", `Conexão ${index} (${direction}) tem vizinho carregado, mas a dimensão do layout de ${destMap} não está disponível; o intervalo do offset não pôde ser certificado.`);
+        } else if (!relevantBorder.length) {
+          issue(issues, "CONNECTION_GEOMETRY_NO_OVERLAP", "error", "connections", `Conexão ${index} (${direction}, offset ${offset}) não sobrepõe nenhuma coordenada da borda com ${destMap}.`);
+        }
+      } else if (!neighbor) {
+        issue(issues, "CONNECTION_GEOMETRY_UNVERIFIED", "warning", "connections", `Conexão ${index} (${direction}) não teve a geometria do offset certificada porque o mapa vizinho não está carregado.`);
+      }
+
+      if (relevantBorder.length) {
+        const nonBlocked = relevantBorder.filter((point) => grid.at(point.x, point.y) !== "blocked");
+        const strict = relevantBorder.filter((point) => grid.at(point.x, point.y) === "passable");
+        if (!nonBlocked.length) {
+          issue(issues, "CONNECTION_BORDER_CLOSED", "error", "connections", `Conexão ${direction} não possui célula não-bloqueada no intervalo de borda atingido pelo offset.`);
+        } else if (!strict.length) {
+          issue(issues, "CONNECTION_BORDER_CONDITIONAL", "warning", "connections", `Conexão ${direction} possui ${nonBlocked.length} abertura(s) no intervalo relevante, mas nenhuma foi confirmada como passable pelo behavior/atlas.`);
+        }
+      }
+    } else {
+      issue(issues, "CONNECTION_SPECIAL_VERTICAL", "warning", "connections", `Conexão ${direction} é especial (Dive/Emerge): estrutura e reciprocidade são verificadas, mas não há borda 2D convencional para auditar.`);
     }
 
     if (!destMap || !currentMapId) return;
-    const neighbor = workspaceContext?.maps[destMap];
     if (!neighbor) {
       const loadError = workspaceContext?.loadErrors?.[destMap];
       issue(issues, "CONNECTION_NEIGHBOR_UNVERIFIED", "warning", "connections", `Mapa vizinho ${destMap} não está disponível no contexto${loadError ? ` (${loadError})` : ""}; reciprocidade não pôde ser confirmada.`);
@@ -577,25 +632,25 @@ function auditConnections(
       return;
     }
 
-    // fieldmap.c aplica o offset ao trocar de mapa; no par recíproco o valor
-    // precisa ter sinal oposto. Ex.: Route118 up +40 ↔ Route119 down -40.
-    // Só certificamos o offset quando ambos os lados são inteiros.
     if (offset === null) return;
-    const reciprocalOffsets = reciprocalCandidates
-      .map((connection) => integer(connection.offset))
-      .filter((value): value is number => value !== null);
-    if (!reciprocalOffsets.includes(-offset)) {
-      issue(
-        issues,
-        "CONNECTION_RECIPROCAL_OFFSET_MISMATCH",
-        "error",
-        "connections",
-        `${destMap} retorna para ${currentMapId}, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}.`,
-      );
-      return;
+    if (BORDER_CONNECTION_DIRECTIONS.has(direction)) {
+      const reciprocalOffsets = reciprocalCandidates
+        .map((connection) => integer(connection.offset))
+        .filter((value): value is number => value !== null);
+      if (!reciprocalOffsets.includes(-offset)) {
+        issue(
+          issues,
+          "CONNECTION_RECIPROCAL_OFFSET_MISMATCH",
+          "error",
+          "connections",
+          `${destMap} retorna para ${currentMapId}, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}.`,
+        );
+        return;
+      }
+      issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} offset ${offset} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} offset ${-offset} verificados.`);
+    } else {
+      issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} verificados; offset especial preservado.`);
     }
-
-    issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} offset ${offset} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} offset ${-offset} verificados.`);
   });
 }
 
@@ -659,7 +714,7 @@ function auditAccessibility(input: GameImplementabilityInput, issues: Implementa
   array(mapJson.connections).forEach((raw) => {
     const entry = record(raw);
     const direction = entry ? text(entry.direction) : null;
-    if (!direction || !VALID_DIRECTIONS.has(direction)) return;
+    if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
     for (const cell of borderOpeningIndexes(map, direction, grid.states)) criticalIndexes.add(cell);
   });
 
@@ -694,7 +749,7 @@ function auditAccessibility(input: GameImplementabilityInput, issues: Implementa
   array(mapJson.connections).forEach((raw, connectionIndex) => {
     const entry = record(raw);
     const direction = entry ? text(entry.direction) : null;
-    if (!direction || !VALID_DIRECTIONS.has(direction)) return;
+    if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
     const openings = borderOpeningIndexes(map, direction, grid.states);
     if (!openings.length || mainLenient < 0) return;
     if (!openings.some((cell) => lenient[cell] === mainLenient)) {
