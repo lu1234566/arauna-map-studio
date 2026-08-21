@@ -98,4 +98,35 @@ describe("editorStore Arauna City atomic import", () => {
     expect(restored.mapJsonDocument).toEqual(initial.mapJsonDocument);
     expect(restored.undoDepth).toBe(initialUndoDepth);
   });
+
+  it("accepts real Emerald Dive/Emerge connections in quick validation without coercing them", () => {
+    const initial = editorStore.getState();
+    const { map, mapJson } = fixture();
+    mapJson.connections = [
+      { map: "MAP_UNDERWATER_TEST", offset: 0, direction: "dive" },
+      { map: "MAP_SURFACE_TEST", offset: 0, direction: "emerge" },
+    ];
+
+    const bundle = buildCityBundle({
+      map,
+      mapJson,
+      mapName: "Special connections",
+      createdAt: "2026-08-21T00:00:00.000Z",
+    });
+    const imported = editorStore.importCityBundle(
+      serializeCityBundle(bundle),
+      "special-connections.arauna-city.json",
+    );
+    expect(imported.ok).toBe(true);
+
+    const validation = editorStore.runValidation();
+    expect(validation.issues.some((issue) => issue.message.includes("direção inválida"))).toBe(false);
+    const directions = (editorStore.getState().mapJsonDocument?.connections as Array<Record<string, unknown>>)
+      .map((connection) => connection.direction);
+    expect(directions).toEqual(["dive", "emerge"]);
+
+    editorStore.undo();
+    expect(editorStore.getState().mapName).toBe(initial.mapName);
+    expect(editorStore.getState().mapJsonDocument).toEqual(initial.mapJsonDocument);
+  });
 });
