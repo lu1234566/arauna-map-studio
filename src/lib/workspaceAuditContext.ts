@@ -16,12 +16,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function integerLike(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
-  return null;
-}
-
 function nonEmptyText(value: unknown): string | null {
   return typeof value === "string" && value.trim().length ? value : null;
 }
@@ -29,6 +23,7 @@ function nonEmptyText(value: unknown): string | null {
 /**
  * Retorna somente dependências diretas necessárias para verificar o mapa
  * atual: destinos de warps estáticos e mapas vizinhos das connections.
+ * MAP_DYNAMIC é resolvido pelo save/engine e nunca representa um arquivo.
  */
 export function referencedWorkspaceMapIds(document: EditableMapJson): string[] {
   const ids = new Set<string>();
@@ -37,8 +32,7 @@ export function referencedWorkspaceMapIds(document: EditableMapJson): string[] {
     for (const raw of document.warp_events) {
       if (!isRecord(raw)) continue;
       const destMap = nonEmptyText(raw.dest_map);
-      const destWarp = integerLike(raw.dest_warp_id);
-      if (destMap && destWarp !== null && destWarp >= 0) ids.add(destMap);
+      if (destMap && destMap !== "MAP_DYNAMIC") ids.add(destMap);
     }
   }
 
@@ -129,9 +123,13 @@ export async function buildWorkspaceAuditContext(
   const byId = workspaceMapById(workspace);
   const atlasCache = new Map<string, Promise<FingerprintAtlas>>();
 
+  // O documento em memória é sempre autoritativo para o mapa atual. Um warp
+  // self-target nunca pode substituí-lo por uma versão possivelmente stale do disco.
   if (sourceMapId) maps[sourceMapId] = { mapJson: currentDocument };
 
   for (const id of referencedWorkspaceMapIds(currentDocument)) {
+    if (id === sourceMapId) continue;
+
     const descriptor = byId.get(id);
     if (!descriptor) {
       loadErrors[id] = "mapa não encontrado no Workspace";
