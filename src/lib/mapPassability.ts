@@ -68,6 +68,8 @@ const SURFABLE_OR_WATER_BEHAVIORS = new Set<number>([
   0x51, // MB_WESTWARD_CURRENT
   0x52, // MB_NORTHWARD_CURRENT
   0x53, // MB_SOUTHWARD_CURRENT
+  0x6c, // MB_WATER_DOOR
+  0x6d, // MB_WATER_SOUTH_ARROW_WARP
 ]);
 
 const OCCUPIABLE_SPECIAL_BEHAVIORS = new Set<number>([
@@ -76,6 +78,7 @@ const OCCUPIABLE_SPECIAL_BEHAVIORS = new Set<number>([
   0x0f, // MB_MT_PYRE_HOLE
   0x1b, // MB_STAIRS_OUTSIDE_ABANDONED_SHIP
   0x1c, // MB_SHOAL_CAVE_ENTRANCE
+  0x29, // MB_LAVARIDGE_GYM_B1F_WARP
   0x60, // MB_NON_ANIMATED_DOOR
   0x61, // MB_LADDER
   0x62, // MB_EAST_ARROW_WARP
@@ -88,12 +91,27 @@ const OCCUPIABLE_SPECIAL_BEHAVIORS = new Set<number>([
   0x69, // MB_ANIMATED_DOOR
   0x6a, // MB_UP_ESCALATOR
   0x6b, // MB_DOWN_ESCALATOR
+  0x6e, // MB_DEEP_SOUTH_WARP
 ]);
+
+/** Behaviors que o engine reconhece como água/surf/corrente ou porta d'água. */
+export function isKnownWaterBehavior(behavior: number | null | undefined): boolean {
+  return behavior != null && Number.isInteger(behavior) && SURFABLE_OR_WATER_BEHAVIORS.has(behavior);
+}
+
+/** Behaviors especiais ocupáveis que o engine trata como warp/movimento. */
+export function isKnownWarpBehavior(behavior: number | null | undefined): boolean {
+  return behavior != null && Number.isInteger(behavior) && OCCUPIABLE_SPECIAL_BEHAVIORS.has(behavior);
+}
+
+/** Condicional conhecido é verificável; unknown continua incerteza real. */
+export function isKnownConditionalBehavior(behavior: number | null | undefined): boolean {
+  return isKnownWaterBehavior(behavior) || isKnownWarpBehavior(behavior);
+}
 
 export function classifyBehavior(behavior: number | null | undefined): Passability {
   if (behavior == null || !Number.isInteger(behavior)) return "unknown";
-  if (SURFABLE_OR_WATER_BEHAVIORS.has(behavior)) return "conditional";
-  if (OCCUPIABLE_SPECIAL_BEHAVIORS.has(behavior)) return "conditional";
+  if (isKnownConditionalBehavior(behavior)) return "conditional";
   if (SAFE_WALKABLE_BEHAVIORS.has(behavior)) return "passable";
   return "unknown";
 }
@@ -164,7 +182,7 @@ export function cellPassability(
       state === "passable"
         ? `collision=0; behavior 0x${(behavior ?? 0).toString(16)} confirmado como ocupável`
         : state === "conditional"
-          ? `behavior 0x${(behavior ?? 0).toString(16)} exige regra especial (água/warp/movimento)`
+          ? `behavior 0x${(behavior ?? 0).toString(16)} exige regra conhecida do engine (água/warp/movimento)`
           : `behavior 0x${(behavior ?? 0).toString(16)} sem regra segura no auditor`,
     collision,
     elevation,
@@ -259,6 +277,11 @@ export function componentAt(labels: Int32Array, width: number, x: number, y: num
 }
 
 export const STRICT_PASSABLE: ReadonlySet<Passability> = new Set<Passability>(["passable"]);
+/** Known engine rules (walking + recognized conditional traversal), never unknown. */
+export const VERIFIED_PASSABLE: ReadonlySet<Passability> = new Set<Passability>([
+  "passable",
+  "conditional",
+]);
 export const LENIENT_PASSABLE: ReadonlySet<Passability> = new Set<Passability>([
   "passable",
   "conditional",
