@@ -59,6 +59,7 @@ describe("game implementability audit", () => {
       declaredTilesets: bundle.tilesets,
     });
     expect(report.counts.errors).toBe(0);
+    expect(report.counts.warnings).toBe(0);
     expect(report.fullyVerified).toBe(true);
     expect(report.implementable).toBe(true);
     expect(has(report, "WEATHER_KNOWN")).toBe(true);
@@ -83,6 +84,32 @@ describe("game implementability audit", () => {
     expect(has(report, "WARP_OUT_OF_BOUNDS")).toBe(true);
     expect(has(report, "WARP_DEST_NOT_FOUND")).toBe(true);
     expect(report.pass).toBe(false);
+  });
+
+  it("verifies a loaded reciprocal destination warp and connection", () => {
+    const map = openMap();
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_B", dest_warp_id: "0" },
+    ];
+    mapJson.connections = [{ map: "MAP_B", offset: 0, direction: "right" }];
+
+    const neighbor = baseJson("MAP_B");
+    neighbor.warp_events = [
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_A", dest_warp_id: "0" },
+    ];
+    neighbor.connections = [{ map: "MAP_A", offset: 0, direction: "left" }];
+
+    const report = auditGameImplementability({
+      map,
+      mapJson,
+      atlas,
+      workspaceContext: { sourceMapId: "MAP_A", maps: { MAP_B: { mapJson: neighbor } } },
+    });
+    expect(has(report, "WARP_RECIPROCAL_OK")).toBe(true);
+    expect(has(report, "CONNECTION_RECIPROCAL_OK")).toBe(true);
+    expect(has(report, "WARP_DEST_UNVERIFIED")).toBe(false);
+    expect(has(report, "CONNECTION_NEIGHBOR_UNVERIFIED")).toBe(false);
   });
 
   it("catches NPC spawn collision and movement range leaving map", () => {
@@ -148,6 +175,21 @@ describe("game implementability audit", () => {
     expect(report.pass).toBe(false);
   });
 
+  it("never hides uncertainty when no strict-passable component exists", () => {
+    const unknownAtlas: FingerprintAtlas = {
+      primary: "gTileset_General",
+      secondary: "gTileset_Slateport",
+      records: [{ id: 1, behavior: 0xe1, layerType: 0 }],
+    };
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "-1" },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas: unknownAtlas });
+    expect(has(report, "ACCESS_NO_STRICT_COMPONENT")).toBe(true);
+    expect(report.fullyVerified).toBe(false);
+  });
+
   it("marks missing atlas, missing metatiles and atlas identity mismatch safely", () => {
     const map = openMap();
     const mapJson = baseJson();
@@ -171,6 +213,23 @@ describe("game implementability audit", () => {
     expect(has(mismatch, "ATLAS_PRIMARY_MISMATCH")).toBe(true);
   });
 
+  it("rejects a valid bundle that no longer matches the audited editor state", () => {
+    const originalMap = openMap();
+    const mapJson = baseJson();
+    const bundle = buildCityBundle({ map: originalMap, mapJson, atlas });
+    const editedMap = openMap();
+    editedMap.physical[7] = 0x3400;
+    const report = auditGameImplementability({
+      map: editedMap,
+      mapJson,
+      atlas,
+      bundle,
+      declaredTilesets: bundle.tilesets,
+    });
+    expect(has(report, "ROUNDTRIP_INPUT_MISMATCH")).toBe(true);
+    expect(report.pass).toBe(false);
+  });
+
   it("preserves known weather and warns instead of replacing custom weather", () => {
     const known = baseJson();
     expect(has(auditGameImplementability({ map: openMap(), mapJson: known, atlas }), "WEATHER_KNOWN")).toBe(true);
@@ -179,6 +238,7 @@ describe("game implementability audit", () => {
     custom.weather = "WEATHER_ARAUNA_SALT_MIST";
     const customReport = auditGameImplementability({ map: openMap(), mapJson: custom, atlas });
     expect(has(customReport, "WEATHER_CUSTOM_UNVERIFIED")).toBe(true);
+    expect(customReport.fullyVerified).toBe(false);
     expect(custom.weather).toBe("WEATHER_ARAUNA_SALT_MIST");
   });
 });
