@@ -60,6 +60,8 @@ function fileForMap(workspace: AraunaWorkspace, map: WorkspaceMap): File | undef
 /**
  * Carrega map.json somente das dependências diretas. Nenhum mapa é aberto no
  * editor, nenhum evento é renumerado e nenhum map.bin vizinho é necessário.
+ * A dimensão do layout é copiada do layouts.json para validar o intervalo
+ * geométrico atingido pelo connection offset.
  */
 export async function buildWorkspaceAuditContext(
   workspace: AraunaWorkspace,
@@ -70,7 +72,15 @@ export async function buildWorkspaceAuditContext(
   const loadErrors: Record<string, string> = {};
   const byId = workspaceMapById(workspace);
 
-  if (sourceMapId) maps[sourceMapId] = { mapJson: currentDocument };
+  if (sourceMapId) {
+    const currentDescriptor = byId.get(sourceMapId);
+    maps[sourceMapId] = {
+      mapJson: currentDocument,
+      ...(currentDescriptor?.layout
+        ? { width: currentDescriptor.layout.width, height: currentDescriptor.layout.height }
+        : {}),
+    };
+  }
 
   for (const id of referencedWorkspaceMapIds(currentDocument)) {
     const descriptor = byId.get(id);
@@ -88,7 +98,12 @@ export async function buildWorkspaceAuditContext(
       continue;
     }
     try {
-      maps[id] = { mapJson: parseEditableMapJson(await file.text()) };
+      maps[id] = {
+        mapJson: parseEditableMapJson(await file.text()),
+        ...(descriptor.layout
+          ? { width: descriptor.layout.width, height: descriptor.layout.height }
+          : {}),
+      };
     } catch (error) {
       loadErrors[id] = error instanceof Error ? error.message : String(error);
     }
