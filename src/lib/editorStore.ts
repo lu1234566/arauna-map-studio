@@ -12,6 +12,10 @@ import {
   validateMap,
 } from "./emeraldMap";
 import {
+  edgeInteriorAnchor,
+  isConnectionEdgeWarpPosition,
+} from "./connectionEdgeWarp";
+import {
   clampCollision,
   clampElevation,
   floodFillPhysical,
@@ -149,6 +153,44 @@ function defaultMap(): MapData {
 function editablePhysicalLayer(viewMode: ViewMode): PhysicalLayer | null {
   if (viewMode === "collision" || viewMode === "elevation") return viewMode;
   return null;
+}
+
+function pointInsideMap(map: MapData, x: number, y: number): boolean {
+  return x >= 0 && y >= 0 && x < map.width && y < map.height;
+}
+
+/**
+ * Eventos de margem não possuem uma célula própria em map.bin. Para seleção
+ * visual, um warp legítimo da primeira margem é ancorado na célula interna
+ * adjacente. As coordenadas reais do map.json continuam intactas.
+ */
+function eventSelectionIndex(
+  event: DemoEvent,
+  map: MapData,
+  document: EditableMapJson | null,
+): number | null {
+  if (pointInsideMap(map, event.x, event.y)) return idx(event.x, event.y, map.width);
+  if (
+    event.source === "warp" &&
+    document &&
+    isConnectionEdgeWarpPosition(document, map.width, map.height, event)
+  ) {
+    const anchor = edgeInteriorAnchor(map.width, map.height, event);
+    return anchor ? idx(anchor.x, anchor.y, map.width) : null;
+  }
+  return null;
+}
+
+function eventCoordinateAllowed(
+  event: DemoEvent,
+  map: MapData,
+  document: EditableMapJson,
+  x: number,
+  y: number,
+): boolean {
+  if (pointInsideMap(map, x, y)) return true;
+  return event.source === "warp" &&
+    isConnectionEdgeWarpPosition(document, map.width, map.height, { x, y });
 }
 
 function deriveMapJson(document: EditableMapJson) {
@@ -439,8 +481,21 @@ class EditorStore {
     this.restoreSnapshot(next, "Refeito. Validação profunda invalidada.");
   };
 
-  isProtected = (x: number, y: number) =>
-    this.state.protectProgression && this.state.protectedCells.some((cell) => cell.x === x && cell.y === y);
+  isProtected = (x: number, y: number) => {
+    if (!this.state.protectProgression) return false;
+    if (this.state.protectedCells.some((cell) => cell.x === x && cell.y === y)) return true;
+    const document = this.state.mapJsonDocument;
+    if (!document) return false;
+    return this.state.events.some((event) => {
+      if (
+        event.source !== "warp" ||
+        pointInsideMap(this.state.map, event.x, event.y) ||
+        !isConnectionEdgeWarpPosition(document, this.state.map.width, this.state.map.height, event)
+      ) return false;
+      const anchor = edgeInteriorAnchor(this.state.map.width, this.state.map.height, event);
+      return anchor?.x === x && anchor.y === y;
+    });
+  };
 
   paint = (x: number, y: number, continuous = false) => {
     const s = this.state;
@@ -601,10 +656,13 @@ class EditorStore {
     }
     const event = this.state.events.find((candidate) => candidate.id === selectedEventId);
     if (!event) return;
+    const selectedCell = eventSelectionIndex(event, this.state.map, this.state.mapJsonDocument);
     this.set({
       selectedEventId,
-      selectedCell: idx(event.x, event.y, this.state.map.width),
-      lastMessage: `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
+      selectedCell,
+      lastMessage: selectedCell === null
+        ? `${event.label} selecionado; coordenada (${event.x},${event.y}) não possui âncora visual no layout.`
+        : `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
     }, false);
   };
 
@@ -637,8 +695,11 @@ class EditorStore {
         if (current) {
           const x = key === "x" ? Number(value) : current.x;
           const y = key === "y" ? Number(value) : current.y;
-          if (x < 0 || y < 0 || x >= s.map.width || y >= s.map.height) {
-            throw new Error(`Coordenada (${x},${y}) fora do mapa ${s.map.width}×${s.map.height}.`);
+          if (!eventCoordinateAllowed(current, s.map, s.mapJsonDocument, x, y)) {
+            throw new Error(
+              `Coordenada (${x},${y}) fora do mapa ${s.map.width}×${s.map.height}; ` +
+              "somente warps na primeira célula de uma face com conexão podem ficar na margem.",
+            );
           }
         }
       }
@@ -652,7 +713,9 @@ class EditorStore {
         events: derived.events,
         protectedCells: derived.protectedCells,
         selectedEventId: id,
-        selectedCell: selected ? idx(selected.x, selected.y, s.map.width) : s.selectedCell,
+        selectedCell: selected
+          ? eventSelectionIndex(selected, s.map, document)
+          : s.selectedCell,
         mapJsonDirty: true,
         validation: null,
         lastMessage: `Campo ${key} atualizado em ${id}.`,
@@ -1017,7 +1080,7 @@ class EditorStore {
       } else {
         issues.push({
           level: "info" as const,
-          message: `Todos os ${metadata.events.length} evento(s) do map.json estão dentro dos limites.`,
+          message: `Todos os ${metadata.events.length} evento(s) do map.json estão dentro do layout ou em margem de conexão válida.`,
         });
       }
 
