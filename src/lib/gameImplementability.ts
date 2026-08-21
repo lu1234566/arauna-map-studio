@@ -33,7 +33,6 @@ import {
   LENIENT_PASSABLE,
   VERIFIED_PASSABLE,
   type Passability,
-  type PassabilityGrid,
 } from "./mapPassability";
 import { getPhysicalLayerValue } from "./physicalMap";
 import { getWorkspaceAuditContext } from "./workspaceAuditContext";
@@ -223,6 +222,11 @@ function eventPoint(entry: Record<string, unknown>): MapPoint | null {
   const x = integer(entry.x);
   const y = integer(entry.y);
   return x === null || y === null ? null : { x, y };
+}
+
+function eventElevation(entry: Record<string, unknown>): number | null {
+  const elevation = integer(entry.elevation);
+  return elevation !== null && elevation >= 0 && elevation <= 15 ? elevation : null;
 }
 
 function arraysEqual(a: Uint16Array, b: Uint16Array): boolean {
@@ -447,7 +451,7 @@ function auditEvents(
   const mapId = text(mapJson.id);
 
   const warps = array(mapJson.warp_events);
-  const warpCells = new Map<string, number[]>();
+  const warpCells = new Map<string, Array<{ index: number; elevation: number | null }>>();
   warps.forEach((raw, eventIndex) => {
     const entry = record(raw);
     if (!entry) {
@@ -458,6 +462,11 @@ function auditEvents(
     if (!point) {
       issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} não possui coordenadas inteiras válidas.`, { eventSource: "warp", eventIndex });
       return;
+    }
+
+    const elevation = eventElevation(entry);
+    if (elevation === null) {
+      issue(issues, "WARP_ELEVATION_INVALID", "error", "warps", `Warp ${eventIndex} possui elevation inválida (${String(entry.elevation)}); esperado inteiro 0–15.`, { eventSource: "warp", eventIndex, ...point });
     }
 
     const inside = inBounds(map, point.x, point.y);
@@ -481,7 +490,7 @@ function auditEvents(
 
     const key = `${point.x},${point.y}`;
     const current = warpCells.get(key) ?? [];
-    current.push(eventIndex);
+    current.push({ index: eventIndex, elevation });
     warpCells.set(key, current);
 
     if (!destMap || destWarp === null) return;
@@ -523,19 +532,40 @@ function auditEvents(
       if (backMap === mapId && backWarp === eventIndex) {
         issue(issues, "WARP_RECIPROCAL_OK", "info", "warps", `Warp ${eventIndex} possui retorno recíproco em ${destMap}.`, loc);
       } else {
-        issue(issues, "WARP_RETURN_NONRECIPROCAL", "warning", "warps", `Warp ${eventIndex} chega a ${destMap}:${destWarp}, mas o retorno não aponta exatamente para ${mapId}:${eventIndex}; pode ser intencional, revise.`, loc);
+        issue(issues, "WARP_RETURN_NONRECIPROCAL", "info", "warps", `Warp ${eventIndex} chega a ${destMap}:${destWarp} sem retorno exato para ${mapId}:${eventIndex}; o engine aceita warps unidirecionais e redes de teleporte, então a estrutura foi preservada sem bloquear Game-ready.`, loc);
       }
     }
   });
 
-  for (const [cell, indexes] of warpCells) {
-    if (indexes.length > 1) {
-      issue(issues, "WARP_DUPLICATE_CELL", "warning", "warps", `Warps ${indexes.join(", ")} compartilham a célula ${cell}; confirme que a sobreposição é intencional.`);
+  for (const [cell, entries] of warpCells) {
+    if (entries.length < 2) continue;
+    const conflicting = new Set<number>();
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i];
+        const b = entries[j];
+        if (!a || !b) continue;
+        if (
+          a.elevation === null ||
+          b.elevation === null ||
+          a.elevation === 0 ||
+          b.elevation === 0 ||
+          a.elevation === b.elevation
+        ) {
+          conflicting.add(a.index);
+          conflicting.add(b.index);
+        }
+      }
+    }
+    if (conflicting.size > 1) {
+      issue(issues, "WARP_DUPLICATE_CELL", "warning", "warps", `Warps ${[...conflicting].join(", ")} compartilham ${cell} com elevations sobrepostas; o primeiro evento compatível pode sombrear os demais.`);
+    } else {
+      issue(issues, "WARP_SHARED_COORD_DIFFERENT_ELEVATION", "info", "warps", `Há ${entries.length} warps em ${cell}, mas suas elevations são distintas e o lookup do engine as diferencia.`);
     }
   }
 
   const objects = array(mapJson.object_events);
-  const objectCells = new Map<string, number[]>();
+  const objectCells = new Map<string, Array<{ index: number; elevation: number | null }>>();
   objects.forEach((raw, eventIndex) => {
     const entry = record(raw);
     if (!entry) {
@@ -548,49 +578,67 @@ function auditEvents(
       return;
     }
     const loc = { eventSource: "object" as const, eventIndex, ...point };
+    const elevation = eventElevation(entry);
+    if (elevation === null) {
+      issue(issues, "NPC_ELEVATION_INVALID", "error", "npcs", `NPC ${eventIndex} possui elevation inválida (${String(entry.elevation)}); esperado inteiro 0–15.`, loc);
+    }
     if ((collisionAt(map, point.x, point.y) ?? 0) > 0) {
       issue(issues, "NPC_BLOCKED", "error", "npcs", `NPC ${eventIndex} (${String(entry.local_id ?? entry.graphics_id ?? "sem id")}) nasce sobre collision > 0.`, loc);
     }
 
     const rangeX = integer(entry.movement_range_x);
     const rangeY = integer(entry.movement_range_y);
-    if (rangeX === null || rangeY === null || rangeX < 0 || rangeY < 0) {
-      issue(issues, "NPC_MOVEMENT_RANGE_INVALID", "error", "npcs", `NPC ${eventIndex} possui movement_range_x/y inválido.`, loc);
+    if (
+      rangeX === null ||
+      rangeY === null ||
+      rangeX < 0 ||
+      rangeY < 0 ||
+      rangeX > 15 ||
+      rangeY > 15
+    ) {
+      issue(issues, "NPC_MOVEMENT_RANGE_INVALID", "error", "npcs", `NPC ${eventIndex} possui movement_range_x/y inválido; os campos do engine são 4-bit (0–15).`, loc);
     } else {
       const minX = point.x - rangeX;
       const maxX = point.x + rangeX;
       const minY = point.y - rangeY;
       const maxY = point.y + rangeY;
       if (minX < 0 || minY < 0 || maxX >= map.width || maxY >= map.height) {
-        issue(issues, "NPC_MOVEMENT_RANGE_BOUNDS", "error", "npcs", `Range do NPC ${eventIndex} (${rangeX},${rangeY}) ultrapassa os limites do mapa.`, loc);
-      } else if (rangeX > 0 || rangeY > 0) {
+        issue(issues, "NPC_MOVEMENT_RANGE_CLIPPED_BY_ENGINE", "info", "npcs", `Range geométrico do NPC ${eventIndex} (${rangeX},${rangeY}) alcança fora do layout; isso é válido porque GetCollisionAtCoords bloqueia map border/coords inválidas durante cada tentativa de passo.`, loc);
+      }
+
+      if (rangeX > 0 || rangeY > 0) {
         let blocked = 0;
-        for (let y = minY; y <= maxY; y++) {
-          for (let x = minX; x <= maxX; x++) {
+        const scanMinX = Math.max(0, minX);
+        const scanMaxX = Math.min(map.width - 1, maxX);
+        const scanMinY = Math.max(0, minY);
+        const scanMaxY = Math.min(map.height - 1, maxY);
+        for (let y = scanMinY; y <= scanMaxY; y++) {
+          for (let x = scanMinX; x <= scanMaxX; x++) {
             if ((collisionAt(map, x, y) ?? 0) > 0) blocked++;
           }
         }
         if (blocked) {
-          issue(issues, "NPC_MOVEMENT_RANGE_BLOCKS", "warning", "npcs", `Range retangular do NPC ${eventIndex} inclui ${blocked} célula(s) bloqueada(s); o movement_type pode restringir o percurso, então revise visualmente.`, loc);
+          issue(issues, "NPC_MOVEMENT_RANGE_OBSTACLES_HANDLED", "info", "npcs", `Range do NPC ${eventIndex} contém ${blocked} célula(s) bloqueada(s); o engine consulta colisão a cada passo, então obstáculos internos são normais e não invalidam o mapa.`, loc);
         }
       }
     }
 
     const key = `${point.x},${point.y}`;
     const current = objectCells.get(key) ?? [];
-    current.push(eventIndex);
+    current.push({ index: eventIndex, elevation });
     objectCells.set(key, current);
   });
 
-  for (const [cell, indexes] of objectCells) {
-    if (indexes.length > 1) {
-      issue(issues, "NPC_SHARED_CELL", "warning", "npcs", `NPCs ${indexes.join(", ")} compartilham ${cell}. Flags podem torná-los mutuamente exclusivos; confirme na história/scripts.`);
+  for (const [cell, entries] of objectCells) {
+    if (entries.length > 1) {
+      issue(issues, "NPC_SHARED_CELL", "info", "npcs", `NPCs ${entries.map((entry) => entry.index).join(", ")} compartilham ${cell}. O engine suporta templates condicionados por flags/elevation; a sobreposição é preservada como diagnóstico, não como bloqueio.`);
     }
   }
 
   for (const source of ["coord_events", "bg_events"] as const) {
     const eventSource = source === "coord_events" ? ("coord" as const) : ("bg" as const);
     const seenCells = new Map<string, number[]>();
+    const exactConditions = new Map<string, number[]>();
     array(mapJson[source]).forEach((raw, eventIndex) => {
       const entry = record(raw);
       if (!entry) {
@@ -602,10 +650,22 @@ function auditEvents(
         issue(issues, "TRIGGER_OUT_OF_BOUNDS", "error", "triggers", `${source}[${eventIndex}] está fora do mapa.`, { eventSource, eventIndex, ...(point ?? {}) });
         return;
       }
-      const key = `${point.x},${point.y}`;
-      const current = seenCells.get(key) ?? [];
+      const elevation = eventElevation(entry);
+      if (elevation === null) {
+        issue(issues, "TRIGGER_ELEVATION_INVALID", "error", "triggers", `${source}[${eventIndex}] possui elevation inválida (${String(entry.elevation)}); esperado inteiro 0–15.`, { eventSource, eventIndex, ...point });
+      }
+
+      const cellKey = `${point.x},${point.y},e${elevation ?? "?"}`;
+      const current = seenCells.get(cellKey) ?? [];
       current.push(eventIndex);
-      seenCells.set(key, current);
+      seenCells.set(cellKey, current);
+
+      if (eventSource === "coord") {
+        const signature = `${cellKey}|${String(entry.var ?? entry.trigger ?? "")}|${String(entry.var_value ?? entry.index ?? "")}`;
+        const same = exactConditions.get(signature) ?? [];
+        same.push(eventIndex);
+        exactConditions.set(signature, same);
+      }
 
       if (eventSource === "bg") {
         const neighbours = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -619,9 +679,23 @@ function auditEvents(
         }
       }
     });
-    for (const [cell, indexes] of seenCells) {
-      if (indexes.length > 1) {
-        issue(issues, "TRIGGER_DUPLICATE_CELL", "warning", "triggers", `${source}: eventos ${indexes.join(", ")} compartilham a célula ${cell}; revise flags/variáveis.`);
+
+    if (eventSource === "coord") {
+      for (const [signature, indexes] of exactConditions) {
+        if (indexes.length > 1) {
+          issue(issues, "COORD_DUPLICATE_CONDITION", "warning", "triggers", `coord_events ${indexes.join(", ")} repetem a mesma posição/elevation/condição (${signature}); o primeiro script compatível pode sombrear os demais.`);
+        }
+      }
+      for (const [cell, indexes] of seenCells) {
+        if (indexes.length > 1) {
+          issue(issues, "COORD_SHARED_CELL_CONDITIONAL_OK", "info", "triggers", `coord_events ${indexes.join(", ")} compartilham ${cell}; múltiplos var/var_value na mesma célula são suportados pelo engine e comuns em mapas vanilla.`);
+        }
+      }
+    } else {
+      for (const [cell, indexes] of seenCells) {
+        if (indexes.length > 1) {
+          issue(issues, "BG_DUPLICATE_POSITION", "warning", "triggers", `bg_events ${indexes.join(", ")} compartilham ${cell}; GetBackgroundEventAtPosition escolhe por posição/elevation antes do facing, então eventos posteriores podem ficar sombreados.`);
+        }
       }
     }
   }
@@ -742,7 +816,7 @@ function auditConnections(
     });
 
     if (!reciprocalCandidates.length) {
-      issue(issues, "CONNECTION_RECIPROCAL_MISSING", "error", "connections", `${destMap} não possui conexão ${OPPOSITE_DIRECTION[direction]} de volta para ${currentMapId}.`);
+      issue(issues, "CONNECTION_RECIPROCAL_MISSING", "info", "connections", `${destMap} não possui conexão ${OPPOSITE_DIRECTION[direction]} de volta para ${currentMapId}. O engine permite conexão de borda/Dive/Emerge unidirecional; mantida como diagnóstico.`);
       return;
     }
 
@@ -755,9 +829,9 @@ function auditConnections(
         issue(
           issues,
           "CONNECTION_RECIPROCAL_OFFSET_MISMATCH",
-          "error",
+          "warning",
           "connections",
-          `${destMap} retorna para ${currentMapId}, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}.`,
+          `${destMap} retorna para ${currentMapId}, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}. O engine aceita a estrutura, mas a volta pode alinhar outra faixa do mapa.`,
         );
         return;
       }
@@ -766,35 +840,6 @@ function auditConnections(
       issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} verificados; offset especial preservado.`);
     }
   });
-}
-
-function componentStats(grid: PassabilityGrid, labels: Int32Array) {
-  const stats = new Map<number, { size: number; strict: number }>();
-  for (let i = 0; i < labels.length; i++) {
-    const label = labels[i] ?? -1;
-    if (label < 0) continue;
-    const current = stats.get(label) ?? { size: 0, strict: 0 };
-    current.size++;
-    if (grid.states[i] === "passable") current.strict++;
-    stats.set(label, current);
-  }
-  return stats;
-}
-
-/** Prioriza solo confirmado e usa o tamanho da componente como desempate. */
-function mainComponent(grid: PassabilityGrid, labels: Int32Array): number {
-  const stats = componentStats(grid, labels);
-  let best = -1;
-  let bestStrict = -1;
-  let bestSize = -1;
-  for (const [label, value] of stats) {
-    if (value.strict > bestStrict || (value.strict === bestStrict && value.size > bestSize)) {
-      best = label;
-      bestStrict = value.strict;
-      bestSize = value.size;
-    }
-  }
-  return best;
 }
 
 function connectionOpeningIndexes(
@@ -835,32 +880,7 @@ function auditAccessibility(
   const grid = buildPassabilityGrid(map, atlas ?? null);
   const lenient = connectedComponents(grid, LENIENT_PASSABLE);
   const verified = connectedComponents(grid, VERIFIED_PASSABLE);
-  const mainLenient = mainComponent(grid, lenient);
-  const mainVerified = mainComponent(grid, verified);
-
-  const criticalIndexes = new Set<number>();
-  array(mapJson.warp_events).forEach((raw) => {
-    const entry = record(raw);
-    const point = entry ? eventPoint(entry) : null;
-    const accessPoint = point ? warpAccessPoint(map, mapJson, point) : null;
-    if (accessPoint) criticalIndexes.add(idx(accessPoint.x, accessPoint.y, map.width));
-  });
-  array(mapJson.connections).forEach((raw) => {
-    const entry = record(raw);
-    if (!entry) return;
-    for (const cell of connectionOpeningIndexes(map, entry, grid.states, workspaceContext)) {
-      criticalIndexes.add(cell);
-    }
-  });
-
-  if (criticalIndexes.size && mainLenient < 0) {
-    issue(issues, "ACCESS_NO_NAVIGABLE_COMPONENT", "error", "accessibility", "Existem warps/saídas críticas, mas nenhuma componente fisicamente navegável foi encontrada.");
-    return;
-  }
-
-  if (atlas && criticalIndexes.size && mainVerified < 0) {
-    issue(issues, "ACCESS_NO_VERIFIED_COMPONENT", "warning", "accessibility", "Nenhuma componente crítica pôde ser formada apenas com behaviors conhecidos; a acessibilidade depende de estados unknown.");
-  }
+  const criticalComponents = new Set<number>();
 
   array(mapJson.warp_events).forEach((raw, eventIndex) => {
     const entry = record(raw);
@@ -872,15 +892,16 @@ function auditAccessibility(
     if (state === "blocked") return;
 
     const lenientLabel = lenient[cell] ?? -1;
-    if (lenientLabel < 0 || (mainLenient >= 0 && lenientLabel !== mainLenient)) {
-      issue(issues, "ACCESS_WARP_ISOLATED", "error", "accessibility", `Warp ${eventIndex} está isolado da principal componente fisicamente possível.`, { eventSource: "warp", eventIndex, ...point });
+    if (lenientLabel < 0) {
+      issue(issues, "ACCESS_WARP_NOT_NAVIGABLE", "error", "accessibility", `Warp ${eventIndex} não pertence a nenhuma componente fisicamente navegável.`, { eventSource: "warp", eventIndex, ...point });
       return;
     }
+    criticalComponents.add(lenientLabel);
 
     if (atlas) {
       const verifiedLabel = verified[cell] ?? -1;
-      if (verifiedLabel < 0 || (mainVerified >= 0 && verifiedLabel !== mainVerified)) {
-        issue(issues, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR", "warning", "accessibility", `Acesso ao warp ${eventIndex} só foi demonstrado quando behaviors unknown são aceitos; não é possível certificar o caminho integralmente.`, { eventSource: "warp", eventIndex, ...point });
+      if (verifiedLabel < 0) {
+        issue(issues, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR", "warning", "accessibility", `Acesso ao warp ${eventIndex} depende de behavior unknown; não é possível certificar sequer a componente local sem aceitar estado desconhecido.`, { eventSource: "warp", eventIndex, ...point });
       } else if (state === "conditional") {
         const result = cellPassability(map, accessPoint.x, accessPoint.y, atlas);
         if (isKnownWarpBehavior(result.behavior)) {
@@ -896,17 +917,26 @@ function auditAccessibility(
     const direction = text(entry.direction);
     if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
     const openings = connectionOpeningIndexes(map, entry, grid.states, workspaceContext);
-    if (!openings.length || mainLenient < 0) return;
-    if (!openings.some((cell) => lenient[cell] === mainLenient)) {
-      issue(issues, "ACCESS_CONNECTION_ISOLATED", "error", "accessibility", `Abertura da conexão ${connectionIndex} (${direction}) no intervalo atingido pelo offset não alcança a componente navegável principal.`);
+    if (!openings.length) return;
+
+    const lenientOpenings = openings.filter((cell) => (lenient[cell] ?? -1) >= 0);
+    if (!lenientOpenings.length) {
+      issue(issues, "ACCESS_CONNECTION_NOT_NAVIGABLE", "error", "accessibility", `Abertura da conexão ${connectionIndex} (${direction}) não pertence a nenhuma componente navegável.`);
       return;
     }
-    if (atlas && mainVerified >= 0 && !openings.some((cell) => verified[cell] === mainVerified)) {
-      issue(issues, "ACCESS_CONNECTION_REQUIRES_UNKNOWN", "warning", "accessibility", `Conexão ${connectionIndex} (${direction}) só alcança a componente principal quando behaviors unknown são aceitos.`);
+    for (const cell of lenientOpenings) criticalComponents.add(lenient[cell] ?? -1);
+
+    if (atlas && !openings.some((cell) => (verified[cell] ?? -1) >= 0)) {
+      issue(issues, "ACCESS_CONNECTION_REQUIRES_UNKNOWN", "warning", "accessibility", `Conexão ${connectionIndex} (${direction}) só possui abertura em componente que depende de behavior unknown.`);
     }
   });
 
-  if (!atlas && criticalIndexes.size) {
+  if (criticalComponents.size > 1) {
+    issue(issues, "ACCESS_MULTIPLE_COMPONENTS_OK", "info", "accessibility", `Warps/saídas críticas ocupam ${criticalComponents.size} componentes navegáveis distintas. Isso é compatível com layouts segmentados, elevadores e redes de teleporte; o auditor não exige uma única ilha principal.`);
+  }
+
+  const hasCritical = array(mapJson.warp_events).length > 0 || array(mapJson.connections).length > 0;
+  if (!atlas && hasCritical) {
     issue(issues, "ACCESS_ATLAS_PARTIAL", "warning", "accessibility", "Pathfinding foi conservador e sem behavior real: somente bloqueios físicos são conclusivos.");
   }
 }
