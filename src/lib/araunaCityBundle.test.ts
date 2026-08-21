@@ -3,6 +3,7 @@ import { type MapData } from "./emeraldMap";
 import {
   buildCityBundle,
   bundlesEquivalent,
+  canonicalJson,
   CityBundleError,
   compileCityBundle,
   parseCityBundle,
@@ -102,6 +103,11 @@ describe("arauna-city-v1", () => {
     expect(serializeCityBundle(original).endsWith("\n")).toBe(true);
   });
 
+  it("canonical JSON uses locale-independent key ordering", () => {
+    expect(canonicalJson({ "á": 3, z: 1, a: 2 })).toBe('{"a":2,"z":1,"á":3}');
+    expect(canonicalJson({ b: { d: 1, c: 2 }, a: 0 })).toBe('{"a":0,"b":{"c":2,"d":1}}');
+  });
+
   it("rejects checksum, cell-count and physical derivation corruption", () => {
     const source = buildCityBundle({ map: map(), mapJson: mapJson() });
 
@@ -118,7 +124,7 @@ describe("arauna-city-v1", () => {
     expect(verifyBundleIntegrity(derived).some((issue) => issue.code === "BUNDLE_PHYSICAL_DERIVATION")).toBe(true);
   });
 
-  it("rejects dimension, identity and mirrored-property corruption", () => {
+  it("rejects dimension, identity, mirrored-property and protected-cell corruption", () => {
     const source = buildCityBundle({ map: map(), mapJson: mapJson() });
     const dimensions = cloneBundle(source);
     dimensions.identity.width = 99;
@@ -131,6 +137,26 @@ describe("arauna-city-v1", () => {
     const properties = cloneBundle(source);
     properties.properties.weather = "WEATHER_RAIN";
     expect(() => compileCityBundle(properties)).toThrow(/BUNDLE_PROPERTIES_MISMATCH/);
+
+    const protectedCells = cloneBundle(source);
+    protectedCells.protectedCells[0]!.reason = "tampered";
+    expect(() => compileCityBundle(protectedCells)).toThrow(/BUNDLE_PROTECTED_CELLS_MISMATCH/);
+  });
+
+  it("rejects connection contract geometry/count tampering", () => {
+    const json = mapJson();
+    json.connections = [{ map: "MAP_B", offset: 0, direction: "right" }];
+    const source = buildCityBundle({ map: map(), mapJson: json });
+    expect(source.connectionContracts[0]?.borderCells).toBe(3);
+
+    const border = cloneBundle(source);
+    border.connectionContracts[0]!.borderCells = 999;
+    expect(() => compileCityBundle(border)).toThrow(/BUNDLE_CONNECTION_CONTRACT_MISMATCH/);
+
+    const counts = cloneBundle(source);
+    counts.connectionContracts[0]!.openCells = 3;
+    counts.connectionContracts[0]!.conditionalCells = 3;
+    expect(() => compileCityBundle(counts)).toThrow(/BUNDLE_CONNECTION_CONTRACT_MISMATCH/);
   });
 
   it("parse rejects unsupported version and invalid arrays before compile", () => {
