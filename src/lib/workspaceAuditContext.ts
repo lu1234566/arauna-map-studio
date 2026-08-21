@@ -107,11 +107,52 @@ async function loadLightweightAuditAtlas(
   return pending;
 }
 
+async function currentMapAuditEntry(
+  workspace: AraunaWorkspace,
+  byId: Map<string, WorkspaceMap>,
+  sourceMapId: string,
+  currentDocument: EditableMapJson,
+  atlasCache: Map<string, Promise<FingerprintAtlas>>,
+  loadErrors: Record<string, string>,
+): Promise<NonNullable<ImplementabilityWorkspaceContext["maps"][string]>> {
+  const descriptor = byId.get(sourceMapId);
+  if (!descriptor) {
+    loadErrors[sourceMapId] = "mapa atual não encontrado no Workspace; identidade do layout/tilesets não pôde ser certificada";
+    return { mapJson: currentDocument };
+  }
+  if (descriptor.error) {
+    loadErrors[sourceMapId] = descriptor.error;
+    return { mapJson: currentDocument };
+  }
+
+  const layout = descriptor.layout ?? workspace.layouts.get(descriptor.layoutId);
+  if (!layout) {
+    loadErrors[sourceMapId] = `layout ${descriptor.layoutId || "(vazio)"} do mapa atual não encontrado`;
+    return { mapJson: currentDocument };
+  }
+
+  const entry: NonNullable<ImplementabilityWorkspaceContext["maps"][string]> = {
+    mapJson: currentDocument,
+    width: layout.width,
+    height: layout.height,
+  };
+  try {
+    entry.atlas = await loadLightweightAuditAtlas(workspace, layout, atlasCache);
+  } catch (error) {
+    loadErrors[sourceMapId] = error instanceof Error ? error.message : String(error);
+  }
+  return entry;
+}
+
 /**
  * Carrega somente as dependências diretas. Nenhum mapa é aberto no editor e
  * nenhum evento é renumerado. Além do map.json, carregamos o map.bin e apenas
  * os atributos dos tilesets (sem PNG/paletas) para auditar tiles de margem de
  * conexão como o warp vanilla (40,7) de SlateportCity.
+ *
+ * Para o mapa atual, o documento EM MEMÓRIA continua autoritativo, mas também
+ * carregamos as dimensões e o fingerprint leve do par de tilesets definido em
+ * layouts.json. Isso permite provar que o atlas ativo pertence ao layout real.
  */
 export async function buildWorkspaceAuditContext(
   workspace: AraunaWorkspace,
@@ -123,11 +164,20 @@ export async function buildWorkspaceAuditContext(
   const byId = workspaceMapById(workspace);
   const atlasCache = new Map<string, Promise<FingerprintAtlas>>();
 
-  // O documento em memória é sempre autoritativo para o mapa atual. Um warp
-  // self-target nunca pode substituí-lo por uma versão possivelmente stale do disco.
-  if (sourceMapId) maps[sourceMapId] = { mapJson: currentDocument };
+  if (sourceMapId) {
+    maps[sourceMapId] = await currentMapAuditEntry(
+      workspace,
+      byId,
+      sourceMapId,
+      currentDocument,
+      atlasCache,
+      loadErrors,
+    );
+  }
 
   for (const id of referencedWorkspaceMapIds(currentDocument)) {
+    // Self-warp/self-connection usa o documento em memória acima. Nunca o
+    // substituímos por uma cópia possivelmente stale do arquivo em disco.
     if (id === sourceMapId) continue;
 
     const descriptor = byId.get(id);
