@@ -118,7 +118,7 @@ describe("arauna-city-v1", () => {
     expect(verifyBundleIntegrity(derived).some((issue) => issue.code === "BUNDLE_PHYSICAL_DERIVATION")).toBe(true);
   });
 
-  it("rejects dimension and mapJson identity mismatch", () => {
+  it("rejects dimension, identity and mirrored-property corruption", () => {
     const source = buildCityBundle({ map: map(), mapJson: mapJson() });
     const dimensions = cloneBundle(source);
     dimensions.identity.width = 99;
@@ -127,9 +127,13 @@ describe("arauna-city-v1", () => {
     const identity = cloneBundle(source);
     identity.identity.id = "MAP_OTHER";
     expect(() => compileCityBundle(identity)).toThrow(/BUNDLE_IDENTITY_MISMATCH/);
+
+    const properties = cloneBundle(source);
+    properties.properties.weather = "WEATHER_RAIN";
+    expect(() => compileCityBundle(properties)).toThrow(/BUNDLE_PROPERTIES_MISMATCH/);
   });
 
-  it("parse rejects unsupported version and out-of-range arrays before compile", () => {
+  it("parse rejects unsupported version and invalid arrays before compile", () => {
     const source = buildCityBundle({ map: map(), mapJson: mapJson() });
     const version = cloneBundle(source) as AraunaCityBundle & { version: number };
     version.version = 2;
@@ -141,7 +145,6 @@ describe("arauna-city-v1", () => {
 
     const badPhysical = cloneBundle(source);
     badPhysical.cells.physical[0] = 1;
-    // parse accepts integer range but integrity rejects forbidden low bits.
-    expect(verifyBundleIntegrity(parseCityBundle(badPhysical)).some((issue) => issue.code === "BUNDLE_PHYSICAL_RANGE")).toBe(true);
+    expect(() => parseCityBundle(badPhysical)).toThrow(/cells\.physical\[0\]/);
   });
 });
