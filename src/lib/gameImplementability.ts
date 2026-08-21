@@ -35,7 +35,10 @@ import {
   type Passability,
 } from "./mapPassability";
 import { getPhysicalLayerValue } from "./physicalMap";
-import { getWorkspaceAuditContext } from "./workspaceAuditContext";
+import {
+  getWorkspaceAuditContext,
+  sharedEventsContextKey,
+} from "./workspaceAuditContext";
 
 export type ImplementabilitySeverity = "error" | "warning" | "info";
 export type ImplementabilityCategory =
@@ -92,7 +95,10 @@ export interface WorkspaceAuditMap {
 }
 
 export interface ImplementabilityWorkspaceContext {
-  /** Mapas indexados pelo id MAP_* do map.json. */
+  /**
+   * Mapas por MAP_* e dependências internas `@shared-events:*` carregadas pelo
+   * Workspace. A chave interna nunca é serializada no bundle.
+   */
   maps: Record<string, WorkspaceAuditMap | undefined>;
   /** ID do mapa para o qual este contexto foi coletado. Evita contexto stale. */
   sourceMapId?: string | null;
@@ -274,11 +280,17 @@ function resolveWorkspaceContext(
   const active = getWorkspaceAuditContext();
   const mapId = text(input.mapJson?.id);
   if (!active || !mapId || active.sourceMapId !== mapId) return null;
-  // Um contexto coletado antes de editar/importar outro documento com o mesmo
-  // MAP_* não pode certificar a versão nova. O Workspace guarda a referência
-  // exata do documento em memória usado para montar o contexto.
   if (active.maps[mapId]?.mapJson !== input.mapJson) return null;
   return active;
+}
+
+function effectiveEventDocument(
+  mapJson: EditableMapJson,
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+): EditableMapJson | null {
+  const sharedName = text(mapJson.shared_events_map);
+  if (!sharedName) return mapJson;
+  return workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
 }
 
 function auditGrid(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
@@ -434,7 +446,11 @@ function auditTilesets(
   }
 }
 
-function auditMapJson(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
+function auditMapJson(
+  input: GameImplementabilityInput,
+  issues: ImplementabilityIssue[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+) {
   const document = input.mapJson;
   if (!document) {
     issue(issues, "MAPJSON_MISSING", "error", "mapJson", "map.json não carregado; eventos, conexões, clima e propriedades seriam perdidos.");
@@ -447,8 +463,6 @@ function auditMapJson(input: GameImplementabilityInput, issues: Implementability
     }
   }
 
-  // generate_map_header_text() chama json_to_string sem silent para todos estes
-  // campos. Se estiverem ausentes/vazios, tools/mapjson falha antes de gerar ASM.
   for (const key of [
     "music",
     "region_map_section",
@@ -489,6 +503,56 @@ function auditMapJson(input: GameImplementabilityInput, issues: Implementability
     const value = document[key];
     if (value !== undefined && value !== null && !Array.isArray(value)) {
       issue(issues, `MAPJSON_${key.toUpperCase()}_TYPE`, "error", "mapJson", `${key} precisa ser array ou null quando presente.`);
+    }
+  }
+
+  if (document.shared_events_map !== undefined) {
+    const sharedName = text(document.shared_events_map);
+    if (!sharedName) {
+      issue(issues, "SHARED_EVENTS_NAME_INVALID", "error", "mapJson", "shared_events_map precisa ser nome não vazio de um mapa quando presente.");
+    } else {
+      const shared = workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson;
+      if (!shared) {
+        const loadError = workspaceContext?.loadErrors?.[sharedEventsContextKey(sharedName)];
+        issue(
+          issues,
+          "SHARED_EVENTS_UNVERIFIED",
+          "warning",
+          "mapJson",
+          `shared_events_map=${sharedName} não pôde ser carregado${loadError ? ` (${loadError})` : ""}; NPCs/warps/triggers efetivos não podem ser certificados.`,
+        );
+      } else {
+        issue(
+          issues,
+          "SHARED_EVENTS_LOADED",
+          "info",
+          "mapJson",
+          `Eventos efetivos carregados de ${sharedName}, conforme shared_events_map do MapHeader.`,
+        );
+      }
+
+      const localCount = ["object_events", "warp_events", "coord_events", "bg_events"]
+        .reduce((sum, key) => sum + array(document[key]).length, 0);
+      if (localCount > 0) {
+        issue(
+          issues,
+          "SHARED_EVENTS_LOCAL_EVENTS_IGNORED",
+          "warning",
+          "mapJson",
+          `${localCount} evento(s) local(is) coexistem com shared_events_map=${sharedName}; tools/mapjson ignora os arrays locais e usa somente ${sharedName}_MapEvents.`,
+        );
+      }
+
+      // O editor preserva o ponteiro corretamente, mas ainda não edita a fonte
+      // compartilhada pela tela do mapa consumidor. Mantemos isso visível para
+      // que um mapa shared nunca pareça possuir eventos locais editáveis.
+      issue(
+        issues,
+        "SHARED_EVENTS_READ_ONLY_SOURCE",
+        "info",
+        "mapJson",
+        `Os eventos compartilhados são auditados em modo somente leitura; edite o mapa-fonte ${sharedName} para alterar posições/IDs.`,
+      );
     }
   }
 
@@ -622,9 +686,11 @@ function auditEvents(
 ) {
   const { map, mapJson } = input;
   if (!mapJson) return;
+  const eventMapJson = effectiveEventDocument(mapJson, workspaceContext);
+  if (!eventMapJson) return;
   const mapId = text(mapJson.id);
 
-  const warps = array(mapJson.warp_events);
+  const warps = array(eventMapJson.warp_events);
   const warpCells = new Map<string, Array<{ index: number; elevation: number | null }>>();
   warps.forEach((raw, eventIndex) => {
     const entry = record(raw);
@@ -705,9 +771,10 @@ function auditEvents(
       return;
     }
 
-    const targetWarps = array(target.mapJson.warp_events);
+    const targetEventsDocument = effectiveEventDocument(target.mapJson, workspaceContext) ?? target.mapJson;
+    const targetWarps = array(targetEventsDocument.warp_events);
     if (destWarp < 0 || destWarp >= targetWarps.length || !record(targetWarps[destWarp])) {
-      issue(issues, "WARP_DEST_NOT_FOUND", "error", "warps", `Destino ${destMap} warp ${destWarp} não existe.`, loc);
+      issue(issues, "WARP_DEST_NOT_FOUND", "error", "warps", `Destino ${destMap} warp ${destWarp} não existe nos eventos efetivos do mapa de destino.`, loc);
       return;
     }
 
@@ -750,7 +817,7 @@ function auditEvents(
     }
   }
 
-  const objects = array(mapJson.object_events);
+  const objects = array(eventMapJson.object_events);
   const objectCells = new Map<string, Array<{ index: number; elevation: number | null }>>();
   objects.forEach((raw, eventIndex) => {
     const entry = record(raw);
@@ -855,7 +922,7 @@ function auditEvents(
     const eventSource = source === "coord_events" ? ("coord" as const) : ("bg" as const);
     const seenCells = new Map<string, number[]>();
     const exactConditions = new Map<string, number[]>();
-    array(mapJson[source]).forEach((raw, eventIndex) => {
+    array(eventMapJson[source]).forEach((raw, eventIndex) => {
       const entry = record(raw);
       if (!entry) {
         issue(issues, "TRIGGER_NOT_OBJECT", "error", "triggers", `${source}[${eventIndex}] não é objeto.`, { eventSource, eventIndex });
@@ -1134,13 +1201,15 @@ function auditAccessibility(
 ) {
   const { map, mapJson, atlas } = input;
   if (!mapJson || map.metatiles.length !== map.width * map.height || map.physical.length !== map.width * map.height) return;
+  const eventMapJson = effectiveEventDocument(mapJson, workspaceContext);
+  if (!eventMapJson) return;
 
   const grid = buildPassabilityGrid(map, atlas ?? null);
   const lenient = connectedComponents(grid, LENIENT_PASSABLE);
   const verified = connectedComponents(grid, VERIFIED_PASSABLE);
   const criticalComponents = new Set<number>();
 
-  array(mapJson.warp_events).forEach((raw, eventIndex) => {
+  array(eventMapJson.warp_events).forEach((raw, eventIndex) => {
     const entry = record(raw);
     const point = entry ? eventPoint(entry) : null;
     const accessPoint = point ? warpAccessPoint(map, mapJson, point) : null;
@@ -1148,8 +1217,6 @@ function auditAccessibility(
     const cell = idx(accessPoint.x, accessPoint.y, map.width);
     const state = grid.states[cell] ?? "unknown";
     if (state === "blocked") {
-      // Animated doors can legally trigger from the cell in front; auditEvents
-      // already certifies that special case against the behavior.
       if (atlas && cellPassability(map, accessPoint.x, accessPoint.y, atlas).behavior === MB_ANIMATED_DOOR) return;
       return;
     }
@@ -1198,7 +1265,7 @@ function auditAccessibility(
     issue(issues, "ACCESS_MULTIPLE_COMPONENTS_OK", "info", "accessibility", `Warps/saídas críticas ocupam ${criticalComponents.size} componentes navegáveis distintas. Isso é compatível com layouts segmentados, elevadores e redes de teleporte; o auditor não exige uma única ilha principal.`);
   }
 
-  const hasCritical = array(mapJson.warp_events).length > 0 || array(mapJson.connections).length > 0;
+  const hasCritical = array(eventMapJson.warp_events).length > 0 || array(mapJson.connections).length > 0;
   if (!atlas && hasCritical) {
     issue(issues, "ACCESS_ATLAS_PARTIAL", "warning", "accessibility", "Pathfinding foi conservador e sem behavior real: somente bloqueios físicos são conclusivos.");
   }
@@ -1253,7 +1320,7 @@ export function auditGameImplementability(input: GameImplementabilityInput): Gam
 
   auditGrid(input, issues);
   auditTilesets(input, issues, workspaceContext);
-  auditMapJson(input, issues);
+  auditMapJson(input, issues, workspaceContext);
   auditWeather(input.mapJson, issues);
   auditEvents(input, issues, workspaceContext);
   auditConnections(input, issues, workspaceContext);
