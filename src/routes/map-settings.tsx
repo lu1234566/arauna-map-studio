@@ -25,7 +25,8 @@ const BOOLEAN_FIELDS = [
   ["show_map_name", "Mostrar nome do mapa"],
 ] as const;
 
-const DIRECTIONS: ConnectionDirection[] = ["up", "down", "left", "right"];
+const BORDER_DIRECTIONS: ConnectionDirection[] = ["up", "down", "left", "right"];
+const SPECIAL_DIRECTIONS = new Set(["dive", "emerge"]);
 
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -119,7 +120,13 @@ function ConnectionTextField({
 }
 
 function ConnectionCard({ index, connection }: { index: number; connection: JsonRecord }) {
-  const direction = String(connection.direction ?? "up") as ConnectionDirection;
+  const direction = typeof connection.direction === "string" && connection.direction.length > 0
+    ? connection.direction
+    : "up";
+  const borderDirection = BORDER_DIRECTIONS.includes(direction as ConnectionDirection)
+    ? (direction as ConnectionDirection)
+    : null;
+  const specialDirection = SPECIAL_DIRECTIONS.has(direction);
   const known = new Set(["map", "offset", "direction"]);
   const extras = Object.entries(connection).filter(([key]) => !known.has(key));
 
@@ -142,16 +149,37 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
         <ConnectionTextField index={index} field="map" label="Mapa de destino" value={connection.map} />
         <label className="block">
           <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">Direção</span>
-          <select
-            value={DIRECTIONS.includes(direction) ? direction : "up"}
-            onChange={(event) => editorStore.updateConnection(index, "direction", event.target.value)}
-            className="h-7 w-full rounded-sm border border-border bg-background px-1.5 font-mono text-[10px] outline-none focus:border-primary/60"
-          >
-            {DIRECTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          {borderDirection ? (
+            <select
+              value={borderDirection}
+              onChange={(event) => editorStore.updateConnection(index, "direction", event.target.value)}
+              className="h-7 w-full rounded-sm border border-border bg-background px-1.5 font-mono text-[10px] outline-none focus:border-primary/60"
+            >
+              {BORDER_DIRECTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          ) : (
+            <div
+              className="flex h-7 items-center rounded-sm border border-warning/30 bg-warning/5 px-1.5 font-mono text-[10px] text-foreground"
+              title={
+                specialDirection
+                  ? "Conexão especial Dive/Emerge preservada sem conversão para uma direção 2D."
+                  : "Direção não reconhecida pelo editor; valor preservado para evitar corrupção silenciosa."
+              }
+            >
+              <span className="truncate">{direction}</span>
+            </div>
+          )}
         </label>
         <ConnectionTextField index={index} field="offset" label="Offset" value={connection.offset} />
       </div>
+
+      {!borderDirection && (
+        <p className="mt-2 rounded-sm border border-warning/20 bg-warning/5 px-2 py-1 text-[9px] leading-relaxed text-warning">
+          {specialDirection
+            ? "Dive/Emerge é uma conexão especial sem borda 2D convencional. A direção é exibida e preservada em modo somente leitura para impedir conversão acidental para up/down/left/right."
+            : `Direção “${direction}” não é suportada pela edição visual atual. O valor original foi preservado sem alteração.`}
+        </p>
+      )}
 
       {extras.length > 0 && (
         <details className="mt-2 rounded-sm border border-border bg-canvas p-1.5">
@@ -248,10 +276,12 @@ function MapSettingsPage() {
             <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
               <div>
                 <h2 className="panel-title">Conexões entre mapas</h2>
-                <p className="mt-1 text-[10px] text-muted-foreground">Destino, direção e offset do array connections.</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Destino, direção e offset do array connections. Dive/Emerge existentes são preservados sem coerção para uma borda 2D.
+                </p>
               </div>
               <div className="ml-auto flex flex-wrap gap-1">
-                {DIRECTIONS.map((direction) => (
+                {BORDER_DIRECTIONS.map((direction) => (
                   <button
                     key={direction}
                     type="button"
@@ -274,7 +304,7 @@ function MapSettingsPage() {
               ))}
               {connections.length === 0 && (
                 <div className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                  Este mapa não possui conexões. Use os botões acima para criar uma.
+                  Este mapa não possui conexões. Use os botões acima para criar uma conexão de borda.
                 </div>
               )}
             </div>
