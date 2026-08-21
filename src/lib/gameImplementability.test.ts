@@ -46,6 +46,10 @@ function has(report: ReturnType<typeof auditGameImplementability>, code: string)
   return report.issues.some((issue) => issue.code === code);
 }
 
+function severity(report: ReturnType<typeof auditGameImplementability>, code: string) {
+  return report.issues.find((issue) => issue.code === code)?.severity;
+}
+
 describe("game implementability audit", () => {
   it("can reach fully verified game-ready for a self-contained valid map", () => {
     const map = openMap();
@@ -177,23 +181,27 @@ describe("game implementability audit", () => {
     expect(has(report, "CONNECTION_NEIGHBOR_UNVERIFIED")).toBe(false);
   });
 
-  it("rejects a reciprocal connection whose offset is not the opposite value", () => {
+  it("keeps an asymmetric reverse connection as a review warning instead of a hard engine error", () => {
     const mapJson = baseJson();
-    mapJson.connections = [{ map: "MAP_B", offset: 40, direction: "up" }];
+    mapJson.connections = [{ map: "MAP_B", offset: 1, direction: "up" }];
     const neighbor = baseJson("MAP_B");
-    neighbor.connections = [{ map: "MAP_A", offset: -39, direction: "down" }];
+    neighbor.connections = [{ map: "MAP_A", offset: 0, direction: "down" }];
 
     const report = auditGameImplementability({
       map: openMap(),
       mapJson,
       atlas,
-      workspaceContext: { sourceMapId: "MAP_A", maps: { MAP_B: { mapJson: neighbor } } },
+      workspaceContext: {
+        sourceMapId: "MAP_A",
+        maps: { MAP_B: { mapJson: neighbor, width: 5, height: 5 } },
+      },
     });
     expect(has(report, "CONNECTION_RECIPROCAL_OFFSET_MISMATCH")).toBe(true);
-    expect(report.pass).toBe(false);
+    expect(severity(report, "CONNECTION_RECIPROCAL_OFFSET_MISMATCH")).toBe("warning");
+    expect(report.pass).toBe(true);
   });
 
-  it("checks accessibility only inside the border interval selected by connection offset", () => {
+  it("evaluates a connection in its real offset interval without forcing it into the largest component", () => {
     const map = openMap();
     map.physical.fill(0x3400);
     for (let x = 0; x < map.width; x++) map.physical[x] = 0x3000;
@@ -213,8 +221,8 @@ describe("game implementability audit", () => {
         maps: { MAP_B: { mapJson: neighbor, width: 2, height: 2 } },
       },
     });
-    expect(has(report, "ACCESS_CONNECTION_ISOLATED")).toBe(true);
-    expect(report.pass).toBe(false);
+    expect(has(report, "ACCESS_CONNECTION_NOT_NAVIGABLE")).toBe(false);
+    expect(report.pass).toBe(true);
   });
 
   it("treats recognized ocean traversal as verified conditional, not unknown", () => {
@@ -256,7 +264,7 @@ describe("game implementability audit", () => {
     expect(has(report, "ACCESS_WARP_ENGINE_BEHAVIOR_OK")).toBe(true);
   });
 
-  it("catches NPC spawn collision and movement range leaving map", () => {
+  it("keeps NPC range clipping and internal obstacles informational while still rejecting a blocked spawn", () => {
     const map = openMap();
     map.physical[0] = 0x3400;
     const mapJson = baseJson();
@@ -278,10 +286,115 @@ describe("game implementability audit", () => {
     ];
     const report = auditGameImplementability({ map, mapJson, atlas });
     expect(has(report, "NPC_BLOCKED")).toBe(true);
-    expect(has(report, "NPC_MOVEMENT_RANGE_BOUNDS")).toBe(true);
+    expect(has(report, "NPC_MOVEMENT_RANGE_CLIPPED_BY_ENGINE")).toBe(true);
+    expect(severity(report, "NPC_MOVEMENT_RANGE_CLIPPED_BY_ENGINE")).toBe("info");
+    expect(has(report, "NPC_MOVEMENT_RANGE_OBSTACLES_HANDLED")).toBe(true);
+    expect(report.pass).toBe(false);
   });
 
-  it("detects duplicate connections, closed border and missing reciprocity", () => {
+  it("rejects movement ranges that cannot fit the 4-bit pokeemerald fields", () => {
+    const mapJson = baseJson();
+    mapJson.object_events = [
+      {
+        graphics_id: "OBJ_EVENT_GFX_MAN_1",
+        x: 2,
+        y: 2,
+        elevation: 3,
+        movement_type: "MOVEMENT_TYPE_WANDER_AROUND",
+        movement_range_x: 16,
+        movement_range_y: 0,
+        trainer_type: "TRAINER_TYPE_NONE",
+        trainer_sight_or_berry_tree_id: "0",
+        script: "Test_EventScript",
+        flag: "0",
+      },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "NPC_MOVEMENT_RANGE_INVALID")).toBe(true);
+    expect(report.pass).toBe(false);
+  });
+
+  it("accepts multiple coord events on the same tile when their var conditions differ", () => {
+    const mapJson = baseJson();
+    mapJson.coord_events = [
+      { type: "trigger", x: 2, y: 2, elevation: 3, var: "VAR_TEST", var_value: "0", script: "Test_EventScript_A" },
+      { type: "trigger", x: 2, y: 2, elevation: 3, var: "VAR_TEST", var_value: "1", script: "Test_EventScript_B" },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "COORD_SHARED_CELL_CONDITIONAL_OK")).toBe(true);
+    expect(has(report, "COORD_DUPLICATE_CONDITION")).toBe(false);
+    expect(report.pass).toBe(true);
+  });
+
+  it("distinguishes warps sharing X/Y on different elevations", () => {
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 2, y: 2, elevation: 1, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
+    expect(has(report, "WARP_SHARED_COORD_DIFFERENT_ELEVATION")).toBe(true);
+    expect(has(report, "WARP_DUPLICATE_CELL")).toBe(false);
+    expect(report.pass).toBe(true);
+  });
+
+  it("does not reject segmented teleport layouts for having more than one navigable component", () => {
+    const map = openMap();
+    map.physical.fill(0x3400);
+    map.physical[0] = 0x3000;
+    map.physical[4 * map.width + 4] = 0x3000;
+
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 0, y: 0, elevation: 3, dest_map: "MAP_A", dest_warp_id: "1" },
+      { x: 4, y: 4, elevation: 3, dest_map: "MAP_A", dest_warp_id: "0" },
+    ];
+    const report = auditGameImplementability({
+      map,
+      mapJson,
+      atlas,
+      workspaceContext: {
+        sourceMapId: "MAP_A",
+        maps: { MAP_A: { map, mapJson, width: 5, height: 5, atlas } },
+      },
+    });
+    expect(has(report, "ACCESS_MULTIPLE_COMPONENTS_OK")).toBe(true);
+    expect(has(report, "ACCESS_WARP_NOT_NAVIGABLE")).toBe(false);
+    expect(report.pass).toBe(true);
+  });
+
+  it("does not reject an isolated decorative component just because a warp lives in another component", () => {
+    const map = openMap();
+    map.physical.fill(0x3400);
+    for (const [x, y] of [[2, 2], [2, 3], [3, 2]] as const) {
+      map.physical[y * map.width + x] = 0x3000;
+    }
+    map.physical[0] = 0x3000;
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 0, y: 0, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
+    ];
+    const report = auditGameImplementability({ map, mapJson, atlas });
+    expect(has(report, "ACCESS_WARP_NOT_NAVIGABLE")).toBe(false);
+    expect(report.pass).toBe(true);
+  });
+
+  it("never hides uncertainty when a critical component depends on unknown behavior", () => {
+    const unknownAtlas: FingerprintAtlas = {
+      primary: "gTileset_General",
+      secondary: "gTileset_Slateport",
+      records: [{ id: 1, behavior: 0xe1, layerType: 0 }],
+    };
+    const mapJson = baseJson();
+    mapJson.warp_events = [
+      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
+    ];
+    const report = auditGameImplementability({ map: openMap(), mapJson, atlas: unknownAtlas });
+    expect(has(report, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR")).toBe(true);
+    expect(report.fullyVerified).toBe(false);
+  });
+
+  it("detects duplicate connections, closed border and reports one-way reciprocity without making it a second hard error", () => {
     const map = openMap();
     for (let y = 0; y < map.height; y++) map.physical[y * map.width + (map.width - 1)] = 0x3400;
     const mapJson = baseJson();
@@ -294,43 +407,13 @@ describe("game implementability audit", () => {
       map,
       mapJson,
       atlas,
-      workspaceContext: { maps: { MAP_B: { map: openMap(), mapJson: neighbor } } },
+      workspaceContext: { maps: { MAP_B: { map: openMap(), mapJson: neighbor, width: 5, height: 5 } } },
     });
     expect(has(report, "CONNECTION_DUPLICATE")).toBe(true);
     expect(has(report, "CONNECTION_BORDER_CLOSED")).toBe(true);
     expect(has(report, "CONNECTION_RECIPROCAL_MISSING")).toBe(true);
-  });
-
-  it("detects a physically isolated warp even when its own tile is open", () => {
-    const map = openMap();
-    map.physical.fill(0x3400);
-    for (const [x, y] of [[2, 2], [2, 3], [3, 2]] as const) {
-      map.physical[y * map.width + x] = 0x3000;
-    }
-    map.physical[0] = 0x3000;
-    const mapJson = baseJson();
-    mapJson.warp_events = [
-      { x: 0, y: 0, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
-    ];
-    const report = auditGameImplementability({ map, mapJson, atlas });
-    expect(has(report, "ACCESS_WARP_ISOLATED")).toBe(true);
+    expect(severity(report, "CONNECTION_RECIPROCAL_MISSING")).toBe("info");
     expect(report.pass).toBe(false);
-  });
-
-  it("never hides uncertainty when no verified component exists", () => {
-    const unknownAtlas: FingerprintAtlas = {
-      primary: "gTileset_General",
-      secondary: "gTileset_Slateport",
-      records: [{ id: 1, behavior: 0xe1, layerType: 0 }],
-    };
-    const mapJson = baseJson();
-    mapJson.warp_events = [
-      { x: 2, y: 2, elevation: 3, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
-    ];
-    const report = auditGameImplementability({ map: openMap(), mapJson, atlas: unknownAtlas });
-    expect(has(report, "ACCESS_NO_VERIFIED_COMPONENT")).toBe(true);
-    expect(has(report, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR")).toBe(true);
-    expect(report.fullyVerified).toBe(false);
   });
 
   it("marks missing atlas, missing metatiles and atlas identity mismatch safely", () => {
