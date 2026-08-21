@@ -30,11 +30,17 @@ import { patternLibraryStore } from "@/lib/patternLibraryStore";
 import { ensureAuthenticEmeraldPreviewAtlas } from "@/lib/pretEmeraldBootstrap";
 import { realAtlasStore } from "@/lib/realAtlasStore";
 import { smartPathStore } from "@/lib/smartPathStore";
+import {
+  clearWorkspaceAuditContext,
+  refreshWorkspaceAuditContext,
+} from "@/lib/workspaceAuditContext";
+import { useWorkspaceSession } from "@/lib/workspaceSession";
 
 export const Route = createFileRoute("/")({ component: Index });
 
 function Index() {
   const state = useEditor();
+  const session = useWorkspaceSession();
 
   useEffect(() => {
     // A prévia vazia do Lovable/Chrome deve mostrar o Emerald real, nunca
@@ -130,9 +136,26 @@ function Index() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const validateForGame = () => {
+    void (async () => {
+      try {
+        await refreshWorkspaceAuditContext(
+          session?.workspace,
+          editorStore.getState().mapJsonDocument,
+        );
+      } catch (error) {
+        clearWorkspaceAuditContext();
+        editorStore.setMessage(
+          `Não foi possível carregar dependências do Workspace para a auditoria: ${error instanceof Error ? error.message : String(error)}. A validação seguirá como parcial.`,
+        );
+      }
+      editorStore.runValidation();
+    })();
+  };
+
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
-      <TopToolbar onValidate={() => editorStore.runValidation()} />
+      <TopToolbar onValidate={validateForGame} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <TilePalette />
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
