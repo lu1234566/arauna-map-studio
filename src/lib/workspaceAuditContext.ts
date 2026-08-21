@@ -30,9 +30,8 @@ export function referencedWorkspaceSharedEventNames(document: EditableMapJson): 
 }
 
 /**
- * Retorna somente dependências diretas necessárias para verificar o mapa:
- * destinos de warps estáticos e mapas vizinhos das connections.
- * MAP_DYNAMIC é resolvido pelo save/engine e nunca representa um arquivo.
+ * Destinos diretos necessários para verificar o mapa. MAP_DYNAMIC é resolvido
+ * pelo save/engine e nunca representa um arquivo físico do Workspace.
  */
 export function referencedWorkspaceMapIds(document: EditableMapJson): string[] {
   const ids = new Set<string>();
@@ -170,6 +169,9 @@ async function loadSharedEventsDocument(
   loadErrors: Record<string, string>,
 ): Promise<EditableMapJson | null> {
   const key = sharedEventsContextKey(sharedName);
+  const existing = maps[key]?.mapJson;
+  if (existing) return existing;
+
   const descriptor = byName.get(sharedName);
   if (!descriptor) {
     loadErrors[key] = `shared_events_map ${sharedName} não encontrado no Workspace`;
@@ -194,15 +196,35 @@ async function loadSharedEventsDocument(
   }
 }
 
+async function loadSharedDependenciesForDocument(
+  workspace: AraunaWorkspace,
+  byName: Map<string, WorkspaceMap>,
+  document: EditableMapJson,
+  maps: ImplementabilityWorkspaceContext["maps"],
+  loadErrors: Record<string, string>,
+  dependencyIds: Set<string>,
+): Promise<void> {
+  for (const sharedName of referencedWorkspaceSharedEventNames(document)) {
+    const sharedDocument = await loadSharedEventsDocument(
+      workspace,
+      byName,
+      sharedName,
+      maps,
+      loadErrors,
+    );
+    if (!sharedDocument) continue;
+    for (const id of referencedWorkspaceMapIds(sharedDocument)) dependencyIds.add(id);
+  }
+}
+
 /**
  * Carrega somente dependências necessárias para a auditoria. Nenhum mapa é
  * aberto no editor e nenhum evento é renumerado.
  *
- * Além de destinos de warp/connections, respeitamos `shared_events_map`: o
- * MapHeader do pokeemerald aponta diretamente para `<shared>_MapEvents`, então
- * os NPCs/warps/triggers efetivos podem morar em outro map.json. O documento
- * compartilhado é armazenado sob uma chave interna `@shared-events:*` e suas
- * próprias dependências de warp também entram no contexto.
+ * `shared_events_map` é tratado como o engine: o consumidor continua dono de
+ * seu layout/map.bin, porém NPCs/warps/triggers efetivos são lidos da fonte
+ * compartilhada. Isso é feito tanto para o mapa atual quanto para mapas que
+ * sejam destino de um warp, evitando falso WARP_DEST_NOT_FOUND.
  */
 export async function buildWorkspaceAuditContext(
   workspace: AraunaWorkspace,
@@ -227,22 +249,24 @@ export async function buildWorkspaceAuditContext(
     );
   }
 
-  for (const sharedName of referencedWorkspaceSharedEventNames(currentDocument)) {
-    const sharedDocument = await loadSharedEventsDocument(
-      workspace,
-      byName,
-      sharedName,
-      maps,
-      loadErrors,
-    );
-    if (sharedDocument) {
-      for (const id of referencedWorkspaceMapIds(sharedDocument)) dependencyIds.add(id);
-    }
-  }
+  await loadSharedDependenciesForDocument(
+    workspace,
+    byName,
+    currentDocument,
+    maps,
+    loadErrors,
+    dependencyIds,
+  );
 
-  for (const id of [...dependencyIds].sort()) {
-    // Self-warp/self-connection usa o documento em memória acima. Nunca o
-    // substituímos por uma cópia possivelmente stale do arquivo em disco.
+  // O Set pode crescer quando um shared-events source contém warps. Processamos
+  // até estabilizar as dependências diretas necessárias para validar destinos.
+  const processed = new Set<string>();
+  while (true) {
+    const nextId = [...dependencyIds].sort().find((id) => !processed.has(id));
+    if (!nextId) break;
+    processed.add(nextId);
+    const id = nextId;
+
     if (id === sourceMapId) continue;
 
     const descriptor = byId.get(id);
@@ -266,6 +290,14 @@ export async function buildWorkspaceAuditContext(
       if (!layout) {
         maps[id] = { mapJson };
         loadErrors[id] = `layout ${descriptor.layoutId || "(vazio)"} não encontrado`;
+        await loadSharedDependenciesForDocument(
+          workspace,
+          byName,
+          mapJson,
+          maps,
+          loadErrors,
+          dependencyIds,
+        );
         continue;
       }
 
@@ -295,6 +327,15 @@ export async function buildWorkspaceAuditContext(
 
       maps[id] = entry;
       if (warnings.length) loadErrors[id] = warnings.join("; ");
+
+      await loadSharedDependenciesForDocument(
+        workspace,
+        byName,
+        mapJson,
+        maps,
+        loadErrors,
+        dependencyIds,
+      );
     } catch (error) {
       loadErrors[id] = error instanceof Error ? error.message : String(error);
     }
