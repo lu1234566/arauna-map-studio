@@ -10,22 +10,36 @@ import {
 afterEach(() => clearWorkspaceAuditContext());
 
 describe("workspaceAuditContext", () => {
-  it("collects only static warp destinations and direct connection neighbors", () => {
+  it("collects only real map dependencies and never treats MAP_DYNAMIC as a file", () => {
     const document: EditableMapJson = {
       id: "MAP_A",
       name: "A",
       layout: "LAYOUT_A",
       warp_events: [
         { x: 1, y: 1, dest_map: "MAP_B", dest_warp_id: "0" },
-        { x: 2, y: 1, dest_map: "MAP_DYNAMIC", dest_warp_id: "-1" },
+        { x: 2, y: 1, dest_map: "MAP_DYNAMIC", dest_warp_id: "WARP_ID_DYNAMIC" },
         { x: 3, y: 1, dest_map: "MAP_C", dest_warp_id: 2 },
+        { x: 4, y: 1, dest_map: "MAP_E", dest_warp_id: "WARP_ID_NONE" },
       ],
       connections: [
         { map: "MAP_D", offset: 0, direction: "up" },
         { map: "MAP_B", offset: 1, direction: "left" },
       ],
     };
-    expect(referencedWorkspaceMapIds(document)).toEqual(["MAP_B", "MAP_C", "MAP_D"]);
+    expect(referencedWorkspaceMapIds(document)).toEqual(["MAP_B", "MAP_C", "MAP_D", "MAP_E"]);
+  });
+
+  it("keeps self references visible to the dependency planner", () => {
+    const document: EditableMapJson = {
+      id: "MAP_A",
+      name: "A",
+      layout: "LAYOUT_A",
+      warp_events: [{ x: 1, y: 1, dest_map: "MAP_A", dest_warp_id: "0" }],
+      connections: [],
+    };
+    // buildWorkspaceAuditContext deliberately skips reloading this id from disk
+    // and keeps the current in-memory document authoritative.
+    expect(referencedWorkspaceMapIds(document)).toEqual(["MAP_A"]);
   });
 
   it("keeps active context explicit and clearable", () => {
