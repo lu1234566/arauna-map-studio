@@ -694,7 +694,32 @@ function borderOpeningIndexes(map: MapData, direction: string, states: Passabili
     .filter((i) => states[i] !== "blocked");
 }
 
-function auditAccessibility(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
+function connectionOpeningIndexes(
+  map: MapData,
+  entry: Record<string, unknown>,
+  states: Passability[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+): number[] {
+  const direction = text(entry.direction);
+  if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return [];
+
+  const destMap = text(entry.map);
+  const offset = integer(entry.offset);
+  const neighbor = destMap ? workspaceContext?.maps[destMap] : undefined;
+  const cells = offset !== null && neighbor
+    ? connectionOverlapBorder(map, direction, offset, neighbor).cells
+    : borderCells(map.width, map.height, direction);
+
+  return cells
+    .map((point) => idx(point.x, point.y, map.width))
+    .filter((i) => states[i] !== "blocked");
+}
+
+function auditAccessibility(
+  input: GameImplementabilityInput,
+  issues: ImplementabilityIssue[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+) {
   const { map, mapJson, atlas } = input;
   if (!mapJson || map.metatiles.length !== map.width * map.height || map.physical.length !== map.width * map.height) return;
 
@@ -713,9 +738,10 @@ function auditAccessibility(input: GameImplementabilityInput, issues: Implementa
   });
   array(mapJson.connections).forEach((raw) => {
     const entry = record(raw);
-    const direction = entry ? text(entry.direction) : null;
-    if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
-    for (const cell of borderOpeningIndexes(map, direction, grid.states)) criticalIndexes.add(cell);
+    if (!entry) return;
+    for (const cell of connectionOpeningIndexes(map, entry, grid.states, workspaceContext)) {
+      criticalIndexes.add(cell);
+    }
   });
 
   if (criticalIndexes.size && mainLenient < 0) {
@@ -748,12 +774,13 @@ function auditAccessibility(input: GameImplementabilityInput, issues: Implementa
 
   array(mapJson.connections).forEach((raw, connectionIndex) => {
     const entry = record(raw);
-    const direction = entry ? text(entry.direction) : null;
+    if (!entry) return;
+    const direction = text(entry.direction);
     if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
-    const openings = borderOpeningIndexes(map, direction, grid.states);
+    const openings = connectionOpeningIndexes(map, entry, grid.states, workspaceContext);
     if (!openings.length || mainLenient < 0) return;
     if (!openings.some((cell) => lenient[cell] === mainLenient)) {
-      issue(issues, "ACCESS_CONNECTION_ISOLATED", "error", "accessibility", `Abertura da conexão ${connectionIndex} (${direction}) não alcança a componente navegável principal.`);
+      issue(issues, "ACCESS_CONNECTION_ISOLATED", "error", "accessibility", `Abertura da conexão ${connectionIndex} (${direction}) no intervalo atingido pelo offset não alcança a componente navegável principal.`);
     }
   });
 
@@ -815,7 +842,7 @@ export function auditGameImplementability(input: GameImplementabilityInput): Gam
   auditWeather(input.mapJson, issues);
   auditEvents(input, issues, workspaceContext);
   auditConnections(input, issues, workspaceContext);
-  auditAccessibility(input, issues);
+  auditAccessibility(input, issues, workspaceContext);
   auditRoundTrip(input, issues);
 
   const categories = Object.fromEntries(
