@@ -84,49 +84,22 @@ function rawPhysical(pattern: MapPattern, value: number) {
   return pattern.kind === "raw" ? value & PHYSICAL_MASK : 0;
 }
 
-function connectedComponents(mask: Uint8Array, width: number, height: number) {
-  const seen = new Uint8Array(mask.length);
-  const components: number[][] = [];
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || seen[start]) continue;
-    const queue = [start];
-    const component: number[] = [];
-    seen[start] = 1;
-    while (queue.length) {
-      const current = queue.pop()!;
-      component.push(current);
-      const x = current % width;
-      const y = Math.floor(current / width);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (!dx && !dy) continue;
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-          const next = idx(nx, ny, width);
-          if (!mask[next] || seen[next]) continue;
-          seen[next] = 1;
-          queue.push(next);
-        }
-      }
-    }
-    components.push(component);
-  }
-  return components;
-}
-
-function distanceToPorts(cell: number, pattern: MapPattern) {
-  const ports = pattern.ports ?? [];
-  if (!ports.length) return Number.POSITIVE_INFINITY;
-  const x = cell % pattern.width;
-  const y = Math.floor(cell / pattern.width);
-  return Math.min(...ports.map((port) => Math.max(Math.abs(x - port.x), Math.abs(y - port.y))));
+function isPatternBoundary(index: number, width: number, height: number) {
+  const x = index % width;
+  const y = Math.floor(index / width);
+  return x === 0 || y === 0 || x === width - 1 || y === height - 1;
 }
 
 /**
- * Deriva uma máscara estrutural sem alterar o Pattern salvo. Células de terreno,
- * rua e calçada capturadas junto da fachada viram transparentes no Exact Grid.
- * O núcleo é ancorado por metatiles não-solo, colisão/layering e pelas portas.
+ * Deriva uma máscara estrutural sem alterar o Pattern salvo. Em vez de depender
+ * de uma lista curta de IDs de piso, o compilador detecta contexto pela topologia
+ * do próprio recorte RAW: células caminháveis/normal/layer-0 ligadas à borda são
+ * terreno, rua ou calçada capturados junto da fachada e portanto transparentes.
+ *
+ * IDs de piso conhecidos e IDs caminháveis observados na borda também ficam
+ * transparentes quando aparecem em ilhas internas (útil para corredores do
+ * Mercado). O restante permanece opaco. Patterns não-RAW continuam 100% opacos,
+ * pois não carregam física suficiente para uma inferência segura.
  */
 export function deriveStructureMask(
   pattern: MapPattern,
@@ -136,61 +109,71 @@ export function deriveStructureMask(
   smartPaths: SmartPathPreset[],
 ) {
   const total = pattern.width * pattern.height;
-  const hard = new Uint8Array(total);
   const result = new Uint8Array(total);
+  if (pattern.kind !== "raw") {
+    result.fill(1);
+    return result;
+  }
+
   const records = new Map(atlas.records.map((record) => [record.id & METATILE_MASK, record]));
   const floors = groundFamily(reconstruction, portMetatile, smartPaths);
-  const marketLike = /(mercado|market|feira|fixed-origin)/.test(
-    normalize(`${pattern.id} ${pattern.name} ${(pattern.tags ?? []).join(" ")}`),
-  );
+  const open = new Uint8Array(total);
+  const transparent = new Uint8Array(total);
+  const boundaryOpenIds = new Set<number>();
+  const queue: number[] = [];
 
   for (let i = 0; i < total; i++) {
     const value = Number(pattern.values[i] ?? 0);
     const id = value & METATILE_MASK;
     const record = records.get(id);
+    if (!record) continue;
     const collision = getCollision(rawPhysical(pattern, value));
-    const behavior = record?.behavior ?? 0;
-    const layerType = record?.layerType ?? 0;
-    const likelyFloor = floors.has(id) && collision === 0 && behavior === 0 && layerType === 0;
-    if (!likelyFloor && (collision > 0 || behavior !== 0 || layerType > 0 || !floors.has(id))) hard[i] = 1;
+    const behavior = record.behavior ?? 0;
+    const layerType = record.layerType ?? 0;
+    if (collision === 0 && behavior === 0 && layerType === 0) open[i] = 1;
   }
 
-  const components = connectedComponents(hard, pattern.width, pattern.height);
-  const largest = Math.max(0, ...components.map((component) => component.length));
-  const selected = components.filter((component) => {
-    if (marketLike) return true;
-    const nearPort = component.some((cell) => distanceToPorts(cell, pattern) <= 4);
-    const meaningful = component.length >= Math.max(2, Math.ceil(largest * 0.2));
-    return nearPort || meaningful;
-  });
+  const seed = (cell: number) => {
+    if (!open[cell] || transparent[cell]) return;
+    transparent[cell] = 1;
+    queue.push(cell);
+    boundaryOpenIds.add(Number(pattern.values[cell] ?? 0) & METATILE_MASK);
+  };
 
-  for (const component of selected) {
-    for (const cell of component) {
-      const x = cell % pattern.width;
-      const y = Math.floor(cell / pattern.width);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= pattern.width || ny >= pattern.height) continue;
-          result[idx(nx, ny, pattern.width)] = 1;
-        }
-      }
+  for (let i = 0; i < total; i++) {
+    if (isPatternBoundary(i, pattern.width, pattern.height)) seed(i);
+  }
+
+  while (queue.length) {
+    const cell = queue.pop()!;
+    const x = cell % pattern.width;
+    const y = Math.floor(cell / pattern.width);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= pattern.width || ny >= pattern.height) continue;
+      const next = idx(nx, ny, pattern.width);
+      if (!open[next] || transparent[next]) continue;
+      transparent[next] = 1;
+      queue.push(next);
     }
   }
 
-  for (const port of pattern.ports ?? []) {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const x = port.x + dx;
-        const y = port.y + dy;
-        if (x < 0 || y < 0 || x >= pattern.width || y >= pattern.height) continue;
-        result[idx(x, y, pattern.width)] = 1;
-      }
-    }
+  for (let i = 0; i < total; i++) {
+    if (!open[i]) continue;
+    const id = Number(pattern.values[i] ?? 0) & METATILE_MASK;
+    if (floors.has(id) || boundaryOpenIds.has(id)) transparent[i] = 1;
   }
 
-  if (!result.some(Boolean)) result.fill(1);
+  let opaqueCount = 0;
+  for (let i = 0; i < total; i++) {
+    if (transparent[i]) continue;
+    result[i] = 1;
+    opaqueCount++;
+  }
+
+  // Fail-closed: um Pattern sem núcleo detectável não deve desaparecer inteiro.
+  if (!opaqueCount) result.fill(1);
   return result;
 }
 
