@@ -112,6 +112,22 @@ describe("game implementability audit", () => {
     expect(has(report, "CONNECTION_NEIGHBOR_UNVERIFIED")).toBe(false);
   });
 
+  it("rejects a reciprocal connection whose offset is not the opposite value", () => {
+    const mapJson = baseJson();
+    mapJson.connections = [{ map: "MAP_B", offset: 40, direction: "up" }];
+    const neighbor = baseJson("MAP_B");
+    neighbor.connections = [{ map: "MAP_A", offset: -39, direction: "down" }];
+
+    const report = auditGameImplementability({
+      map: openMap(),
+      mapJson,
+      atlas,
+      workspaceContext: { sourceMapId: "MAP_A", maps: { MAP_B: { mapJson: neighbor } } },
+    });
+    expect(has(report, "CONNECTION_RECIPROCAL_OFFSET_MISMATCH")).toBe(true);
+    expect(report.pass).toBe(false);
+  });
+
   it("catches NPC spawn collision and movement range leaving map", () => {
     const map = openMap();
     map.physical[0] = 0x3400;
@@ -160,11 +176,9 @@ describe("game implementability audit", () => {
   it("detects a physically isolated warp even when its own tile is open", () => {
     const map = openMap();
     map.physical.fill(0x3400);
-    // Main island with 3 cells.
     for (const [x, y] of [[2, 2], [2, 3], [3, 2]] as const) {
       map.physical[y * map.width + x] = 0x3000;
     }
-    // Isolated warp island, one cell.
     map.physical[0] = 0x3000;
     const mapJson = baseJson();
     mapJson.warp_events = [
