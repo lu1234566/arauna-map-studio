@@ -16,6 +16,10 @@ import type { AiMapCompileResult } from "./aiMapPlan";
 import type { AiMapReconstructionPlan } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
 import {
+  applyExactGridDeterministicDetails,
+  normalizeExactGridSelectivePreserve,
+} from "./exactGridPreserveDetail";
+import {
   applyExactGridStructureMasks,
   type StructureMaskStats,
 } from "./exactGridStructureMask";
@@ -178,6 +182,8 @@ export function compileAiExactGrid({
     return inactive;
   }
 
+  normalizeExactGridSelectivePreserve(layered, reconstruction);
+
   const errors = [...layered.errors];
   const warnings = [...layered.warnings];
   if (layered.parsed.strictIsolation && layered.unsetCount > 0) {
@@ -231,8 +237,16 @@ export function compileAiExactGrid({
     smartPaths,
     reservedCells,
   });
-  const map = masked.map;
   warnings.push(...masked.warnings);
+
+  const detailed = applyExactGridDeterministicDetails({
+    map: masked.map,
+    sourceMap,
+    layered,
+    atlas,
+  });
+  const map = detailed.map;
+  warnings.push(...detailed.warnings);
 
   const recordById = new Map(atlas.records.map((record) => [record.id & METATILE_MASK, record]));
   const cells: ExactGridCell[] = [];
