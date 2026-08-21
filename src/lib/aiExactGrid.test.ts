@@ -16,11 +16,11 @@ const atlas = {
   height: 16,
   createdAt: "2026-08-20T00:00:00.000Z",
   rgbaBase64: "",
-  records: [1, 2, 3, 4, 6, 7, 8].map((id, slot) => ({
+  records: [1, 2, 3, 4, 6, 7, 8, 9].map((id, slot) => ({
     id,
     source: "primary" as const,
     localId: id,
-    behavior: 0x00,
+    behavior: id === 9 ? 0x10 : 0x00,
     layerType: id === 7 ? 1 : 0,
     slot,
   })),
@@ -51,11 +51,11 @@ const contextHouse: MapPattern = {
   height: 5,
   kind: "raw",
   values: [
-    0x3008, 0x3008, 0x3008, 0x3008, 0x3008,
-    0x3008, 0x3008, 0x0407, 0x3008, 0x3008,
-    0x3008, 0x3008, 0x0407, 0x3008, 0x3008,
-    0x3008, 0x3008, 0x3008, 0x3008, 0x3008,
-    0x3008, 0x3008, 0x3008, 0x3008, 0x3008,
+    0x1009, 0x3008, 0x3008, 0x3008, 0x3008,
+    0x1009, 0x3008, 0x0407, 0x3008, 0x3008,
+    0x1009, 0x3008, 0x0407, 0x3008, 0x3008,
+    0x1009, 0x3008, 0x3008, 0x3008, 0x3008,
+    0x1009, 0x3008, 0x3008, 0x3008, 0x3008,
   ],
   ports: [{ id: "entrada", name: "Entrada", kind: "entrance", x: 2, y: 4 }],
   createdAt: "2026-08-20T00:00:00.000Z",
@@ -139,7 +139,7 @@ describe("Exact Grid compiler", () => {
     expect(exact.map.metatiles[idx(5, 8, map.width)]).toBe(6);
   });
 
-  it("makes unknown walkable context connected to a raw facade border transparent", () => {
+  it("makes unknown walkable and water context at a raw facade border transparent", () => {
     const map = createEmptyMap(12, 10, 1);
     map.physical.fill(0x3000);
     map.physical[idx(0, 0, map.width)] = 0x1000;
@@ -165,6 +165,8 @@ describe("Exact Grid compiler", () => {
     expect(exact.ownerCounts.structure).toBe(2);
     expect(exact.map.metatiles[idx(2, 2, map.width)]).toBe(1);
     expect(exact.cells[idx(2, 2, map.width)]!.owner).toBe("ground");
+    expect(exact.map.metatiles[idx(2, 4, map.width)]).toBe(1);
+    expect(exact.cells[idx(2, 4, map.width)]!.owner).toBe("ground");
     expect(exact.map.metatiles[idx(4, 3, map.width)]).toBe(7);
     expect(exact.cells[idx(4, 3, map.width)]!.owner).toBe("structure");
   });

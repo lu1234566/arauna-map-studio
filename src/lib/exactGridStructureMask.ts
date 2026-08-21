@@ -96,6 +96,10 @@ function isPatternBoundary(index: number, width: number, height: number) {
  * do próprio recorte RAW: células caminháveis/normal/layer-0 ligadas à borda são
  * terreno, rua ou calçada capturados junto da fachada e portanto transparentes.
  *
+ * Água/costa caminhável também é contexto quando alcança a borda do recorte.
+ * Isso evita carregar pedaços do litoral junto de prédios capturados em Slateport,
+ * enquanto portas/limiares continuam opacos porque não são NORMAL nem água.
+ *
  * IDs de piso conhecidos e IDs caminháveis observados na borda também ficam
  * transparentes quando aparecem em ilhas internas (útil para corredores do
  * Mercado). O restante permanece opaco. Patterns não-RAW continuam 100% opacos,
@@ -130,7 +134,9 @@ export function deriveStructureMask(
     const collision = getCollision(rawPhysical(pattern, value));
     const behavior = record.behavior ?? 0;
     const layerType = record.layerType ?? 0;
-    if (collision === 0 && behavior === 0 && layerType === 0) open[i] = 1;
+    const walkableFloor = collision === 0 && behavior === 0 && layerType === 0;
+    const walkableWater = collision === 0 && WATER_BEHAVIORS.has(behavior);
+    if (walkableFloor || walkableWater) open[i] = 1;
   }
 
   const seed = (cell: number) => {
