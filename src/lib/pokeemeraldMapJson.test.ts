@@ -63,6 +63,47 @@ describe("parsePokeemeraldMapJson", () => {
     expect(metadataOutOfBounds(metadata, 10, 10).length).toBeGreaterThan(0);
   });
 
+  it("aceita somente warp na primeira célula da margem quando a face possui conexão", () => {
+    const source = JSON.stringify({
+      id: "MAP_SLATEPORT_CITY",
+      name: "SlateportCity",
+      layout: "LAYOUT_SLATEPORT_CITY",
+      connections: [{ map: "MAP_ROUTE134", direction: "right", offset: 0 }],
+      warp_events: [
+        { x: 40, y: 7, elevation: 0, dest_map: "MAP_SLATEPORT_CITY_HARBOR", dest_warp_id: "2" },
+      ],
+      object_events: [
+        {
+          graphics_id: "OBJ_EVENT_GFX_MAN_1",
+          x: 40,
+          y: 8,
+          movement_type: "MOVEMENT_TYPE_FACE_LEFT",
+        },
+      ],
+      coord_events: [],
+      bg_events: [],
+    });
+    const metadata = parsePokeemeraldMapJson(source);
+    const outside = metadataOutOfBounds(metadata, 40, 60);
+    expect(outside.map((event) => event.source)).toEqual(["object"]);
+    expect(outside.some((event) => event.source === "warp")).toBe(false);
+  });
+
+  it("não aceita evento além da primeira célula da margem", () => {
+    const source = JSON.stringify({
+      id: "MAP_EDGE_TEST",
+      name: "EdgeTest",
+      layout: "LAYOUT_EDGE_TEST",
+      connections: [{ map: "MAP_B", direction: "right", offset: 0 }],
+      warp_events: [{ x: 41, y: 7, elevation: 0, dest_map: "MAP_B", dest_warp_id: "0" }],
+      object_events: [],
+      coord_events: [],
+      bg_events: [],
+    });
+    const metadata = parsePokeemeraldMapJson(source);
+    expect(metadataOutOfBounds(metadata, 40, 60)).toHaveLength(1);
+  });
+
   it("rejeita JSON sem os campos fundamentais", () => {
     expect(() => parsePokeemeraldMapJson("{}")).toThrow(MapJsonParseError);
   });
