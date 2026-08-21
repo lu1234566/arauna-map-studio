@@ -18,10 +18,20 @@ import {
   type FingerprintAtlas,
 } from "./araunaCityBundle";
 import {
+  connectionEdgeDirection,
+  edgeConnections,
+  edgeInteriorAnchor,
+  isConnectionEdgeWarpPosition,
+  translateEdgePointToNeighbor,
+  type MapPoint,
+} from "./connectionEdgeWarp";
+import {
   buildPassabilityGrid,
+  cellPassability,
   connectedComponents,
+  isKnownWarpBehavior,
   LENIENT_PASSABLE,
-  STRICT_PASSABLE,
+  VERIFIED_PASSABLE,
   type Passability,
   type PassabilityGrid,
 } from "./mapPassability";
@@ -78,6 +88,8 @@ export interface WorkspaceAuditMap {
   mapJson: EditableMapJson;
   width?: number;
   height?: number;
+  /** Atributos leves do par de tilesets; PNG/paletas não são necessários. */
+  atlas?: FingerprintAtlas | null;
 }
 
 export interface ImplementabilityWorkspaceContext {
@@ -155,6 +167,13 @@ const OPPOSITE_DIRECTION: Record<string, string> = {
   emerge: "dive",
 };
 
+/** include/constants/maps.h: símbolos aceitos no campo dest_warp_id. */
+const SYMBOLIC_WARP_IDS: Record<string, number> = {
+  WARP_ID_NONE: -1,
+  WARP_ID_SECRET_BASE: 0x7e,
+  WARP_ID_DYNAMIC: 0x7f,
+};
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -171,8 +190,9 @@ function integer(value: unknown): number | null {
 
 function integerLike(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value)) return value;
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
-  return null;
+  if (typeof value !== "string") return null;
+  if (/^-?\d+$/.test(value)) return Number(value);
+  return SYMBOLIC_WARP_IDS[value] ?? null;
 }
 
 function text(value: unknown): string | null {
@@ -199,7 +219,7 @@ function issue(
   issues.push({ code, severity, category, message, ...location });
 }
 
-function eventPoint(entry: Record<string, unknown>): { x: number; y: number } | null {
+function eventPoint(entry: Record<string, unknown>): MapPoint | null {
   const x = integer(entry.x);
   const y = integer(entry.y);
   return x === null || y === null ? null : { x, y };
@@ -320,8 +340,9 @@ function auditMapJson(input: GameImplementabilityInput, issues: Implementability
     }
   }
   for (const key of ["warp_events", "object_events", "coord_events", "bg_events", "connections"] as const) {
-    if (document[key] !== undefined && !Array.isArray(document[key])) {
-      issue(issues, `MAPJSON_${key.toUpperCase()}_TYPE`, "error", "mapJson", `${key} precisa ser array quando presente.`);
+    const value = document[key];
+    if (value !== undefined && value !== null && !Array.isArray(value)) {
+      issue(issues, `MAPJSON_${key.toUpperCase()}_TYPE`, "error", "mapJson", `${key} precisa ser array ou null quando presente.`);
     }
   }
   issue(issues, "MAPJSON_PRESENT", "info", "mapJson", "Documento map.json completo disponível para round-trip.");
@@ -343,6 +364,79 @@ function auditWeather(document: EditableMapJson | null, issues: Implementability
   }
 }
 
+function auditEdgeWarpTransition(
+  input: GameImplementabilityInput,
+  issues: ImplementabilityIssue[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+  eventIndex: number,
+  point: MapPoint,
+) {
+  const { map, mapJson } = input;
+  if (!mapJson) return;
+  const direction = connectionEdgeDirection(map.width, map.height, point);
+  const loc = { eventSource: "warp" as const, eventIndex, ...point };
+  if (!direction || !isConnectionEdgeWarpPosition(mapJson, map.width, map.height, point)) {
+    issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} está fora do layout e não pertence à primeira célula de uma conexão válida.`, loc);
+    return;
+  }
+
+  const anchor = edgeInteriorAnchor(map.width, map.height, point);
+  if (!anchor) {
+    issue(issues, "WARP_EDGE_ANCHOR_INVALID", "error", "warps", `Warp ${eventIndex} não possui célula interna adjacente válida.`, loc);
+    return;
+  }
+  if ((collisionAt(map, anchor.x, anchor.y) ?? 1) > 0) {
+    issue(issues, "WARP_EDGE_ANCHOR_BLOCKED", "error", "warps", `Warp ${eventIndex} está na margem ${direction}, mas a célula interna adjacente (${anchor.x},${anchor.y}) é bloqueada.`, loc);
+  }
+
+  const candidates = edgeConnections(mapJson, direction);
+  for (const connection of candidates) {
+    if (!connection.map || connection.offset === null) continue;
+    const neighbor = workspaceContext?.maps[connection.map];
+    if (!neighbor) {
+      const loadError = workspaceContext?.loadErrors?.[connection.map];
+      issue(issues, "WARP_EDGE_NEIGHBOR_UNVERIFIED", "warning", "warps", `Warp ${eventIndex} usa a margem ${direction}, mas ${connection.map} não está disponível para certificar o tile conectado${loadError ? ` (${loadError})` : ""}.`, loc);
+      return;
+    }
+    if (!neighbor.width || !neighbor.height) {
+      issue(issues, "WARP_EDGE_GEOMETRY_UNVERIFIED", "warning", "warps", `Warp ${eventIndex}: dimensões de ${connection.map} não estão disponíveis para aplicar offset ${connection.offset}.`, loc);
+      return;
+    }
+
+    const targetPoint = translateEdgePointToNeighbor(
+      direction,
+      point,
+      connection.offset,
+      neighbor.width,
+      neighbor.height,
+    );
+    if (!targetPoint) continue;
+
+    if (!neighbor.map || !neighbor.atlas) {
+      const loadError = workspaceContext?.loadErrors?.[connection.map];
+      issue(issues, "WARP_EDGE_TILE_UNVERIFIED", "warning", "warps", `Warp ${eventIndex} corresponde a ${connection.map} (${targetPoint.x},${targetPoint.y}), mas map.bin/behavior do vizinho não pôde ser certificado${loadError ? ` (${loadError})` : ""}.`, loc);
+      return;
+    }
+
+    const targetState = cellPassability(
+      neighbor.map,
+      targetPoint.x,
+      targetPoint.y,
+      neighbor.atlas,
+    );
+    if (targetState.state === "blocked") {
+      issue(issues, "WARP_EDGE_TARGET_BLOCKED", "error", "warps", `Warp ${eventIndex} cai em ${connection.map} (${targetPoint.x},${targetPoint.y}) bloqueado: ${targetState.reason}.`, loc);
+    } else if (targetState.state === "unknown") {
+      issue(issues, "WARP_EDGE_TARGET_UNKNOWN", "warning", "warps", `Warp ${eventIndex} cai em ${connection.map} (${targetPoint.x},${targetPoint.y}), mas o behavior não é certificável: ${targetState.reason}.`, loc);
+    } else {
+      issue(issues, "WARP_EDGE_TARGET_OK", "info", "warps", `Warp ${eventIndex} na margem ${direction} corresponde a ${connection.map} (${targetPoint.x},${targetPoint.y}) com passagem ${targetState.state} reconhecida pelo engine.`, loc);
+    }
+    return;
+  }
+
+  issue(issues, "WARP_EDGE_CONNECTION_MISMATCH", "error", "warps", `Warp ${eventIndex} está na margem ${direction}, mas nenhuma conexão dessa borda cobre sua coordenada após aplicar o offset.`, loc);
+}
+
 function auditEvents(
   input: GameImplementabilityInput,
   issues: ImplementabilityIssue[],
@@ -361,13 +455,23 @@ function auditEvents(
       return;
     }
     const point = eventPoint(entry);
-    if (!point || !inBounds(map, point.x, point.y)) {
-      issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} está fora do mapa.`, { eventSource: "warp", eventIndex, ...(point ?? {}) });
+    if (!point) {
+      issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} não possui coordenadas inteiras válidas.`, { eventSource: "warp", eventIndex });
       return;
     }
+
+    const inside = inBounds(map, point.x, point.y);
+    const edge = !inside && isConnectionEdgeWarpPosition(mapJson, map.width, map.height, point);
+    if (!inside && !edge) {
+      issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} está fora do mapa.`, { eventSource: "warp", eventIndex, ...point });
+      return;
+    }
+
     const loc = { eventSource: "warp" as const, eventIndex, ...point };
-    if ((collisionAt(map, point.x, point.y) ?? 0) > 0) {
+    if (inside && (collisionAt(map, point.x, point.y) ?? 0) > 0) {
       issue(issues, "WARP_BLOCKED", "error", "warps", `Warp ${eventIndex} está sobre collision > 0.`, loc);
+    } else if (edge) {
+      auditEdgeWarpTransition(input, issues, workspaceContext, eventIndex, point);
     }
 
     const destMap = text(entry.dest_map);
@@ -381,8 +485,9 @@ function auditEvents(
     warpCells.set(key, current);
 
     if (!destMap || destWarp === null) return;
-    if (destWarp < 0) {
-      issue(issues, "WARP_DYNAMIC_DEST", "warning", "warps", `Warp ${eventIndex} usa dest_warp_id ${destWarp}; destino dinâmico/especial não pode ser certificado estaticamente.`, loc);
+
+    if (destMap === "MAP_DYNAMIC") {
+      issue(issues, "WARP_DYNAMIC_DEST_OK", "info", "warps", `Warp ${eventIndex} usa MAP_DYNAMIC; o engine ignora dest_warp_id e resolve o destino pelo dynamicWarp salvo.`, loc);
       return;
     }
 
@@ -400,8 +505,13 @@ function auditEvents(
       return;
     }
 
+    if (destWarp === -1) {
+      issue(issues, "WARP_DEST_COORDINATE_MODE", "info", "warps", `Warp ${eventIndex} usa WARP_ID_NONE/-1 para ${destMap}; mapa de destino existe e o modo especial por coordenadas foi preservado.`, loc);
+      return;
+    }
+
     const targetWarps = array(target.mapJson.warp_events);
-    if (destWarp >= targetWarps.length || !record(targetWarps[destWarp])) {
+    if (destWarp < 0 || destWarp >= targetWarps.length || !record(targetWarps[destWarp])) {
       issue(issues, "WARP_DEST_NOT_FOUND", "error", "warps", `Destino ${destMap} warp ${destWarp} não existe.`, loc);
       return;
     }
@@ -522,7 +632,7 @@ function connectionOverlapBorder(
   direction: string,
   offset: number,
   neighbor: WorkspaceAuditMap,
-): { cells: { x: number; y: number }[]; dimensionKnown: boolean } {
+): { cells: MapPoint[]; dimensionKnown: boolean } {
   const border = borderCells(map.width, map.height, direction);
   const destinationAxisSize = direction === "up" || direction === "down"
     ? neighbor.width
@@ -596,16 +706,20 @@ function auditConnections(
       }
 
       if (relevantBorder.length) {
-        const nonBlocked = relevantBorder.filter((point) => grid.at(point.x, point.y) !== "blocked");
-        const strict = relevantBorder.filter((point) => grid.at(point.x, point.y) === "passable");
-        if (!nonBlocked.length) {
+        const states = relevantBorder.map((point) => grid.at(point.x, point.y));
+        const nonBlocked = states.filter((state) => state !== "blocked").length;
+        const strict = states.filter((state) => state === "passable").length;
+        const conditional = states.filter((state) => state === "conditional").length;
+        if (!nonBlocked) {
           issue(issues, "CONNECTION_BORDER_CLOSED", "error", "connections", `Conexão ${direction} não possui célula não-bloqueada no intervalo de borda atingido pelo offset.`);
-        } else if (!strict.length) {
-          issue(issues, "CONNECTION_BORDER_CONDITIONAL", "warning", "connections", `Conexão ${direction} possui ${nonBlocked.length} abertura(s) no intervalo relevante, mas nenhuma foi confirmada como passable pelo behavior/atlas.`);
+        } else if (!strict && conditional > 0) {
+          issue(issues, "CONNECTION_BORDER_CONDITIONAL_OK", "info", "connections", `Conexão ${direction} depende de ${conditional} abertura(s) condicional(is) reconhecida(s) pelo engine (por exemplo água/corrente), sem exigir behavior desconhecido.`);
+        } else if (!strict) {
+          issue(issues, "CONNECTION_BORDER_UNKNOWN", "warning", "connections", `Conexão ${direction} possui ${nonBlocked} abertura(s), mas todas dependem de behavior desconhecido no auditor.`);
         }
       }
     } else {
-      issue(issues, "CONNECTION_SPECIAL_VERTICAL", "warning", "connections", `Conexão ${direction} é especial (Dive/Emerge): estrutura e reciprocidade são verificadas, mas não há borda 2D convencional para auditar.`);
+      issue(issues, "CONNECTION_SPECIAL_VERTICAL", "info", "connections", `Conexão ${direction} é especial (Dive/Emerge): não possui borda 2D convencional; destino e reciprocidade serão verificados.`);
     }
 
     if (!destMap || !currentMapId) return;
@@ -667,13 +781,8 @@ function componentStats(grid: PassabilityGrid, labels: Int32Array) {
   return stats;
 }
 
-/**
- * Componente principal leniente: prioriza quantidade de células confirmadas
- * como passable e usa tamanho como desempate. Sem atlas (tudo unknown), cai
- * naturalmente para a maior componente física. Isso evita que um oceano
- * conditional domine uma cidade de solo confirmado.
- */
-function mainLenientComponent(grid: PassabilityGrid, labels: Int32Array): number {
+/** Prioriza solo confirmado e usa o tamanho da componente como desempate. */
+function mainComponent(grid: PassabilityGrid, labels: Int32Array): number {
   const stats = componentStats(grid, labels);
   let best = -1;
   let bestStrict = -1;
@@ -686,12 +795,6 @@ function mainLenientComponent(grid: PassabilityGrid, labels: Int32Array): number
     }
   }
   return best;
-}
-
-function borderOpeningIndexes(map: MapData, direction: string, states: Passability[]): number[] {
-  return borderCells(map.width, map.height, direction)
-    .map((point) => idx(point.x, point.y, map.width))
-    .filter((i) => states[i] !== "blocked");
 }
 
 function connectionOpeningIndexes(
@@ -715,6 +818,12 @@ function connectionOpeningIndexes(
     .filter((i) => states[i] !== "blocked");
 }
 
+function warpAccessPoint(map: MapData, mapJson: EditableMapJson, point: MapPoint): MapPoint | null {
+  if (inBounds(map, point.x, point.y)) return point;
+  if (!isConnectionEdgeWarpPosition(mapJson, map.width, map.height, point)) return null;
+  return edgeInteriorAnchor(map.width, map.height, point);
+}
+
 function auditAccessibility(
   input: GameImplementabilityInput,
   issues: ImplementabilityIssue[],
@@ -725,16 +834,16 @@ function auditAccessibility(
 
   const grid = buildPassabilityGrid(map, atlas ?? null);
   const lenient = connectedComponents(grid, LENIENT_PASSABLE);
-  const strict = connectedComponents(grid, STRICT_PASSABLE);
-  const mainLenient = mainLenientComponent(grid, lenient);
-  const strictLabels = new Set<number>();
-  for (const label of strict) if (label >= 0) strictLabels.add(label);
+  const verified = connectedComponents(grid, VERIFIED_PASSABLE);
+  const mainLenient = mainComponent(grid, lenient);
+  const mainVerified = mainComponent(grid, verified);
 
   const criticalIndexes = new Set<number>();
   array(mapJson.warp_events).forEach((raw) => {
     const entry = record(raw);
     const point = entry ? eventPoint(entry) : null;
-    if (point && inBounds(map, point.x, point.y)) criticalIndexes.add(idx(point.x, point.y, map.width));
+    const accessPoint = point ? warpAccessPoint(map, mapJson, point) : null;
+    if (accessPoint) criticalIndexes.add(idx(accessPoint.x, accessPoint.y, map.width));
   });
   array(mapJson.connections).forEach((raw) => {
     const entry = record(raw);
@@ -749,15 +858,16 @@ function auditAccessibility(
     return;
   }
 
-  if (atlas && criticalIndexes.size && strictLabels.size === 0) {
-    issue(issues, "ACCESS_NO_STRICT_COMPONENT", "warning", "accessibility", "Nenhuma célula do mapa foi confirmada como passable pelo atlas; acessibilidade só pôde ser avaliada em modo leniente.");
+  if (atlas && criticalIndexes.size && mainVerified < 0) {
+    issue(issues, "ACCESS_NO_VERIFIED_COMPONENT", "warning", "accessibility", "Nenhuma componente crítica pôde ser formada apenas com behaviors conhecidos; a acessibilidade depende de estados unknown.");
   }
 
   array(mapJson.warp_events).forEach((raw, eventIndex) => {
     const entry = record(raw);
     const point = entry ? eventPoint(entry) : null;
-    if (!point || !inBounds(map, point.x, point.y)) return;
-    const cell = idx(point.x, point.y, map.width);
+    const accessPoint = point ? warpAccessPoint(map, mapJson, point) : null;
+    if (!point || !accessPoint) return;
+    const cell = idx(accessPoint.x, accessPoint.y, map.width);
     const state = grid.states[cell] ?? "unknown";
     if (state === "blocked") return;
 
@@ -767,8 +877,16 @@ function auditAccessibility(
       return;
     }
 
-    if (atlas && state !== "passable") {
-      issue(issues, "ACCESS_WARP_CONDITIONAL", "warning", "accessibility", `Warp ${eventIndex} ocupa célula ${state}; chega à malha leniente, mas o behavior não confirma caminhada normal.`, { eventSource: "warp", eventIndex, ...point });
+    if (atlas) {
+      const verifiedLabel = verified[cell] ?? -1;
+      if (verifiedLabel < 0 || (mainVerified >= 0 && verifiedLabel !== mainVerified)) {
+        issue(issues, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR", "warning", "accessibility", `Acesso ao warp ${eventIndex} só foi demonstrado quando behaviors unknown são aceitos; não é possível certificar o caminho integralmente.`, { eventSource: "warp", eventIndex, ...point });
+      } else if (state === "conditional") {
+        const result = cellPassability(map, accessPoint.x, accessPoint.y, atlas);
+        if (isKnownWarpBehavior(result.behavior)) {
+          issue(issues, "ACCESS_WARP_ENGINE_BEHAVIOR_OK", "info", "accessibility", `Warp ${eventIndex} usa behavior especial 0x${(result.behavior ?? 0).toString(16)} reconhecido pelo engine.`, { eventSource: "warp", eventIndex, ...point });
+        }
+      }
     }
   });
 
@@ -781,6 +899,10 @@ function auditAccessibility(
     if (!openings.length || mainLenient < 0) return;
     if (!openings.some((cell) => lenient[cell] === mainLenient)) {
       issue(issues, "ACCESS_CONNECTION_ISOLATED", "error", "accessibility", `Abertura da conexão ${connectionIndex} (${direction}) no intervalo atingido pelo offset não alcança a componente navegável principal.`);
+      return;
+    }
+    if (atlas && mainVerified >= 0 && !openings.some((cell) => verified[cell] === mainVerified)) {
+      issue(issues, "ACCESS_CONNECTION_REQUIRES_UNKNOWN", "warning", "accessibility", `Conexão ${connectionIndex} (${direction}) só alcança a componente principal quando behaviors unknown são aceitos.`);
     }
   });
 
