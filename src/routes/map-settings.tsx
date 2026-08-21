@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Cable, Check, Plus, Settings2, Trash2 } from "lucide-react";
+import { atlasFingerprint } from "@/lib/araunaCityBundle";
 import { editorStore, useEditor, type ConnectionDirection } from "@/lib/editorStore";
+import { useRealAtlas } from "@/lib/realAtlasStore";
 
 export const Route = createFileRoute("/map-settings")({ component: MapSettingsPage });
 
@@ -167,7 +169,9 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
 
 function MapSettingsPage() {
   const state = useEditor();
+  const atlas = useRealAtlas();
   const document = state.mapJsonDocument;
+  const fingerprint = useMemo(() => atlasFingerprint(atlas), [atlas]);
   const connections = useMemo(() => {
     if (!document || !Array.isArray(document.connections)) return [];
     return document.connections.flatMap((value, index) =>
@@ -186,7 +190,7 @@ function MapSettingsPage() {
         </Link>
         <div>
           <h1 className="text-sm font-semibold">Configurações do mapa</h1>
-          <p className="text-[10px] text-muted-foreground">map.json · propriedades e conexões</p>
+          <p className="text-[10px] text-muted-foreground">map.json · propriedades, clima e conexões</p>
         </div>
         <div className="ml-auto flex items-center gap-2 text-[10px]">
           <span className="font-mono text-muted-foreground">{state.mapMetadata?.id ?? "sem map.json"}</span>
@@ -215,9 +219,12 @@ function MapSettingsPage() {
             </div>
 
             <div className="grid gap-2 border-b border-border p-3 text-[10px]">
-              <div className="flex gap-3"><span className="w-20 text-muted-foreground">ID</span><code>{state.mapMetadata.id}</code></div>
-              <div className="flex gap-3"><span className="w-20 text-muted-foreground">Nome</span><code>{state.mapMetadata.name}</code></div>
-              <div className="flex gap-3"><span className="w-20 text-muted-foreground">Layout</span><code>{state.mapMetadata.layout}</code></div>
+              <div className="flex gap-3"><span className="w-24 text-muted-foreground">ID</span><code>{state.mapMetadata.id}</code></div>
+              <div className="flex gap-3"><span className="w-24 text-muted-foreground">Nome</span><code>{state.mapMetadata.name}</code></div>
+              <div className="flex gap-3"><span className="w-24 text-muted-foreground">Layout</span><code>{state.mapMetadata.layout}</code></div>
+              <div className="flex gap-3"><span className="w-24 text-muted-foreground">Clima atual</span><code>{state.mapMetadata.weather ?? "—"}</code></div>
+              <div className="flex min-w-0 gap-3"><span className="w-24 shrink-0 text-muted-foreground">Tilesets</span><code className="truncate" title={atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas não carregado"}>{atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas não carregado"}</code></div>
+              <div className="flex min-w-0 gap-3"><span className="w-24 shrink-0 text-muted-foreground">Fingerprint</span><code className="truncate" title={fingerprint ?? "—"}>{fingerprint ?? "—"}</code></div>
             </div>
 
             <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
@@ -233,7 +240,7 @@ function MapSettingsPage() {
             </div>
 
             <div className="border-t border-border p-3 text-[10px] leading-relaxed text-muted-foreground">
-              Alterações são aplicadas ao documento em memória, marcam <b className="text-foreground">map.json</b> como alterado e podem ser desfeitas com Ctrl+Z no editor.
+              Alterações são aplicadas ao documento em memória, marcam <b className="text-foreground">map.json</b> como alterado e podem ser desfeitas com Ctrl+Z no editor. Clima e fingerprint entram na auditoria “Implementável no jogo”.
             </div>
           </section>
 
