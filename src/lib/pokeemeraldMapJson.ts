@@ -287,12 +287,48 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
   };
 }
 
+function isVanillaConnectionMarginWarp(
+  metadata: PokeemeraldMapMetadata,
+  event: ParsedMapEvent,
+  width: number,
+  height: number,
+): boolean {
+  if (event.source !== "warp") return false;
+  if (
+    event.x === width &&
+    event.y >= 0 && event.y < height &&
+    metadata.connections.some((connection) => connection.direction === "right")
+  ) return true;
+  if (
+    event.x === -1 &&
+    event.y >= 0 && event.y < height &&
+    metadata.connections.some((connection) => connection.direction === "left")
+  ) return true;
+  if (
+    event.y === height &&
+    event.x >= 0 && event.x < width &&
+    metadata.connections.some((connection) => connection.direction === "down")
+  ) return true;
+  if (
+    event.y === -1 &&
+    event.x >= 0 && event.x < width &&
+    metadata.connections.some((connection) => connection.direction === "up")
+  ) return true;
+  return false;
+}
+
 export function metadataOutOfBounds(
   metadata: PokeemeraldMapMetadata,
   width: number,
   height: number,
 ): ParsedMapEvent[] {
-  return metadata.events.filter(
-    (event) => event.x < 0 || event.y < 0 || event.x >= width || event.y >= height,
-  );
+  return metadata.events.filter((event) => {
+    const regular = event.x >= 0 && event.y >= 0 && event.x < width && event.y < height;
+    if (regular) return false;
+    // pokeemerald mantém uma margem de conexão no buffer. Um warp exatamente
+    // na primeira célula dessa margem é válido quando há conexão naquela face.
+    // Ex.: SlateportCity vanilla 40×60 possui warp em (40,7).
+    if (isVanillaConnectionMarginWarp(metadata, event, width, height)) return false;
+    return true;
+  });
 }
