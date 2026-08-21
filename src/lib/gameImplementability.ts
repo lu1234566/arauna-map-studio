@@ -127,7 +127,7 @@ const CATEGORIES: ImplementabilityCategory[] = [
   "roundtrip",
 ];
 
-/** Símbolos definidos em include/constants/weather.h do pokeemerald/Arauna. */
+/** Símbolos do MapHeader definidos em include/constants/weather.h. */
 export const KNOWN_POKEEMERALD_WEATHER = new Set([
   "WEATHER_NONE",
   "WEATHER_SUNNY_CLOUDS",
@@ -147,6 +147,26 @@ export const KNOWN_POKEEMERALD_WEATHER = new Set([
   "WEATHER_ABNORMAL",
   "WEATHER_ROUTE119_CYCLE",
   "WEATHER_ROUTE123_CYCLE",
+]);
+
+/**
+ * coord_weather_event usa uma família própria de constantes. O header do
+ * pokeemerald avisa explicitamente que ela NÃO é mapeamento 1:1 de WEATHER_*.
+ */
+export const KNOWN_COORD_EVENT_WEATHER = new Set([
+  "COORD_EVENT_WEATHER_SUNNY_CLOUDS",
+  "COORD_EVENT_WEATHER_SUNNY",
+  "COORD_EVENT_WEATHER_RAIN",
+  "COORD_EVENT_WEATHER_SNOW",
+  "COORD_EVENT_WEATHER_RAIN_THUNDERSTORM",
+  "COORD_EVENT_WEATHER_FOG_HORIZONTAL",
+  "COORD_EVENT_WEATHER_FOG_DIAGONAL",
+  "COORD_EVENT_WEATHER_VOLCANIC_ASH",
+  "COORD_EVENT_WEATHER_SANDSTORM",
+  "COORD_EVENT_WEATHER_SHADE",
+  "COORD_EVENT_WEATHER_DROUGHT",
+  "COORD_EVENT_WEATHER_ROUTE119_CYCLE",
+  "COORD_EVENT_WEATHER_ROUTE123_CYCLE",
 ]);
 
 const BORDER_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right"]);
@@ -420,16 +440,60 @@ function auditMapJson(input: GameImplementabilityInput, issues: Implementability
     issue(issues, "MAPJSON_MISSING", "error", "mapJson", "map.json não carregado; eventos, conexões, clima e propriedades seriam perdidos.");
     return;
   }
+
   for (const key of ["id", "name", "layout"] as const) {
     if (!text(document[key])) {
       issue(issues, `MAPJSON_${key.toUpperCase()}_MISSING`, "error", "mapJson", `Campo obrigatório ${key} ausente.`);
     }
   }
+
+  // generate_map_header_text() chama json_to_string sem silent para todos estes
+  // campos. Se estiverem ausentes/vazios, tools/mapjson falha antes de gerar ASM.
+  for (const key of [
+    "music",
+    "region_map_section",
+    "weather",
+    "map_type",
+    "battle_scene",
+  ] as const) {
+    if (!asmScalar(document[key])) {
+      issue(
+        issues,
+        `MAPJSON_${key.toUpperCase()}_MISSING`,
+        "error",
+        "mapJson",
+        `Campo obrigatório ${key} ausente/vazio; tools/mapjson não consegue gerar o MapHeader.`,
+      );
+    }
+  }
+
+  for (const key of [
+    "requires_flash",
+    "allow_cycling",
+    "allow_escaping",
+    "allow_running",
+    "show_map_name",
+  ] as const) {
+    if (typeof document[key] !== "boolean") {
+      issue(
+        issues,
+        `MAPJSON_${key.toUpperCase()}_TYPE`,
+        "error",
+        "mapJson",
+        `Campo obrigatório ${key} precisa ser boolean no schema Emerald do projeto.`,
+      );
+    }
+  }
+
   for (const key of ["warp_events", "object_events", "coord_events", "bg_events", "connections"] as const) {
     const value = document[key];
     if (value !== undefined && value !== null && !Array.isArray(value)) {
       issue(issues, `MAPJSON_${key.toUpperCase()}_TYPE`, "error", "mapJson", `${key} precisa ser array ou null quando presente.`);
     }
+  }
+
+  if (!issues.some((found) => found.category === "mapJson" && found.severity === "error")) {
+    issue(issues, "MAPJSON_COMPILE_CONTRACT_OK", "info", "mapJson", "Campos obrigatórios do MapHeader/event collections são compatíveis com tools/mapjson do Emerald.");
   }
   issue(issues, "MAPJSON_PRESENT", "info", "mapJson", "Documento map.json completo disponível para round-trip.");
 }
@@ -827,10 +891,12 @@ function auditEvents(
           const weather = asmScalar(entry.weather);
           if (!weather) {
             issue(issues, "COORD_WEATHER_FIELDS_INVALID", "error", "triggers", `coord_events[${eventIndex}] type=weather exige campo weather.`, { eventSource, eventIndex, ...point });
-          } else if (KNOWN_POKEEMERALD_WEATHER.has(weather)) {
-            issue(issues, "COORD_WEATHER_KNOWN", "info", "triggers", `coord weather ${eventIndex} preserva clima reconhecido ${weather}.`, { eventSource, eventIndex, ...point });
+          } else if (KNOWN_COORD_EVENT_WEATHER.has(weather)) {
+            issue(issues, "COORD_WEATHER_KNOWN", "info", "triggers", `coord weather ${eventIndex} preserva constante reconhecida ${weather}.`, { eventSource, eventIndex, ...point });
+          } else if (weather.startsWith("COORD_EVENT_WEATHER_")) {
+            issue(issues, "COORD_WEATHER_UNVERIFIED", "warning", "triggers", `coord weather ${eventIndex} usa ${weather}; parece constante customizada COORD_EVENT_WEATHER_* e precisa existir no código do jogo.`, { eventSource, eventIndex, ...point });
           } else if (weather.startsWith("WEATHER_")) {
-            issue(issues, "COORD_WEATHER_UNVERIFIED", "warning", "triggers", `coord weather ${eventIndex} usa ${weather}; parece constante customizada e precisa existir no código do jogo.`, { eventSource, eventIndex, ...point });
+            issue(issues, "COORD_WEATHER_WRONG_CONSTANT_FAMILY", "error", "triggers", `coord weather ${eventIndex} usa ${weather}, mas coord_weather_event exige a família COORD_EVENT_WEATHER_* do Emerald.`, { eventSource, eventIndex, ...point });
           } else {
             issue(issues, "COORD_WEATHER_INVALID_SYMBOL", "error", "triggers", `coord weather ${eventIndex} usa símbolo inválido ${weather}.`, { eventSource, eventIndex, ...point });
           }
