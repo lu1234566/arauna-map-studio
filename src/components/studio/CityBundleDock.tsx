@@ -4,6 +4,7 @@ import { serializeCityBundle } from "@/lib/araunaCityBundle";
 import { withSharedEventsSnapshot } from "@/lib/cityBundleDependencies";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { auditGameImplementability } from "@/lib/gameImplementability";
+import { withActiveScriptSpatialAudit } from "@/lib/gameImplementabilityWithScripts";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import {
@@ -35,7 +36,9 @@ export function CityBundleDock() {
   const atlas = useRealAtlas();
   const inputRef = useRef<HTMLInputElement>(null);
   const previousAtlasRef = useRef<string | null | undefined>(undefined);
-  const audit = state.gameAudit;
+  const audit = state.gameAudit
+    ? withActiveScriptSpatialAudit(state.gameAudit, state.map, state.mapJsonDocument)
+    : null;
 
   useEffect(() => {
     const key = atlas?.createdAt ?? null;
@@ -73,7 +76,11 @@ export function CityBundleDock() {
 
     let bundle = result.bundle;
     let source = result.source;
-    let gameAudit = result.gameAudit;
+    let gameAudit = withActiveScriptSpatialAudit(
+      result.gameAudit,
+      state.map,
+      state.mapJsonDocument,
+    );
     const document = state.mapJsonDocument;
     const sharedName = typeof document?.shared_events_map === "string"
       ? document.shared_events_map.trim()
@@ -96,14 +103,18 @@ export function CityBundleDock() {
         semantics: withSharedEventsSnapshot(bundle.semantics, sharedName, sharedDocument),
       };
       source = serializeCityBundle(bundle);
-      gameAudit = auditGameImplementability({
-        map: state.map,
-        mapJson: document,
-        atlas,
-        bundle,
-        declaredTilesets: bundle.tilesets,
-        workspaceContext: context,
-      });
+      gameAudit = withActiveScriptSpatialAudit(
+        auditGameImplementability({
+          map: state.map,
+          mapJson: document,
+          atlas,
+          bundle,
+          declaredTilesets: bundle.tilesets,
+          workspaceContext: context,
+        }),
+        state.map,
+        document,
+      );
     }
 
     const base = safeName(bundle.identity.name);
