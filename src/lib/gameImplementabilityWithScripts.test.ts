@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildCityBundle } from "./araunaCityBundle";
+import { buildCityBundle, type FingerprintAtlas } from "./araunaCityBundle";
 import {
   clearBundleDependencyContext,
   installBundleDependencyContextFromImport,
@@ -25,6 +25,10 @@ import {
   installScriptSpatialContextFromBundle,
   refreshScriptSpatialContext,
 } from "./scriptSpatialContext";
+import {
+  clearWorkspaceAuditContext,
+  setWorkspaceAuditContext,
+} from "./workspaceAuditContext";
 
 const CATEGORIES: ImplementabilityCategory[] = [
   "grid",
@@ -47,6 +51,12 @@ Common_Movement_FaceRight:
   face_right
   step_end
 `;
+
+const TEST_ATLAS: FingerprintAtlas = {
+  primary: "gTileset_General",
+  secondary: "gTileset_Petalburg",
+  records: [{ id: 1, behavior: 0, layerType: 0 }],
+};
 
 function baseReport(): GameImplementabilityReport {
   return {
@@ -161,6 +171,26 @@ function workspaceWithDestination(
   return base;
 }
 
+function installDestinationAuditContext(
+  sourceMapJson: EditableMapJson,
+  destination: EditableMapJson,
+  targetMap = openMap(),
+) {
+  setWorkspaceAuditContext({
+    sourceMapId: "MAP_A",
+    maps: {
+      MAP_A: { mapJson: sourceMapJson },
+      MAP_B: {
+        mapJson: destination,
+        width: targetMap.width,
+        height: targetMap.height,
+        map: targetMap,
+        atlas: TEST_ATLAS,
+      },
+    },
+  });
+}
+
 function has(report: GameImplementabilityReport, code: string) {
   return report.issues.some((issue) => issue.code === code);
 }
@@ -168,6 +198,7 @@ function has(report: GameImplementabilityReport, code: string) {
 afterEach(() => {
   clearScriptSpatialContext();
   clearBundleDependencyContext();
+  clearWorkspaceAuditContext();
 });
 
 describe("withActiveScriptSpatialAudit", () => {
@@ -227,7 +258,7 @@ describe("withActiveScriptSpatialAudit", () => {
     expect(has(report, "SCRIPT_OBJECT_LOCALID_MISSING")).toBe(true);
   });
 
-  it("certifies a script warp id against the effective destination warp_events", async () => {
+  it("certifies a script warp id and its real destination spawn cell", async () => {
     const mapJson = document();
     const destination: EditableMapJson = {
       id: "MAP_B",
@@ -241,10 +272,35 @@ describe("withActiveScriptSpatialAudit", () => {
       workspaceWithDestination("A::\n\twarp MAP_B, 0\n\tend\n", destination),
       mapJson,
     );
+    installDestinationAuditContext(mapJson, destination);
 
     const report = withActiveScriptSpatialAudit(baseReport(), openMap(), mapJson);
     expect(report.implementable).toBe(true);
-    expect(has(report, "SCRIPT_WARP_DEST_ID_OK")).toBe(true);
+    expect(has(report, "SCRIPT_WARP_DEST_ID_AND_SPAWN_OK")).toBe(true);
+  });
+
+  it("blocks a script warp whose destination event exists but spawn cell is blocked", async () => {
+    const mapJson = document();
+    const destination: EditableMapJson = {
+      id: "MAP_B",
+      name: "B",
+      layout: "LAYOUT_B",
+      warp_events: [
+        { x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" },
+      ],
+    };
+    await refreshScriptSpatialContext(
+      workspaceWithDestination("A::\n\twarp MAP_B, 0\n\tend\n", destination),
+      mapJson,
+    );
+    const blockedTarget = openMap();
+    blockedTarget.physical[1 * blockedTarget.width + 1] = 0x3400;
+    installDestinationAuditContext(mapJson, destination, blockedTarget);
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), mapJson);
+    expect(report.pass).toBe(false);
+    expect(report.implementable).toBe(false);
+    expect(has(report, "SCRIPT_WARP_DEST_SPAWN_BLOCKED")).toBe(true);
   });
 
   it("blocks a script warp id that does not exist in the destination", async () => {
