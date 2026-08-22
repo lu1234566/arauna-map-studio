@@ -19,6 +19,14 @@ export interface ScriptSpatialIssue {
   line?: number;
 }
 
+/** IDs reservados pelo engine e que não precisam de object_event no map.json. */
+const ENGINE_LOCAL_IDS = new Set([
+  "LOCALID_NONE",
+  "LOCALID_CAMERA",
+  "LOCALID_BERRY_BLENDER_PLAYER_END",
+  "LOCALID_PLAYER",
+]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -48,6 +56,10 @@ function objectStarts(document: EditableMapJson) {
   return starts;
 }
 
+function needsObjectTemplate(localId: string): boolean {
+  return localId.startsWith("LOCALID_") && !ENGINE_LOCAL_IDS.has(localId);
+}
+
 function simulate(
   map: MapData,
   start: { x: number; y: number },
@@ -71,7 +83,7 @@ function simulate(
   return { ok: true, reason: `termina em (${x},${y})`, x, y };
 }
 
-function sameAnchor(a: { x: number; y: number }, b: ScriptObjectAnchor) {
+function samePoint(a: { x: number; y: number }, b: { x: number; y: number }) {
   return a.x === b.x && a.y === b.y;
 }
 
@@ -89,22 +101,42 @@ export function auditScriptSpatialContracts(
   const issues: ScriptSpatialIssue[] = [];
   const starts = objectStarts(effectiveEvents);
   const anchorsByObject = new Map<string, ScriptObjectAnchor[]>();
+  const missingLocalIds = new Set<string>();
+
+  const reportMissingLocalId = (
+    code: string,
+    localId: string,
+    line: number,
+    message: string,
+    point?: { x: number; y: number },
+  ) => {
+    // O mesmo LOCALID pode aparecer em dezenas de applymovement; um erro por ID
+    // é suficiente para bloquear Game-ready sem inundar o relatório.
+    if (missingLocalIds.has(localId)) return;
+    missingLocalIds.add(localId);
+    issues.push({
+      code,
+      severity: "error",
+      message,
+      ...(point ?? {}),
+      localId,
+      line,
+    });
+  };
 
   for (const anchor of contracts.anchors) {
     const values = anchorsByObject.get(anchor.localId) ?? [];
     values.push(anchor);
     anchorsByObject.set(anchor.localId, values);
 
-    if (anchor.localId.startsWith("LOCALID_") && !starts.has(anchor.localId)) {
-      issues.push({
-        code: "SCRIPT_OBJECT_LOCALID_MISSING",
-        severity: "error",
-        message: `${anchor.command} referencia ${anchor.localId}, mas nenhum object_event efetivo declara esse local_id.`,
-        x: anchor.x,
-        y: anchor.y,
-        localId: anchor.localId,
-        line: anchor.line,
-      });
+    if (needsObjectTemplate(anchor.localId) && !starts.has(anchor.localId)) {
+      reportMissingLocalId(
+        "SCRIPT_OBJECT_LOCALID_MISSING",
+        anchor.localId,
+        anchor.line,
+        `${anchor.command} referencia ${anchor.localId}, mas nenhum object_event efetivo declara esse local_id.`,
+        { x: anchor.x, y: anchor.y },
+      );
     }
 
     if (anchor.x < 0 || anchor.y < 0 || anchor.x >= map.width || anchor.y >= map.height) {
@@ -145,6 +177,16 @@ export function auditScriptSpatialContracts(
   }
 
   for (const use of contracts.movementUses) {
+    const anchored = anchorsByObject.has(use.localId);
+    if (needsObjectTemplate(use.localId) && !starts.has(use.localId) && !anchored) {
+      reportMissingLocalId(
+        "SCRIPT_MOVEMENT_LOCALID_MISSING",
+        use.localId,
+        use.line,
+        `applymovement referencia ${use.localId}, mas nenhum object_event efetivo nem âncora setobjectxy/setobjectxyperm declara esse local_id.`,
+      );
+    }
+
     const movement = contracts.movements[use.movementLabel];
     if (!movement) {
       // Common_Movement_* e labels de outros includes são externos ao arquivo.
@@ -174,15 +216,10 @@ export function auditScriptSpatialContracts(
     const candidates = [
       ...(starts.get(use.localId) ?? []),
       ...(anchorsByObject.get(use.localId) ?? []).map((anchor) => ({ x: anchor.x, y: anchor.y })),
-    ].filter((candidate, index, all) => all.findIndex((other) => sameAnchor(candidate, {
-      command: "setobjectxy",
-      localId: use.localId,
-      x: other.x,
-      y: other.y,
-      scriptLabel: null,
-      line: 0,
-    })) === index);
+    ].filter((candidate, index, all) => all.findIndex((other) => samePoint(candidate, other)) === index);
 
+    // LOCALID_PLAYER/CAMERA e outros IDs de engine têm posição runtime fora do
+    // map.json; a existência do movimento é válida, mas não inventamos um start.
     if (!candidates.length || !movement.steps.length) continue;
     const simulations = candidates.map((candidate) => ({
       candidate,
