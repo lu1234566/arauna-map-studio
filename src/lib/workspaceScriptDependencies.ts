@@ -1,10 +1,10 @@
 import type { EditableMapJson } from "./eventMapJson";
+import type { ImplementabilityWorkspaceContext } from "./gameImplementability";
 import type { AraunaWorkspace } from "./repoWorkspace";
 import {
   buildWorkspaceAuditContext,
   clearWorkspaceAuditContext,
   setWorkspaceAuditContext,
-  type ImplementabilityWorkspaceContext,
 } from "./workspaceAuditContext";
 
 /**
