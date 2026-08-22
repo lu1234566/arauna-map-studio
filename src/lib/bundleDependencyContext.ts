@@ -6,7 +6,7 @@ import {
 } from "./cityBundleDependencies";
 import type { EditableMapJson } from "./eventMapJson";
 
-interface BundleDependencyContext {
+export interface BundleDependencyContext {
   sourceDocument: EditableMapJson;
   sharedEvents: SharedEventsSnapshot | null;
 }
