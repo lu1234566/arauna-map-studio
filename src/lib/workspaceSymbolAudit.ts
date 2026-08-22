@@ -1,6 +1,10 @@
 import { parseEditableMapJson, type EditableMapJson } from "./eventMapJson";
 import type { GameImplementabilityReport, ImplementabilityIssue } from "./gameImplementability";
-import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
+import {
+  normalizeWorkspacePath,
+  type AraunaWorkspace,
+  type WorkspaceMap,
+} from "./repoWorkspace";
 
 export interface SourceSymbolReference {
   symbol: string;
@@ -141,7 +145,9 @@ function definesSymbol(source: string, symbol: string, path: string): boolean {
 
 function candidateSourcePaths(workspace: AraunaWorkspace): string[] {
   return [...workspace.files.keys()].filter((path) => {
-    const lower = path.toLowerCase();
+    // Também canonicalizamos aqui para Workspaces já abertos antes da correção
+    // de normalizeWorkspacePath (ex.: repo/include/constants/flags.h).
+    const lower = normalizeWorkspacePath(path).toLowerCase();
     if (lower.startsWith("include/") && lower.endsWith(".h")) return true;
     if (lower.startsWith("data/") && (lower.endsWith(".inc") || lower.endsWith(".s"))) return true;
     return false;
@@ -170,7 +176,7 @@ export async function buildWorkspaceSymbolAuditContext(
     }
     for (const symbol of [...unresolved]) {
       if (!definesSymbol(source, symbol, path)) continue;
-      definitions[symbol] = path;
+      definitions[symbol] = normalizeWorkspacePath(path);
       unresolved.delete(symbol);
     }
   }
