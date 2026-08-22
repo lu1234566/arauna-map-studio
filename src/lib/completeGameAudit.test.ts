@@ -86,7 +86,12 @@ function shared(): EditableMapJson {
 }
 
 function importedBundle(document: EditableMapJson) {
-  const sharedSemantics = withSharedEventsSnapshot(undefined, "Shared", shared());
+  const authored = {
+    districts: [{ id: "porto", role: "harbor" }],
+    structures: [{ id: "mercado", template: "porto-market", x: 2, y: 2 }],
+    notes: { design: "Porto do Sal" },
+  };
+  const sharedSemantics = withSharedEventsSnapshot(authored, "Shared", shared());
   const semantics = withScriptSpatialSnapshot(
     sharedSemantics,
     "Shared",
@@ -127,6 +132,28 @@ describe("auditCompleteGameState", () => {
     expect(has(result, "BUNDLE_SHARED_EVENTS_MISSING")).toBe(false);
     expect(has(result, "SCRIPT_SPATIAL_EFFECTIVE_EVENTS_UNVERIFIED")).toBe(false);
     expect(has(result, "SCRIPT_OBJECT_ANCHOR_OK")).toBe(true);
+  });
+
+  it("preserves non-technical semantic authoring data when rebuilding the current city bundle", () => {
+    const imported = importedBundle(child());
+    const installedDocument = { ...imported.mapJson };
+    installBundleDependencyContextFromImport(imported, installedDocument);
+    installScriptSpatialContextFromBundle(imported, installedDocument);
+
+    const result = auditCompleteGameState({
+      map: map(),
+      mapJson: installedDocument,
+      mapName: "Child",
+      atlas,
+    });
+
+    expect(result.bundle?.semantics).toMatchObject({
+      districts: [{ id: "porto", role: "harbor" }],
+      structures: [{ id: "mercado", template: "porto-market", x: 2, y: 2 }],
+      notes: { design: "Porto do Sal" },
+    });
+    expect(sharedEventsSnapshotFromBundle(result.bundle!)).not.toBeNull();
+    expect(scriptSpatialSnapshotFromBundle(result.bundle!)).not.toBeNull();
   });
 
   it("ignores a Workspace audit context created for another mapJson object with the same MAP id", () => {
