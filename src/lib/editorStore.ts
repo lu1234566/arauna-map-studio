@@ -11,6 +11,7 @@ import {
   type ValidationReport,
   validateMap,
 } from "./emeraldMap";
+import { edgeInteriorAnchor, isConnectionEdgeWarpPosition } from "./connectionEdgeWarp";
 import {
   clampCollision,
   clampElevation,
@@ -41,6 +42,16 @@ import {
   type MapEventSource,
   type PokeemeraldMapMetadata,
 } from "./pokeemeraldMapJson";
+import {
+  atlasFingerprint,
+  buildCityBundle,
+  compileCityBundle,
+  parseCityBundle,
+  serializeCityBundle,
+  type AraunaCityBundle,
+} from "./araunaCityBundle";
+import { auditGameImplementability, type GameImplementabilityReport } from "./gameImplementability";
+import { realAtlasStore } from "./realAtlasStore";
 
 export type Tool = "pencil" | "picker" | "fill" | "select";
 export type ViewMode = "visual" | "collision" | "elevation" | "warps" | "npcs" | "triggers";
@@ -97,22 +108,30 @@ export interface EditorState {
   dirty: boolean;
   lastMessage: string;
   validation: ValidationReport | null;
+  gameAudit: GameImplementabilityReport | null;
   sourceFile: string | null;
   mapJsonSource: string | null;
 }
 
+/**
+ * History now includes source/name metadata too. This is essential for an
+ * atomic city-bundle import: one Undo restores BOTH files and their identity.
+ */
 interface EditorSnapshot {
+  mapName: string;
   map: MapData;
   mapJsonDocument: EditableMapJson | null;
   selectedEventId: string | null;
   dirty: boolean;
   mapJsonDirty: boolean;
+  sourceFile: string | null;
+  mapJsonSource: string | null;
 }
 
 const STORAGE_MAP = "arauna.map.v3";
 const STORAGE_PREFS = "arauna.prefs.v1";
 const MAX_HISTORY = 100;
-const VALID_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right"]);
+const VALID_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right", "dive", "emerge"]);
 
 function defaultMap(): MapData {
   return createEmptyMap(20, 20, 0x000);
@@ -123,6 +142,46 @@ function editablePhysicalLayer(viewMode: ViewMode): PhysicalLayer | null {
   return null;
 }
 
+function pointInsideMap(map: MapData, x: number, y: number): boolean {
+  return x >= 0 && y >= 0 && x < map.width && y < map.height;
+}
+
+/**
+ * Eventos de margem não possuem uma célula própria em map.bin. Para seleção
+ * visual, um warp legítimo da primeira margem é ancorado na célula interna
+ * adjacente. As coordenadas reais do map.json continuam intactas.
+ */
+function eventSelectionIndex(
+  event: DemoEvent,
+  map: MapData,
+  document: EditableMapJson | null,
+): number | null {
+  if (pointInsideMap(map, event.x, event.y)) return idx(event.x, event.y, map.width);
+  if (
+    event.source === "warp" &&
+    document &&
+    isConnectionEdgeWarpPosition(document, map.width, map.height, event)
+  ) {
+    const anchor = edgeInteriorAnchor(map.width, map.height, event);
+    return anchor ? idx(anchor.x, anchor.y, map.width) : null;
+  }
+  return null;
+}
+
+function eventCoordinateAllowed(
+  event: DemoEvent,
+  map: MapData,
+  document: EditableMapJson,
+  x: number,
+  y: number,
+): boolean {
+  if (pointInsideMap(map, x, y)) return true;
+  return (
+    event.source === "warp" &&
+    isConnectionEdgeWarpPosition(document, map.width, map.height, { x, y })
+  );
+}
+
 function deriveMapJson(document: EditableMapJson) {
   const metadata = parsePokeemeraldMapJson(stringifyMapJson(document));
   return {
@@ -130,6 +189,25 @@ function deriveMapJson(document: EditableMapJson) {
     events: metadata.events as DemoEvent[],
     protectedCells: metadata.protectedCells as ProtectedCell[],
   };
+}
+
+function activeAtlas() {
+  return realAtlasStore.ensureHydrated();
+}
+
+function auditCurrent(
+  map: MapData,
+  mapJson: EditableMapJson | null,
+  bundle: AraunaCityBundle | null,
+): GameImplementabilityReport {
+  const atlas = activeAtlas();
+  return auditGameImplementability({
+    map,
+    mapJson,
+    atlas,
+    bundle,
+    declaredTilesets: bundle?.tilesets ?? null,
+  });
 }
 
 function initialState(): EditorState {
@@ -160,6 +238,7 @@ function initialState(): EditorState {
     dirty: false,
     lastMessage: "Pronto. Abra o Workspace Arauna para trabalhar com um mapa real do pokeemerald.",
     validation: null,
+    gameAudit: null,
     sourceFile: null,
     mapJsonSource: null,
   };
@@ -245,8 +324,12 @@ class EditorStore {
           tool: prefs.tool ?? this.state.tool,
           viewMode: prefs.viewMode ?? this.state.viewMode,
           selectedMetatile: prefs.selectedMetatile ?? this.state.selectedMetatile,
-          selectedCollision: clampCollision(prefs.selectedCollision ?? this.state.selectedCollision),
-          selectedElevation: clampElevation(prefs.selectedElevation ?? this.state.selectedElevation),
+          selectedCollision: clampCollision(
+            prefs.selectedCollision ?? this.state.selectedCollision,
+          ),
+          selectedElevation: clampElevation(
+            prefs.selectedElevation ?? this.state.selectedElevation,
+          ),
           zoom: prefs.zoom ?? this.state.zoom,
           showGrid: prefs.showGrid ?? this.state.showGrid,
           showCoords: prefs.showCoords ?? this.state.showCoords,
@@ -279,16 +362,21 @@ class EditorStore {
           let mapMetadata: PokeemeraldMapMetadata | null = null;
           let events: DemoEvent[] = [];
           let protectedCells: ProtectedCell[] = [];
-          if (saved.mapJsonDocument && typeof saved.mapJsonDocument === "object" && !Array.isArray(saved.mapJsonDocument)) {
+          if (
+            saved.mapJsonDocument &&
+            typeof saved.mapJsonDocument === "object" &&
+            !Array.isArray(saved.mapJsonDocument)
+          ) {
             mapJsonDocument = cloneMapJson(saved.mapJsonDocument as EditableMapJson);
             const derived = deriveMapJson(mapJsonDocument);
             mapMetadata = derived.metadata;
             events = derived.events;
             protectedCells = derived.protectedCells;
           } else {
-            mapMetadata = saved.mapMetadata && typeof saved.mapMetadata === "object"
-              ? (saved.mapMetadata as PokeemeraldMapMetadata)
-              : null;
+            mapMetadata =
+              saved.mapMetadata && typeof saved.mapMetadata === "object"
+                ? (saved.mapMetadata as PokeemeraldMapMetadata)
+                : null;
             events = Array.isArray(saved.events) ? (saved.events as DemoEvent[]) : [];
             protectedCells = Array.isArray(saved.protectedCells)
               ? (saved.protectedCells as ProtectedCell[])
@@ -302,12 +390,16 @@ class EditorStore {
             mapJsonSource: typeof saved.mapJsonSource === "string" ? saved.mapJsonSource : null,
             mapJsonDocument,
             mapJsonDirty: Boolean(saved.mapJsonDirty),
-            selectedEventId: typeof saved.selectedEventId === "string" ? saved.selectedEventId : null,
+            selectedEventId:
+              typeof saved.selectedEventId === "string" ? saved.selectedEventId : null,
             mapMetadata,
             events,
             protectedCells,
             map: restoredMap,
-            lastMessage: "Projeto restaurado do armazenamento local.",
+            validation: null,
+            gameAudit: null,
+            lastMessage:
+              "Projeto restaurado do armazenamento local. Rode Validar antes de exportar para o jogo.",
           };
         }
       }
@@ -319,11 +411,14 @@ class EditorStore {
 
   private snapshot(): EditorSnapshot {
     return {
+      mapName: this.state.mapName,
       map: cloneMap(this.state.map),
       mapJsonDocument: this.state.mapJsonDocument ? cloneMapJson(this.state.mapJsonDocument) : null,
       selectedEventId: this.state.selectedEventId,
       dirty: this.state.dirty,
       mapJsonDirty: this.state.mapJsonDirty,
+      sourceFile: this.state.sourceFile,
+      mapJsonSource: this.state.mapJsonSource,
     };
   }
 
@@ -334,20 +429,17 @@ class EditorStore {
   }
 
   private restoreSnapshot(snapshot: EditorSnapshot, lastMessage: string) {
-    let mapMetadata = this.state.mapMetadata;
-    let events = this.state.events;
-    let protectedCells = this.state.protectedCells;
+    let mapMetadata: PokeemeraldMapMetadata | null = null;
+    let events: DemoEvent[] = [];
+    let protectedCells: ProtectedCell[] = [];
     if (snapshot.mapJsonDocument) {
       const derived = deriveMapJson(snapshot.mapJsonDocument);
       mapMetadata = derived.metadata;
       events = derived.events;
       protectedCells = derived.protectedCells;
-    } else {
-      mapMetadata = null;
-      events = [];
-      protectedCells = [];
     }
     this.set({
+      mapName: snapshot.mapName,
       map: cloneMap(snapshot.map),
       mapJsonDocument: snapshot.mapJsonDocument ? cloneMapJson(snapshot.mapJsonDocument) : null,
       mapMetadata,
@@ -356,7 +448,10 @@ class EditorStore {
       selectedEventId: snapshot.selectedEventId,
       dirty: snapshot.dirty,
       mapJsonDirty: snapshot.mapJsonDirty,
+      sourceFile: snapshot.sourceFile,
+      mapJsonSource: snapshot.mapJsonSource,
       validation: null,
+      gameAudit: null,
       lastMessage,
       undoDepth: this.undoStack.length,
       redoDepth: this.redoStack.length,
@@ -365,6 +460,7 @@ class EditorStore {
 
   private syncHistoryDepths(patch: Partial<EditorState> = {}) {
     this.set({
+      gameAudit: null,
       ...patch,
       undoDepth: this.undoStack.length,
       redoDepth: this.redoStack.length,
@@ -375,18 +471,32 @@ class EditorStore {
     const prev = this.undoStack.pop();
     if (!prev) return;
     this.redoStack.push(this.snapshot());
-    this.restoreSnapshot(prev, "Desfeito.");
+    this.restoreSnapshot(prev, "Desfeito. Validação profunda invalidada.");
   };
 
   redo = () => {
     const next = this.redoStack.pop();
     if (!next) return;
     this.undoStack.push(this.snapshot());
-    this.restoreSnapshot(next, "Refeito.");
+    this.restoreSnapshot(next, "Refeito. Validação profunda invalidada.");
   };
 
-  isProtected = (x: number, y: number) =>
-    this.state.protectProgression && this.state.protectedCells.some((cell) => cell.x === x && cell.y === y);
+  isProtected = (x: number, y: number) => {
+    if (!this.state.protectProgression) return false;
+    if (this.state.protectedCells.some((cell) => cell.x === x && cell.y === y)) return true;
+    const document = this.state.mapJsonDocument;
+    if (!document) return false;
+    return this.state.events.some((event) => {
+      if (
+        event.source !== "warp" ||
+        pointInsideMap(this.state.map, event.x, event.y) ||
+        !isConnectionEdgeWarpPosition(document, this.state.map.width, this.state.map.height, event)
+      )
+        return false;
+      const anchor = edgeInteriorAnchor(this.state.map.width, this.state.map.height, event);
+      return anchor?.x === x && anchor.y === y;
+    });
+  };
 
   paint = (x: number, y: number, continuous = false) => {
     const s = this.state;
@@ -396,7 +506,9 @@ class EditorStore {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     if (this.isProtected(x, y)) {
       this.set(
-        { lastMessage: `Célula (${x},${y}) protegida — desligue "Proteger progressão" para editar.` },
+        {
+          lastMessage: `Célula (${x},${y}) protegida — desligue "Proteger progressão" para editar.`,
+        },
         false,
       );
       return;
@@ -416,7 +528,7 @@ class EditorStore {
     }
 
     if (!continuous) this.pushHistory();
-    this.syncHistoryDepths({ map, dirty: true, selectedCell: i });
+    this.syncHistoryDepths({ map, dirty: true, selectedCell: i, validation: null });
   };
 
   beginStroke = () => this.pushHistory();
@@ -427,7 +539,11 @@ class EditorStore {
     const i = idx(x, y, s.map.width);
     if (s.viewMode === "visual") {
       const id = s.map.metatiles[i] ?? 0;
-      this.set({ selectedMetatile: id, selectedCell: i, lastMessage: `Metatile ${id} selecionado.` });
+      this.set({
+        selectedMetatile: id,
+        selectedCell: i,
+        lastMessage: `Metatile ${id} selecionado.`,
+      });
       return;
     }
     const physicalLayer = editablePhysicalLayer(s.viewMode);
@@ -455,30 +571,29 @@ class EditorStore {
     }
 
     const map = cloneMap(s.map);
-    const changed = s.viewMode === "visual"
-      ? floodFill(map, x, y, s.selectedMetatile, (cx, cy) => this.isProtected(cx, cy))
-      : floodFillPhysical(
-          map,
-          x,
-          y,
-          physicalLayer!,
-          physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation,
-          (cx, cy) => this.isProtected(cx, cy),
-        );
+    const changed =
+      s.viewMode === "visual"
+        ? floodFill(map, x, y, s.selectedMetatile, (cx, cy) => this.isProtected(cx, cy))
+        : floodFillPhysical(
+            map,
+            x,
+            y,
+            physicalLayer!,
+            physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation,
+            (cx, cy) => this.isProtected(cx, cy),
+          );
 
     if (!changed.length) {
       this.set({ lastMessage: "Nada para preencher." }, false);
       return;
     }
     this.pushHistory();
-    const layerName = s.viewMode === "visual"
-      ? "visual"
-      : physicalLayer === "collision"
-        ? "colisão"
-        : "elevação";
+    const layerName =
+      s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
+      validation: null,
       lastMessage: `Bucket fill ${layerName}: ${changed.length} célula(s).`,
     });
   };
@@ -514,14 +629,12 @@ class EditorStore {
 
     if (!changed) return;
     this.pushHistory();
-    const layerName = s.viewMode === "visual"
-      ? "visual"
-      : physicalLayer === "collision"
-        ? "colisão"
-        : "elevação";
+    const layerName =
+      s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
+      validation: null,
       lastMessage: `Seleção preenchida em ${layerName}: ${changed} célula(s).`,
     });
   };
@@ -545,11 +658,18 @@ class EditorStore {
     }
     const event = this.state.events.find((candidate) => candidate.id === selectedEventId);
     if (!event) return;
-    this.set({
-      selectedEventId,
-      selectedCell: idx(event.x, event.y, this.state.map.width),
-      lastMessage: `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
-    }, false);
+    const selectedCell = eventSelectionIndex(event, this.state.map, this.state.mapJsonDocument);
+    this.set(
+      {
+        selectedEventId,
+        selectedCell,
+        lastMessage:
+          selectedCell === null
+            ? `${event.label} selecionado; coordenada (${event.x},${event.y}) não possui âncora visual no layout.`
+            : `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
+      },
+      false,
+    );
   };
 
   moveEvent = (id: string, x: number, y: number, continuous = false) => {
@@ -568,7 +688,12 @@ class EditorStore {
         lastMessage: `${current.label} movido para (${x},${y}).`,
       });
     } catch (error) {
-      this.set({ lastMessage: `Falha ao mover evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao mover evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
     }
   };
 
@@ -581,8 +706,11 @@ class EditorStore {
         if (current) {
           const x = key === "x" ? Number(value) : current.x;
           const y = key === "y" ? Number(value) : current.y;
-          if (x < 0 || y < 0 || x >= s.map.width || y >= s.map.height) {
-            throw new Error(`Coordenada (${x},${y}) fora do mapa ${s.map.width}×${s.map.height}.`);
+          if (!eventCoordinateAllowed(current, s.map, s.mapJsonDocument, x, y)) {
+            throw new Error(
+              `Coordenada (${x},${y}) fora do mapa ${s.map.width}×${s.map.height}; ` +
+                "somente warps na primeira célula de uma face com conexão podem ficar na margem.",
+            );
           }
         }
       }
@@ -596,13 +724,18 @@ class EditorStore {
         events: derived.events,
         protectedCells: derived.protectedCells,
         selectedEventId: id,
-        selectedCell: selected ? idx(selected.x, selected.y, s.map.width) : s.selectedCell,
+        selectedCell: selected ? eventSelectionIndex(selected, s.map, document) : s.selectedCell,
         mapJsonDirty: true,
         validation: null,
         lastMessage: `Campo ${key} atualizado em ${id}.`,
       });
     } catch (error) {
-      this.set({ lastMessage: `Falha ao editar evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao editar evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
     }
   };
 
@@ -613,9 +746,10 @@ class EditorStore {
       return null;
     }
     const fallbackIndex = s.selectedCell ?? 0;
-    const targetX = x ?? (fallbackIndex % s.map.width);
+    const targetX = x ?? fallbackIndex % s.map.width;
     const targetY = y ?? Math.floor(fallbackIndex / s.map.width);
-    if (targetX < 0 || targetY < 0 || targetX >= s.map.width || targetY >= s.map.height) return null;
+    if (targetX < 0 || targetY < 0 || targetX >= s.map.width || targetY >= s.map.height)
+      return null;
     try {
       this.pushHistory();
       const result = addEditableEvent(s.mapJsonDocument, source, targetX, targetY);
@@ -627,7 +761,12 @@ class EditorStore {
       });
       return result.id;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao criar evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao criar evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return null;
     }
   };
@@ -645,7 +784,12 @@ class EditorStore {
         lastMessage: `${current?.label ?? id} removido do map.json.`,
       });
     } catch (error) {
-      this.set({ lastMessage: `Falha ao remover evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao remover evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
     }
   };
 
@@ -662,7 +806,12 @@ class EditorStore {
       });
       return true;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao editar ${key}: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao editar ${key}: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return false;
     }
   };
@@ -683,7 +832,12 @@ class EditorStore {
       });
       return true;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao editar conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao editar conexão: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return false;
     }
   };
@@ -700,7 +854,12 @@ class EditorStore {
       });
       return result.index;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao criar conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao criar conexão: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return null;
     }
   };
@@ -717,7 +876,12 @@ class EditorStore {
       });
       return true;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao remover conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao remover conexão: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return false;
     }
   };
@@ -729,8 +893,10 @@ class EditorStore {
   setTool = (tool: Tool) => this.set({ tool });
   setViewMode = (viewMode: ViewMode) => this.set({ viewMode });
   setMetatile = (selectedMetatile: number) => this.set({ selectedMetatile });
-  setCollision = (selectedCollision: number) => this.set({ selectedCollision: clampCollision(selectedCollision) });
-  setElevation = (selectedElevation: number) => this.set({ selectedElevation: clampElevation(selectedElevation) });
+  setCollision = (selectedCollision: number) =>
+    this.set({ selectedCollision: clampCollision(selectedCollision) });
+  setElevation = (selectedElevation: number) =>
+    this.set({ selectedElevation: clampElevation(selectedElevation) });
   setZoom = (zoom: number) => this.set({ zoom: Math.min(8, Math.max(0.5, zoom)) });
   setPan = (pan: { x: number; y: number }) => this.set({ pan }, false);
   toggleGrid = () => this.set({ showGrid: !this.state.showGrid });
@@ -828,11 +994,119 @@ class EditorStore {
     }
   };
 
+  /**
+   * Importa o bundle como UMA transação. Todo parse/checksum/atlas/mapJson é
+   * verificado antes de pushHistory/set; se falhar, state/history ficam iguais.
+   */
+  importCityBundle = (source: string, fileName: string) => {
+    try {
+      const bundle = parseCityBundle(source);
+      const compiled = compileCityBundle(bundle);
+      const derived = deriveMapJson(compiled.mapJson);
+      const atlas = activeAtlas();
+
+      if (atlas) {
+        const activeFingerprint = atlasFingerprint(atlas);
+        if (bundle.tilesets.primary && bundle.tilesets.primary !== atlas.primary) {
+          throw new Error(
+            `Tileset primário incompatível: bundle=${bundle.tilesets.primary}; atlas=${atlas.primary}.`,
+          );
+        }
+        if (bundle.tilesets.secondary && bundle.tilesets.secondary !== atlas.secondary) {
+          throw new Error(
+            `Tileset secundário incompatível: bundle=${bundle.tilesets.secondary}; atlas=${atlas.secondary}.`,
+          );
+        }
+        if (
+          bundle.tilesets.atlasFingerprint &&
+          bundle.tilesets.atlasFingerprint !== activeFingerprint
+        ) {
+          throw new Error(
+            `Fingerprint do atlas incompatível: bundle=${bundle.tilesets.atlasFingerprint}; ativo=${activeFingerprint}.`,
+          );
+        }
+        const ids = new Set(atlas.records.map((record) => record.id));
+        const missing = bundle.tilesets.metatileIdsUsed.filter((id) => !ids.has(id));
+        if (missing.length) {
+          throw new Error(
+            `Atlas ativo não contém ${missing.length} metatile(s) usados pelo bundle.`,
+          );
+        }
+      }
+
+      const gameAudit = auditGameImplementability({
+        map: compiled.map,
+        mapJson: compiled.mapJson,
+        atlas,
+        bundle,
+        declaredTilesets: bundle.tilesets,
+      });
+
+      // Daqui para baixo começa a única mutação do import.
+      this.pushHistory();
+      this.syncHistoryDepths({
+        mapName: bundle.studioMapName ?? `${derived.metadata.name} (${derived.metadata.id})`,
+        map: cloneMap(compiled.map),
+        sourceFile: `${fileName}#map.bin`,
+        mapJsonSource: `${fileName}#map.json`,
+        mapJsonDocument: cloneMapJson(compiled.mapJson),
+        mapJsonDirty: false,
+        mapMetadata: derived.metadata,
+        events: derived.events,
+        protectedCells: derived.protectedCells,
+        selectedEventId: null,
+        selectedCell: null,
+        selection: null,
+        dirty: false,
+        validation: null,
+        gameAudit,
+        lastMessage: atlas
+          ? `Cidade ${derived.metadata.name} importada atomicamente. Rode Validar para revisar dependências externas.`
+          : `Cidade ${derived.metadata.name} importada em modo de revisão; atlas real ausente, portanto ainda não é considerada implementável.`,
+      });
+      return { ok: true as const, bundle, gameAudit };
+    } catch (error) {
+      // Deliberadamente SEM this.set(): falha não altera nem mensagem, nem undo.
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false as const, message };
+    }
+  };
+
   exportBytes = () => exportMapBin(this.state.map);
 
   exportMapJsonSource = () => {
     if (!this.state.mapJsonDocument) return null;
     return stringifyMapJson(this.state.mapJsonDocument);
+  };
+
+  exportCityBundle = () => {
+    try {
+      const atlas = activeAtlas();
+      const bundle = buildCityBundle({
+        map: this.state.map,
+        mapJson: this.state.mapJsonDocument,
+        mapName: this.state.mapName,
+        atlas,
+      });
+      const gameAudit = auditGameImplementability({
+        map: this.state.map,
+        mapJson: this.state.mapJsonDocument,
+        atlas,
+        bundle,
+        declaredTilesets: bundle.tilesets,
+      });
+      return {
+        ok: true as const,
+        bundle,
+        source: serializeCityBundle(bundle),
+        gameAudit,
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
   };
 
   markBinExported = () => this.set({ dirty: false, lastMessage: "map.bin exportado." });
@@ -852,7 +1126,8 @@ class EditorStore {
     if (!metadata) {
       issues.push({
         level: "warn" as const,
-        message: "map.json ainda não foi importado; warps, triggers e eventos não entraram nesta validação.",
+        message:
+          "map.json ainda não foi importado; warps, triggers, NPCs, clima e conexões não entraram nesta validação.",
       });
     } else {
       const outside = metadataOutOfBounds(metadata, this.state.map.width, this.state.map.height);
@@ -864,7 +1139,7 @@ class EditorStore {
       } else {
         issues.push({
           level: "info" as const,
-          message: `Todos os ${metadata.events.length} evento(s) do map.json estão dentro dos limites.`,
+          message: `Todos os ${metadata.events.length} evento(s) do map.json estão dentro do layout ou em margem de conexão válida.`,
         });
       }
 
@@ -873,7 +1148,10 @@ class EditorStore {
         const seen = new Set<string>();
         document.connections.forEach((value, index) => {
           if (!value || typeof value !== "object" || Array.isArray(value)) {
-            issues.push({ level: "error" as const, message: `Conexão ${index} não é um objeto válido.` });
+            issues.push({
+              level: "error" as const,
+              message: `Conexão ${index} não é um objeto válido.`,
+            });
             return;
           }
           const connection = value as Record<string, unknown>;
@@ -881,17 +1159,29 @@ class EditorStore {
           const map = connection.map;
           const offset = connection.offset;
           if (typeof direction !== "string" || !VALID_CONNECTION_DIRECTIONS.has(direction)) {
-            issues.push({ level: "error" as const, message: `Conexão ${index}: direção inválida (${String(direction)}).` });
+            issues.push({
+              level: "error" as const,
+              message: `Conexão ${index}: direção inválida (${String(direction)}).`,
+            });
           }
           if (typeof map !== "string" || !map.startsWith("MAP_")) {
-            issues.push({ level: "warn" as const, message: `Conexão ${index}: destino ${String(map)} não parece um MAP_* válido.` });
+            issues.push({
+              level: "warn" as const,
+              message: `Conexão ${index}: destino ${String(map)} não parece um MAP_* válido.`,
+            });
           }
           if (!Number.isInteger(offset)) {
-            issues.push({ level: "error" as const, message: `Conexão ${index}: offset precisa ser inteiro.` });
+            issues.push({
+              level: "error" as const,
+              message: `Conexão ${index}: offset precisa ser inteiro.`,
+            });
           }
           const signature = `${String(direction)}|${String(map)}|${String(offset)}`;
           if (seen.has(signature)) {
-            issues.push({ level: "warn" as const, message: `Conexão ${index} duplica exatamente direção, destino e offset de outra conexão.` });
+            issues.push({
+              level: "warn" as const,
+              message: `Conexão ${index} duplica exatamente direção, destino e offset de outra conexão.`,
+            });
           }
           seen.add(signature);
         });
@@ -899,7 +1189,7 @@ class EditorStore {
 
       issues.push({
         level: "info" as const,
-        message: `Layout declarado: ${metadata.layout}. Conexões: ${metadata.connections.length}. Células protegidas derivadas: ${metadata.protectedCells.length}.`,
+        message: `Layout: ${metadata.layout}. Clima: ${metadata.weather ?? "não definido"}. Conexões: ${metadata.connections.length}. Células protegidas (incl. NPC spawns): ${metadata.protectedCells.length}.`,
       });
       if (this.state.mapJsonDirty) {
         issues.push({
@@ -912,16 +1202,38 @@ class EditorStore {
     const validation: ValidationReport = {
       ...base,
       issues,
-      pass: issues.every((issue) => issue.level !== "error"),
+      pass: issues.every((found) => found.level !== "error"),
     };
+
+    let bundle: AraunaCityBundle | null = null;
+    if (this.state.mapJsonDocument) {
+      try {
+        bundle = buildCityBundle({
+          map: this.state.map,
+          mapJson: this.state.mapJsonDocument,
+          mapName: this.state.mapName,
+          atlas: activeAtlas(),
+        });
+      } catch {
+        bundle = null;
+      }
+    }
+    const gameAudit = auditCurrent(this.state.map, this.state.mapJsonDocument, bundle);
+
+    const status = gameAudit.implementable
+      ? "IMPLEMENTÁVEL NO JOGO"
+      : gameAudit.pass
+        ? "sem erros duros, mas verificação ainda parcial"
+        : `${gameAudit.counts.errors} erro(s) de implementação`;
     this.set({
       validation,
-      lastMessage: validation.pass ? "Validação: PASS." : "Validação: FAIL.",
+      gameAudit,
+      lastMessage: `Validação concluída: ${status}.`,
     });
     return validation;
   };
 
-  clearValidation = () => this.set({ validation: null }, false);
+  clearValidation = () => this.set({ validation: null, gameAudit: null }, false);
   setMessage = (lastMessage: string) => this.set({ lastMessage }, false);
 }
 

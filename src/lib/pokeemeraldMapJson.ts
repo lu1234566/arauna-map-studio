@@ -30,7 +30,14 @@ export interface PokeemeraldMapMetadata {
   layout: string;
   music: string | null;
   regionMapSection: string | null;
+  weather: string | null;
   mapType: string | null;
+  battleScene: string | null;
+  requiresFlash: boolean | null;
+  allowCycling: boolean | null;
+  allowEscaping: boolean | null;
+  allowRunning: boolean | null;
+  showMapName: boolean | null;
   connections: ParsedConnection[];
   events: ParsedMapEvent[];
   protectedCells: ParsedProtectedCell[];
@@ -64,6 +71,10 @@ function integer(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+function bool(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
 function coord(entry: JsonRecord): { x: number; y: number } | null {
   const x = integer(entry.x);
   const y = integer(entry.y);
@@ -76,16 +87,11 @@ function compact(parts: Array<string | null | undefined>): string {
 
 function requireString(root: JsonRecord, key: string): string {
   const value = text(root[key]);
-  if (!value) throw new MapJsonParseError(`map.json inválido: campo obrigatório \"${key}\" ausente.`);
+  if (!value) throw new MapJsonParseError(`map.json inválido: campo obrigatório "${key}" ausente.`);
   return value;
 }
 
-function addProtected(
-  map: Map<string, ParsedProtectedCell>,
-  x: number,
-  y: number,
-  reason: string,
-) {
+function addProtected(map: Map<string, ParsedProtectedCell>, x: number, y: number, reason: string) {
   const key = `${x},${y}`;
   const current = map.get(key);
   if (!current) {
@@ -103,7 +109,9 @@ function editableId(source: MapEventSource, index: number) {
  * Interpreta data/maps/<MapName>/map.json do pokeemerald.
  *
  * O arquivo não contém os metatiles do layout: ele complementa map.bin com
- * warps, object events, coord events, background events e conexões.
+ * propriedades do mapa, warps, object events, coord events, background events
+ * e conexões. Campos desconhecidos continuam preservados pelo EditableMapJson;
+ * esta projeção é somente para o inspector/validação.
  */
 export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata {
   let parsed: unknown;
@@ -180,6 +188,10 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
       label,
       detail,
     });
+    // O ponto de spawn de um object event é parte da lógica da história. Não
+    // protegemos todo o movement_range (pode conter cenário), mas impedimos que
+    // uma pintura casual destrua exatamente a célula em que o NPC nasce.
+    addProtected(protectedByCoord, point.x, point.y, `${label}: NPC/object spawn`);
   });
 
   coordEntries.forEach((raw, index) => {
@@ -216,11 +228,7 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
     const type = text(entry.type) ?? "bg";
     const facing = text(entry.player_facing_dir);
     const label = `S${index}`;
-    const detail = compact([
-      type.toUpperCase(),
-      script ? `script ${script}` : null,
-      facing,
-    ]);
+    const detail = compact([type.toUpperCase(), script ? `script ${script}` : null, facing]);
     events.push({
       id: editableId("bg", index),
       sourceIndex: index,
@@ -250,7 +258,14 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
     layout,
     music: text(root.music),
     regionMapSection: text(root.region_map_section),
+    weather: text(root.weather),
     mapType: text(root.map_type),
+    battleScene: text(root.battle_scene),
+    requiresFlash: bool(root.requires_flash),
+    allowCycling: bool(root.allow_cycling),
+    allowEscaping: bool(root.allow_escaping),
+    allowRunning: bool(root.allow_running),
+    showMapName: bool(root.show_map_name),
     connections,
     events,
     protectedCells: Array.from(protectedByCoord.values()),
@@ -263,12 +278,56 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
   };
 }
 
+function isVanillaConnectionMarginWarp(
+  metadata: PokeemeraldMapMetadata,
+  event: ParsedMapEvent,
+  width: number,
+  height: number,
+): boolean {
+  if (event.source !== "warp") return false;
+  if (
+    event.x === width &&
+    event.y >= 0 &&
+    event.y < height &&
+    metadata.connections.some((connection) => connection.direction === "right")
+  )
+    return true;
+  if (
+    event.x === -1 &&
+    event.y >= 0 &&
+    event.y < height &&
+    metadata.connections.some((connection) => connection.direction === "left")
+  )
+    return true;
+  if (
+    event.y === height &&
+    event.x >= 0 &&
+    event.x < width &&
+    metadata.connections.some((connection) => connection.direction === "down")
+  )
+    return true;
+  if (
+    event.y === -1 &&
+    event.x >= 0 &&
+    event.x < width &&
+    metadata.connections.some((connection) => connection.direction === "up")
+  )
+    return true;
+  return false;
+}
+
 export function metadataOutOfBounds(
   metadata: PokeemeraldMapMetadata,
   width: number,
   height: number,
 ): ParsedMapEvent[] {
-  return metadata.events.filter(
-    (event) => event.x < 0 || event.y < 0 || event.x >= width || event.y >= height,
-  );
+  return metadata.events.filter((event) => {
+    const regular = event.x >= 0 && event.y >= 0 && event.x < width && event.y < height;
+    if (regular) return false;
+    // pokeemerald mantém uma margem de conexão no buffer. Um warp exatamente
+    // na primeira célula dessa margem é válido quando há conexão naquela face.
+    // Ex.: SlateportCity vanilla 40×60 possui warp em (40,7).
+    if (isVanillaConnectionMarginWarp(metadata, event, width, height)) return false;
+    return true;
+  });
 }

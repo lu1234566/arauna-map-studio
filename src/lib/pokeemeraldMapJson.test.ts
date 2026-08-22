@@ -14,9 +14,7 @@ const SAMPLE = JSON.stringify({
   region_map_section: "MAPSEC_LITTLEROOT_TOWN",
   map_type: "MAP_TYPE_TOWN",
   connections: [{ map: "MAP_ROUTE101", direction: "up", offset: 0 }],
-  warp_events: [
-    { x: 5, y: 8, elevation: 0, dest_map: "MAP_HOUSE", dest_warp_id: "1" },
-  ],
+  warp_events: [{ x: 5, y: 8, elevation: 0, dest_map: "MAP_HOUSE", dest_warp_id: "1" }],
   object_events: [
     {
       local_id: "LOCALID_MOM",
@@ -33,7 +31,13 @@ const SAMPLE = JSON.stringify({
     { type: "trigger", x: 10, y: 1, var: "VAR_STATE", var_value: "1", script: "IntroScript2" },
   ],
   bg_events: [
-    { type: "sign", x: 6, y: 17, script: "TownSign", player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY" },
+    {
+      type: "sign",
+      x: 6,
+      y: 17,
+      script: "TownSign",
+      player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY",
+    },
   ],
 });
 
@@ -53,14 +57,59 @@ describe("parsePokeemeraldMapJson", () => {
     const metadata = parsePokeemeraldMapJson(SAMPLE);
 
     expect(metadata.protectedCells).toHaveLength(3);
-    expect(metadata.protectedCells.find((cell) => cell.x === 10 && cell.y === 1)?.reason).toContain("T0");
-    expect(metadata.protectedCells.find((cell) => cell.x === 10 && cell.y === 1)?.reason).toContain("T1");
+    expect(metadata.protectedCells.find((cell) => cell.x === 10 && cell.y === 1)?.reason).toContain(
+      "T0",
+    );
+    expect(metadata.protectedCells.find((cell) => cell.x === 10 && cell.y === 1)?.reason).toContain(
+      "T1",
+    );
   });
 
   it("detecta eventos fora do layout carregado", () => {
     const metadata = parsePokeemeraldMapJson(SAMPLE);
     expect(metadataOutOfBounds(metadata, 20, 20)).toHaveLength(0);
     expect(metadataOutOfBounds(metadata, 10, 10).length).toBeGreaterThan(0);
+  });
+
+  it("aceita somente warp na primeira célula da margem quando a face possui conexão", () => {
+    const source = JSON.stringify({
+      id: "MAP_SLATEPORT_CITY",
+      name: "SlateportCity",
+      layout: "LAYOUT_SLATEPORT_CITY",
+      connections: [{ map: "MAP_ROUTE134", direction: "right", offset: 0 }],
+      warp_events: [
+        { x: 40, y: 7, elevation: 0, dest_map: "MAP_SLATEPORT_CITY_HARBOR", dest_warp_id: "2" },
+      ],
+      object_events: [
+        {
+          graphics_id: "OBJ_EVENT_GFX_MAN_1",
+          x: 40,
+          y: 8,
+          movement_type: "MOVEMENT_TYPE_FACE_LEFT",
+        },
+      ],
+      coord_events: [],
+      bg_events: [],
+    });
+    const metadata = parsePokeemeraldMapJson(source);
+    const outside = metadataOutOfBounds(metadata, 40, 60);
+    expect(outside.map((event) => event.source)).toEqual(["object"]);
+    expect(outside.some((event) => event.source === "warp")).toBe(false);
+  });
+
+  it("não aceita evento além da primeira célula da margem", () => {
+    const source = JSON.stringify({
+      id: "MAP_EDGE_TEST",
+      name: "EdgeTest",
+      layout: "LAYOUT_EDGE_TEST",
+      connections: [{ map: "MAP_B", direction: "right", offset: 0 }],
+      warp_events: [{ x: 41, y: 7, elevation: 0, dest_map: "MAP_B", dest_warp_id: "0" }],
+      object_events: [],
+      coord_events: [],
+      bg_events: [],
+    });
+    const metadata = parsePokeemeraldMapJson(source);
+    expect(metadataOutOfBounds(metadata, 40, 60)).toHaveLength(1);
   });
 
   it("rejeita JSON sem os campos fundamentais", () => {
