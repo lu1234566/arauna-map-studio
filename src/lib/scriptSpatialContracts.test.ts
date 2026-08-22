@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseScriptSpatialContracts,
+  referencedScriptWarpMapIds,
   uniqueScriptAnchorCells,
 } from "./scriptSpatialContracts";
 
@@ -41,6 +42,8 @@ SlateportCity_Movement_ScottApproachPlayer:
 SlateportCity_Movement_PlayerFaceScott:
 \tdelay_16
 \twalk_in_place_faster_left
+\temote_exclamation_mark
+\tface_right
 \tstep_end
 `;
 
@@ -75,11 +78,48 @@ describe("scriptSpatialContracts", () => {
     expect(movement?.steps.every((step) => step.dx === 1 && step.dy === 0)).toBe(true);
   });
 
-  it("does not misclassify in-place animation as spatial movement", () => {
+  it("does not misclassify facing, delay, emote or in-place animation as spatial movement", () => {
     const contracts = parseScriptSpatialContracts(SLATEPORT_EXCERPT);
     const movement = contracts.movements.SlateportCity_Movement_PlayerFaceScott;
     expect(movement?.deterministic).toBe(true);
     expect(movement?.steps).toEqual([]);
+  });
+
+  it("extracts every Emerald script warp form without guessing symbolic arguments", () => {
+    const contracts = parseScriptSpatialContracts(`
+A::
+  warp MAP_A
+  warpsilent MAP_B, 2
+  warpdoor MAP_C, 4, 5
+  warpteleport MAP_D, WARP_ID_NONE, 6, 7
+  setwarp MAP_E, VAR_0x8004, VAR_0x8005
+  setdynamicwarp MAP_F, 1
+  setdivewarp MAP_G, 8, 9
+  setholewarp MAP_H
+  warphole MAP_UNDEFINED
+`);
+
+    expect(contracts.scriptWarps.map((warp) => [warp.command, warp.destMap, warp.args])).toEqual([
+      ["warp", "MAP_A", []],
+      ["warpsilent", "MAP_B", ["2"]],
+      ["warpdoor", "MAP_C", ["4", "5"]],
+      ["warpteleport", "MAP_D", ["WARP_ID_NONE", "6", "7"]],
+      ["setwarp", "MAP_E", ["VAR_0x8004", "VAR_0x8005"]],
+      ["setdynamicwarp", "MAP_F", ["1"]],
+      ["setdivewarp", "MAP_G", ["8", "9"]],
+      ["setholewarp", "MAP_H", []],
+      ["warphole", "MAP_UNDEFINED", []],
+    ]);
+    expect(referencedScriptWarpMapIds(contracts)).toEqual([
+      "MAP_A",
+      "MAP_B",
+      "MAP_C",
+      "MAP_D",
+      "MAP_E",
+      "MAP_F",
+      "MAP_G",
+      "MAP_H",
+    ]);
   });
 
   it("deduplicates cells while retaining every reason", () => {
