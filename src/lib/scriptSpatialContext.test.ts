@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { buildCityBundle } from "./araunaCityBundle";
+import { withScriptSpatialSnapshot } from "./cityBundleDependencies";
+import type { MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
 import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
 import {
   buildScriptSpatialContext,
   clearScriptSpatialContext,
   getScriptSpatialContext,
+  installScriptSpatialContextFromBundle,
   refreshScriptSpatialContext,
 } from "./scriptSpatialContext";
 
@@ -42,6 +46,15 @@ function mapDescriptor(id: string, name: string): WorkspaceMap {
   };
 }
 
+function smallMap(): MapData {
+  return {
+    width: 4,
+    height: 4,
+    metatiles: Uint16Array.from({ length: 16 }, () => 1),
+    physical: Uint16Array.from({ length: 16 }, () => 0x3000),
+  };
+}
+
 afterEach(() => clearScriptSpatialContext());
 
 describe("scriptSpatialContext", () => {
@@ -61,6 +74,7 @@ describe("scriptSpatialContext", () => {
     const context = await buildScriptSpatialContext(ws, document);
     expect(context.error).toBeNull();
     expect(context.sourcePath).toBe("data/maps/A/scripts.inc");
+    expect(context.origin).toBe("workspace");
     expect(context.contracts?.anchors).toHaveLength(1);
     expect(context.contracts?.anchors[0]).toMatchObject({ localId: "LOCALID_A", x: 2, y: 3 });
   });
@@ -101,5 +115,28 @@ describe("scriptSpatialContext", () => {
     const context = await buildScriptSpatialContext(ws, document);
     expect(context.contracts).toBeNull();
     expect(context.error).toMatch(/MissingShared/);
+  });
+
+  it("restores an internally validated scripts snapshot after a bundle import", () => {
+    const document: EditableMapJson = {
+      id: "MAP_A",
+      name: "A",
+      layout: "LAYOUT_A",
+    };
+    const source = "A_Script::\n\tsetobjectxyperm LOCALID_A, 2, 3\n\tend\n";
+    const semantics = withScriptSpatialSnapshot(
+      undefined,
+      "A",
+      "data/maps/A/scripts.inc",
+      source,
+    );
+    const bundle = buildCityBundle({ map: smallMap(), mapJson: document, semantics });
+    const installedDocument = { ...bundle.mapJson };
+
+    const context = installScriptSpatialContextFromBundle(bundle, installedDocument);
+    expect(context?.origin).toBe("bundle");
+    expect(context?.source).toBe(source);
+    expect(context?.contracts?.anchors[0]).toMatchObject({ localId: "LOCALID_A", x: 2, y: 3 });
+    expect(context?.sourceDocument).toBe(installedDocument);
   });
 });
