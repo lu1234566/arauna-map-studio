@@ -17,6 +17,7 @@ import {
 } from "./gameImplementability";
 import { withActiveScriptSpatialAudit } from "./gameImplementabilityWithScripts";
 import { getScriptSpatialContext } from "./scriptSpatialContext";
+import { withWarpEndpointSafetyAudit } from "./warpEndpointSafety";
 import {
   getWorkspaceAuditContext,
   sharedEventsContextKey,
@@ -59,11 +60,11 @@ function currentWorkspaceContext(
  * Monta o mesmo bundle completo usado por validação e exportação.
  *
  * - grid/mapJson/atlas vêm do estado atual;
- * - scripts.inc só entra se o contexto pertence à mesma instância de mapJson;
+ * - scripts entram apenas se o contexto pertence à mesma instância de mapJson;
  * - shared events preferem a fonte atual do Workspace e usam o snapshot do
  *   bundle importado somente como fallback standalone;
- * - o relatório profundo recebe apenas contexto de Workspace não-stale;
- * - a camada espacial é aplicada por último sobre o mapa atual.
+ * - endpoints de warp conferem a célula de spawn real quando o Workspace a tem;
+ * - a camada espacial/cutscenes/warps de script é aplicada por último.
  */
 export function auditCompleteGameState(
   input: CompleteGameAuditInput,
@@ -132,10 +133,16 @@ export function auditCompleteGameState(
     declaredTilesets: bundle?.tilesets ?? null,
     workspaceContext,
   });
+  const endpointSafe = withWarpEndpointSafetyAudit(
+    base,
+    mapJson,
+    workspaceContext,
+    bundle,
+  );
 
   return {
     bundle,
-    report: withActiveScriptSpatialAudit(base, map, mapJson),
+    report: withActiveScriptSpatialAudit(endpointSafe, map, mapJson),
     workspaceContext,
   };
 }
