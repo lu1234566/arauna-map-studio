@@ -3,14 +3,26 @@ import {
   scriptSpatialSnapshotFromBundle,
   validateBundleDependencies,
 } from "./cityBundleDependencies";
-import type { EditableMapJson } from "./eventMapJson";
+import {
+  parseEditableMapJson,
+  type EditableMapJson,
+} from "./eventMapJson";
 import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
 import {
   parseScriptSpatialContracts,
+  referencedScriptWarpMapIds,
   type ScriptSpatialContracts,
 } from "./scriptSpatialContracts";
 
 const COMMON_MOVEMENT_PATH = "data/scripts/movement.inc";
+
+export interface ScriptWarpDestinationContext {
+  mapJson?: EditableMapJson;
+  effectiveEvents?: EditableMapJson;
+  width?: number;
+  height?: number;
+  error?: string;
+}
 
 export interface ScriptSpatialContext {
   sourceMapId: string | null;
@@ -20,6 +32,7 @@ export interface ScriptSpatialContext {
   source: string;
   sourceChecksum: string;
   contracts: ScriptSpatialContracts | null;
+  warpDestinations: Record<string, ScriptWarpDestinationContext | undefined>;
   error: string | null;
   origin: "workspace" | "bundle";
 }
@@ -42,6 +55,67 @@ function mapByName(workspace: AraunaWorkspace, name: string): WorkspaceMap | und
   return workspace.maps.find((map) => map.name === name || map.directory === name);
 }
 
+async function documentForMap(
+  workspace: AraunaWorkspace,
+  descriptor: WorkspaceMap,
+): Promise<EditableMapJson> {
+  const file = fileForPath(workspace, descriptor.path);
+  if (!file) throw new Error(`arquivo ${descriptor.path} não encontrado`);
+  return parseEditableMapJson(await file.text());
+}
+
+async function effectiveEventsForDocument(
+  workspace: AraunaWorkspace,
+  document: EditableMapJson,
+): Promise<EditableMapJson> {
+  const sharedName = text(document.shared_events_map);
+  if (!sharedName) return document;
+  const descriptor = mapByName(workspace, sharedName);
+  if (!descriptor) throw new Error(`shared_events_map ${sharedName} não encontrado no Workspace`);
+  return documentForMap(workspace, descriptor);
+}
+
+async function loadWarpDestinations(
+  workspace: AraunaWorkspace,
+  currentDocument: EditableMapJson,
+  contracts: ScriptSpatialContracts,
+): Promise<Record<string, ScriptWarpDestinationContext | undefined>> {
+  const destinations: Record<string, ScriptWarpDestinationContext | undefined> = {};
+  const currentId = text(currentDocument.id);
+
+  await Promise.all(referencedScriptWarpMapIds(contracts).map(async (mapId) => {
+    const descriptor = mapById(workspace, mapId);
+    if (!descriptor) {
+      destinations[mapId] = { error: `mapa ${mapId} referenciado por script não encontrado no Workspace` };
+      return;
+    }
+    if (descriptor.error) {
+      destinations[mapId] = { error: descriptor.error };
+      return;
+    }
+
+    try {
+      const mapJson = mapId === currentId
+        ? currentDocument
+        : await documentForMap(workspace, descriptor);
+      const layout = descriptor.layout ?? workspace.layouts.get(descriptor.layoutId);
+      const effectiveEvents = await effectiveEventsForDocument(workspace, mapJson);
+      destinations[mapId] = {
+        mapJson,
+        effectiveEvents,
+        ...(layout ? { width: layout.width, height: layout.height } : {}),
+        ...(!layout ? { error: `layout ${descriptor.layoutId || "(vazio)"} não encontrado` } : {}),
+      };
+    } catch (error) {
+      destinations[mapId] = {
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }));
+
+  return destinations;
+}
+
 function failedContext(
   document: EditableMapJson,
   sourceMapId: string | null,
@@ -57,6 +131,7 @@ function failedContext(
     source: "",
     sourceChecksum: "",
     contracts: null,
+    warpDestinations: {},
     error,
     origin: "workspace",
   };
@@ -81,12 +156,11 @@ function combinedScriptSource(
 }
 
 /**
- * Resolve o scripts.inc efetivamente usado pelo MapHeader e a biblioteca comum
- * de movimentos que ele pode referenciar.
+ * Resolve o scripts.inc efetivamente usado pelo MapHeader, a biblioteca comum
+ * de movimentos e os mapas destino citados por comandos de warp de script.
  *
  * Quando shared_scripts_map existe, tools/mapjson aponta MapScripts para o mapa
  * compartilhado; portanto auditar o scripts.inc local daria falsa segurança.
- * O documento em memória continua sendo usado apenas como identidade da sessão.
  */
 export async function buildScriptSpatialContext(
   workspace: AraunaWorkspace,
@@ -160,6 +234,7 @@ export async function buildScriptSpatialContext(
     ]);
     const combined = combinedScriptSource(mapSourcePath, mapSource, commonSource);
     const contracts = parseScriptSpatialContracts(combined.source);
+    const warpDestinations = await loadWarpDestinations(workspace, document, contracts);
     return {
       sourceMapId,
       sourceDocument: document,
@@ -168,6 +243,7 @@ export async function buildScriptSpatialContext(
       source: combined.source,
       sourceChecksum: fnv1a(combined.source),
       contracts,
+      warpDestinations,
       error: null,
       origin: "workspace",
     };
@@ -198,6 +274,8 @@ export async function refreshScriptSpatialContext(
 /**
  * Restaura a prova espacial embutida em uma Cidade JSON importada. A camada só
  * é ativada se os checksums e a derivação contracts <- fontes de script passarem.
+ * Destinos externos de warp não são inventados: sem Workspace eles permanecem
+ * não certificados e rebaixam o relatório quando necessários.
  */
 export function installScriptSpatialContextFromBundle(
   bundle: AraunaCityBundle,
@@ -224,6 +302,7 @@ export function installScriptSpatialContextFromBundle(
     source: snapshot.source,
     sourceChecksum: snapshot.sourceChecksum,
     contracts: snapshot.contracts,
+    warpDestinations: {},
     error: null,
     origin: "bundle",
   };
