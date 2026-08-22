@@ -3,7 +3,10 @@ import {
   type AraunaCityBundle,
   type FingerprintAtlas,
 } from "./araunaCityBundle";
-import { importedSharedEventsSnapshot } from "./bundleDependencyContext";
+import {
+  importedBundleSemanticBase,
+  importedSharedEventsSnapshot,
+} from "./bundleDependencyContext";
 import {
   withScriptSpatialSnapshot,
   withSharedEventsSnapshot,
@@ -60,9 +63,9 @@ function currentWorkspaceContext(
  * Monta o mesmo bundle completo usado por validação e exportação.
  *
  * - grid/mapJson/atlas vêm do estado atual;
- * - scripts entram apenas se o contexto pertence à mesma instância de mapJson;
- * - shared events preferem a fonte atual do Workspace e usam o snapshot do
- *   bundle importado somente como fallback standalone;
+ * - semântica de autoria importada (zonas/estruturas/notas) sobrevive ao round-trip;
+ * - snapshots técnicos são sempre recalculados para o estado atual;
+ * - shared events preferem a fonte atual do Workspace;
  * - endpoints de warp conferem a célula de spawn real quando o Workspace a tem;
  * - a camada espacial/cutscenes/warps de script é aplicada por último.
  */
@@ -80,6 +83,7 @@ export function auditCompleteGameState(
         mapJson,
         mapName: input.mapName ?? null,
         atlas: atlas ?? null,
+        semantics: importedBundleSemanticBase(mapJson),
       });
 
       const scriptContext = getScriptSpatialContext();
