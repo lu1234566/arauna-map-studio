@@ -108,6 +108,39 @@ A::
     }));
   });
 
+  it("also catches a removed story NPC referenced only by applymovement", () => {
+    const issues = codes(`
+A::
+  applymovement LOCALID_REMOVED_STORY_NPC, A_Movement
+  end
+A_Movement:
+  walk_right
+  step_end
+`);
+    expect(issues).toContainEqual(expect.objectContaining({
+      code: "SCRIPT_MOVEMENT_LOCALID_MISSING",
+      severity: "error",
+      localId: "LOCALID_REMOVED_STORY_NPC",
+    }));
+  });
+
+  it("never requires an object_event template for engine-reserved LOCALID_PLAYER/CAMERA", () => {
+    const issues = codes(`
+A::
+  applymovement LOCALID_PLAYER, A_PlayerMovement
+  applymovement LOCALID_CAMERA, A_CameraMovement
+  end
+A_PlayerMovement:
+  walk_right
+  step_end
+A_CameraMovement:
+  walk_left
+  step_end
+`);
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_LOCALID_MISSING")).toBe(false);
+    expect(issues.some((issue) => issue.code === "SCRIPT_OBJECT_LOCALID_MISSING")).toBe(false);
+  });
+
   it("keeps uncertain movement geometry as review warning rather than inventing an engine failure", () => {
     const blocked = map();
     for (let x = 10; x <= 30; x++) blocked.physical[12 * blocked.width + x] = 0x3400;
