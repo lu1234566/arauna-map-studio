@@ -1,11 +1,16 @@
+import type { FingerprintAtlas } from "./araunaCityBundle";
+import type { MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
 import type {
   GameImplementabilityReport,
   ImplementabilityCategory,
   ImplementabilityIssue,
 } from "./gameImplementability";
+import { cellPassability } from "./mapPassability";
 import { findScriptDoorSpawnProof } from "./scriptSpatialAudit";
 import { getScriptSpatialContext } from "./scriptSpatialContext";
+
+const MB_ANIMATED_DOOR = 0x69;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -53,18 +58,22 @@ function rebuildReport(
 
 /**
  * O auditor-base só vê o map.bin e corretamente estranha um NPC que nasce em
- * collision > 0. Depois que scripts.inc está disponível podemos provar o caso
- * vanilla em que o objeto fica guardado sobre uma porta e só é adicionado após
- * `opendoor` nas mesmas coordenadas (Scott/Battle Tent em Slateport).
+ * collision > 0. Depois que scripts.inc e o atlas estão disponíveis podemos
+ * provar o caso vanilla em que o objeto fica guardado sobre uma porta animada e
+ * só é adicionado após `opendoor` nas mesmas coordenadas.
  *
- * Esta função remove SOMENTE o NPC_BLOCKED correspondente ao mesmo object_event
- * e exige prova literal opendoor -> addobject no mesmo bloco de script.
+ * A remoção do NPC_BLOCKED exige simultaneamente:
+ * - o mesmo object_event / LOCALID;
+ * - behavior MB_ANIMATED_DOOR no atlas real;
+ * - `opendoor x,y` antes de `addobject LOCALID` no mesmo bloco de script.
  */
 export function withScriptDoorNpcReconciliation(
   base: GameImplementabilityReport,
   mapJson: EditableMapJson | null,
+  map: MapData,
+  atlas: FingerprintAtlas | null | undefined,
 ): GameImplementabilityReport {
-  if (!mapJson || !Array.isArray(mapJson.object_events)) return base;
+  if (!mapJson || !Array.isArray(mapJson.object_events) || !atlas) return base;
   const context = getScriptSpatialContext();
   const mapId = text(mapJson.id);
   if (
@@ -85,7 +94,11 @@ export function withScriptDoorNpcReconciliation(
     if (!isRecord(raw)) continue;
     const x = typeof raw.x === "number" && Number.isInteger(raw.x) ? raw.x : null;
     const y = typeof raw.y === "number" && Number.isInteger(raw.y) ? raw.y : null;
-    if (x === null || y === null) continue;
+    if (x === null || y === null || x < 0 || y < 0 || x >= map.width || y >= map.height) continue;
+
+    const tile = cellPassability(map, x, y, atlas);
+    if (tile.behavior !== MB_ANIMATED_DOOR) continue;
+
     const explicitLocalId = text(raw.local_id);
     const localId = explicitLocalId ?? String(issue.eventIndex + 1);
     const proof = findScriptDoorSpawnProof(context.contracts, localId, x, y);
@@ -96,7 +109,7 @@ export function withScriptDoorNpcReconciliation(
       severity: "info",
       category: "npcs",
       message:
-        `NPC ${issue.eventIndex} (${localId}) ocupa (${x},${y}) sobre porta fechada no mapa-base, ` +
+        `NPC ${issue.eventIndex} (${localId}) ocupa (${x},${y}) sobre porta animada fechada no mapa-base, ` +
         `mas ${proof.scriptLabel} executa opendoor antes de addobject; spawn runtime certificado como intencional.`,
       eventSource: "object",
       eventIndex: issue.eventIndex,
