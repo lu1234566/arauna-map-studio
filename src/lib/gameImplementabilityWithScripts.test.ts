@@ -15,7 +15,11 @@ import type {
   ImplementabilityCategory,
 } from "./gameImplementability";
 import { withActiveScriptSpatialAudit } from "./gameImplementabilityWithScripts";
-import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
+import type {
+  AraunaWorkspace,
+  WorkspaceLayout,
+  WorkspaceMap,
+} from "./repoWorkspace";
 import {
   clearScriptSpatialContext,
   installScriptSpatialContextFromBundle,
@@ -34,6 +38,15 @@ const CATEGORIES: ImplementabilityCategory[] = [
   "weather",
   "roundtrip",
 ];
+
+const COMMON_MOVEMENTS = `
+Common_Movement_WalkUp:
+  walk_up
+  step_end
+Common_Movement_FaceRight:
+  face_right
+  step_end
+`;
 
 function baseReport(): GameImplementabilityReport {
   return {
@@ -86,6 +99,19 @@ function fakeFile(source: string): File {
   return { text: async () => source } as unknown as File;
 }
 
+function layout(id: string, name: string, width = 5, height = 5): WorkspaceLayout {
+  return {
+    id,
+    name,
+    width,
+    height,
+    primary_tileset: "gTileset_General",
+    secondary_tileset: "gTileset_Petalburg",
+    border_filepath: "",
+    blockdata_filepath: `data/layouts/${name}/map.bin`,
+  };
+}
+
 function workspace(source: string): AraunaWorkspace {
   const descriptor: WorkspaceMap = {
     path: "data/maps/A/map.json",
@@ -95,13 +121,44 @@ function workspace(source: string): AraunaWorkspace {
     layoutId: "LAYOUT_A",
   };
   const script = fakeFile(source);
+  const common = fakeFile(COMMON_MOVEMENTS);
   return {
-    files: new Map([["data/maps/A/scripts.inc", script]]),
-    filesLower: new Map([["data/maps/a/scripts.inc", script]]),
+    files: new Map([
+      ["data/maps/A/scripts.inc", script],
+      ["data/scripts/movement.inc", common],
+    ]),
+    filesLower: new Map([
+      ["data/maps/a/scripts.inc", script],
+      ["data/scripts/movement.inc", common],
+    ]),
     layouts: new Map(),
     maps: [descriptor],
     tilesets: [],
   };
+}
+
+function workspaceWithDestination(
+  source: string,
+  destination: EditableMapJson,
+  destinationWidth = 5,
+  destinationHeight = 5,
+): AraunaWorkspace {
+  const base = workspace(source);
+  const targetLayout = layout("LAYOUT_B", "B", destinationWidth, destinationHeight);
+  const target: WorkspaceMap = {
+    path: "data/maps/B/map.json",
+    directory: "B",
+    id: "MAP_B",
+    name: "B",
+    layoutId: "LAYOUT_B",
+    layout: targetLayout,
+  };
+  const targetFile = fakeFile(JSON.stringify(destination));
+  base.maps.push(target);
+  base.layouts.set(targetLayout.id, targetLayout);
+  base.files.set(target.path, targetFile);
+  base.filesLower.set(target.path.toLowerCase(), targetFile);
+  return base;
 }
 
 function has(report: GameImplementabilityReport, code: string) {
@@ -126,6 +183,19 @@ describe("withActiveScriptSpatialAudit", () => {
     expect(report.fullyVerified).toBe(true);
     expect(has(report, "SCRIPT_SPATIAL_SOURCE_OK")).toBe(true);
     expect(has(report, "SCRIPT_OBJECT_ANCHOR_OK")).toBe(true);
+  });
+
+  it("resolves Common_Movement definitions from data/scripts/movement.inc", async () => {
+    const mapJson = document();
+    await refreshScriptSpatialContext(
+      workspace("A::\n\tapplymovement LOCALID_A, Common_Movement_WalkUp\n\tend\n"),
+      mapJson,
+    );
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), mapJson);
+    expect(report.implementable).toBe(true);
+    expect(has(report, "SCRIPT_MOVEMENT_DEFINITION_EXTERNAL")).toBe(false);
+    expect(has(report, "SCRIPT_MOVEMENT_HAS_SAFE_PATH")).toBe(true);
   });
 
   it("downgrades a runtime anchor that would place an NPC on collision", async () => {
@@ -155,6 +225,63 @@ describe("withActiveScriptSpatialAudit", () => {
     expect(report.pass).toBe(false);
     expect(report.implementable).toBe(false);
     expect(has(report, "SCRIPT_OBJECT_LOCALID_MISSING")).toBe(true);
+  });
+
+  it("certifies a script warp id against the effective destination warp_events", async () => {
+    const mapJson = document();
+    const destination: EditableMapJson = {
+      id: "MAP_B",
+      name: "B",
+      layout: "LAYOUT_B",
+      warp_events: [
+        { x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" },
+      ],
+    };
+    await refreshScriptSpatialContext(
+      workspaceWithDestination("A::\n\twarp MAP_B, 0\n\tend\n", destination),
+      mapJson,
+    );
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), mapJson);
+    expect(report.implementable).toBe(true);
+    expect(has(report, "SCRIPT_WARP_DEST_ID_OK")).toBe(true);
+  });
+
+  it("blocks a script warp id that does not exist in the destination", async () => {
+    const mapJson = document();
+    const destination: EditableMapJson = {
+      id: "MAP_B",
+      name: "B",
+      layout: "LAYOUT_B",
+      warp_events: [],
+    };
+    await refreshScriptSpatialContext(
+      workspaceWithDestination("A::\n\twarp MAP_B, 3\n\tend\n", destination),
+      mapJson,
+    );
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), mapJson);
+    expect(report.pass).toBe(false);
+    expect(report.implementable).toBe(false);
+    expect(has(report, "SCRIPT_WARP_DEST_ID_OUT_OF_RANGE")).toBe(true);
+  });
+
+  it("blocks direct script warp coordinates outside the destination layout", async () => {
+    const mapJson = document();
+    const destination: EditableMapJson = {
+      id: "MAP_B",
+      name: "B",
+      layout: "LAYOUT_B",
+      warp_events: [],
+    };
+    await refreshScriptSpatialContext(
+      workspaceWithDestination("A::\n\twarp MAP_B, 8, 2\n\tend\n", destination, 5, 5),
+      mapJson,
+    );
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), mapJson);
+    expect(report.pass).toBe(false);
+    expect(has(report, "SCRIPT_WARP_DEST_COORDS_OUT_OF_BOUNDS")).toBe(true);
   });
 
   it("refuses a stale scripts context after map.json identity object changes", async () => {
@@ -208,8 +335,8 @@ describe("withActiveScriptSpatialAudit", () => {
     const semantics = withScriptSpatialSnapshot(
       sharedSemantics,
       "Shared",
-      "data/maps/Shared/scripts.inc",
-      scriptSource,
+      "data/maps/Shared/scripts.inc + data/scripts/movement.inc",
+      `${scriptSource}\n@ ARAUNA_AUDIT_SUPPORT_SOURCE data/scripts/movement.inc\n${COMMON_MOVEMENTS}`,
     );
     const bundle = buildCityBundle({ map: openMap(), mapJson: consumer, semantics });
     const installedDocument = { ...bundle.mapJson };
@@ -220,5 +347,23 @@ describe("withActiveScriptSpatialAudit", () => {
     expect(report.implementable).toBe(true);
     expect(has(report, "SCRIPT_SPATIAL_EFFECTIVE_EVENTS_UNVERIFIED")).toBe(false);
     expect(has(report, "SCRIPT_OBJECT_ANCHOR_OK")).toBe(true);
+  });
+
+  it("downgrades a standalone bundle that references an external script-warp destination", () => {
+    const mapJson = document();
+    const semantics = withScriptSpatialSnapshot(
+      undefined,
+      "A",
+      "data/maps/A/scripts.inc + data/scripts/movement.inc",
+      `A::\n\twarp MAP_B, 0\n\tend\n\n@ ARAUNA_AUDIT_SUPPORT_SOURCE data/scripts/movement.inc\n${COMMON_MOVEMENTS}`,
+    );
+    const bundle = buildCityBundle({ map: openMap(), mapJson, semantics });
+    const installedDocument = { ...bundle.mapJson };
+    installScriptSpatialContextFromBundle(bundle, installedDocument);
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), installedDocument);
+    expect(report.pass).toBe(true);
+    expect(report.implementable).toBe(false);
+    expect(has(report, "SCRIPT_WARP_DEST_UNVERIFIED")).toBe(true);
   });
 });
