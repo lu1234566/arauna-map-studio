@@ -25,6 +25,7 @@ import {
   getWorkspaceAuditContext,
   sharedEventsContextKey,
 } from "./workspaceAuditContext";
+import { withWorkspaceSymbolReferenceAudit } from "./workspaceSymbolAudit";
 
 export interface CompleteGameAuditInput {
   map: MapData;
@@ -66,6 +67,7 @@ function currentWorkspaceContext(
  * - semântica de autoria importada (zonas/estruturas/notas) sobrevive ao round-trip;
  * - snapshots técnicos são sempre recalculados para o estado atual;
  * - shared events preferem a fonte atual do Workspace;
+ * - referências de scripts/flags/vars/constants precisam existir nas fontes;
  * - endpoints de warp conferem a célula de spawn real quando o Workspace a tem;
  * - a camada espacial/cutscenes/warps de script é aplicada por último.
  */
@@ -137,8 +139,9 @@ export function auditCompleteGameState(
     declaredTilesets: bundle?.tilesets ?? null,
     workspaceContext,
   });
+  const symbolsSafe = withWorkspaceSymbolReferenceAudit(base, mapJson);
   const endpointSafe = withWarpEndpointSafetyAudit(
-    base,
+    symbolsSafe,
     mapJson,
     workspaceContext,
     bundle,
