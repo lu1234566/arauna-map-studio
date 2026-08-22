@@ -32,6 +32,7 @@ import { ensureAuthenticEmeraldPreviewAtlas } from "@/lib/pretEmeraldBootstrap";
 import { realAtlasStore } from "@/lib/realAtlasStore";
 import {
   clearScriptSpatialContext,
+  getScriptSpatialContext,
   refreshScriptSpatialContext,
 } from "@/lib/scriptSpatialContext";
 import { smartPathStore } from "@/lib/smartPathStore";
@@ -148,13 +149,29 @@ function Index() {
     void (async () => {
       const document = editorStore.getState().mapJsonDocument;
       try {
-        await Promise.all([
-          refreshWorkspaceAuditContext(session?.workspace, document),
-          refreshScriptSpatialContext(session?.workspace, document),
-        ]);
+        if (session?.workspace) {
+          await Promise.all([
+            refreshWorkspaceAuditContext(session.workspace, document),
+            refreshScriptSpatialContext(session.workspace, document),
+          ]);
+        } else {
+          // Sem Workspace, o contexto de scripts pode ter vindo de um bundle
+          // autocontido. Preservamos somente quando pertence à MESMA instância
+          // de map.json; qualquer outro contexto é stale e deve ser descartado.
+          clearWorkspaceAuditContext();
+          const scriptContext = getScriptSpatialContext();
+          if (!document || scriptContext?.sourceDocument !== document) {
+            clearScriptSpatialContext();
+          }
+        }
       } catch (error) {
         clearWorkspaceAuditContext();
-        clearScriptSpatialContext();
+        // Não apague à cegas um snapshot íntegro vindo de bundle. O guard de
+        // identidade em withActiveScriptSpatialAudit já impede contexto stale.
+        const scriptContext = getScriptSpatialContext();
+        if (!document || scriptContext?.sourceDocument !== document) {
+          clearScriptSpatialContext();
+        }
         editorStore.setMessage(
           `Não foi possível carregar dependências do Workspace para a auditoria: ${error instanceof Error ? error.message : String(error)}. A validação seguirá como parcial.`,
         );
