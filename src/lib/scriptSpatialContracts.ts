@@ -1,4 +1,14 @@
 export type ScriptAnchorCommand = "setobjectxy" | "setobjectxyperm";
+export type ScriptWarpCommand =
+  | "warp"
+  | "warpsilent"
+  | "warpdoor"
+  | "warphole"
+  | "warpteleport"
+  | "setwarp"
+  | "setdynamicwarp"
+  | "setdivewarp"
+  | "setholewarp";
 
 export interface ScriptObjectAnchor {
   command: ScriptAnchorCommand;
@@ -12,6 +22,15 @@ export interface ScriptObjectAnchor {
 export interface ScriptMovementUse {
   localId: string;
   movementLabel: string;
+  scriptLabel: string | null;
+  line: number;
+}
+
+export interface ScriptWarpUse {
+  command: ScriptWarpCommand;
+  destMap: string;
+  /** Argumentos após o mapa, preservados sem adivinhar símbolos/variáveis. */
+  args: string[];
   scriptLabel: string | null;
   line: number;
 }
@@ -34,6 +53,7 @@ export interface ScriptMovementDefinition {
 export interface ScriptSpatialContracts {
   anchors: ScriptObjectAnchor[];
   movementUses: ScriptMovementUse[];
+  scriptWarps: ScriptWarpUse[];
   movements: Record<string, ScriptMovementDefinition>;
 }
 
@@ -56,7 +76,7 @@ function parseInteger(value: string): number | null {
 
 function movementStep(token: string): MovementStep | null {
   const normalized = token.trim().toLowerCase();
-  if (!normalized || normalized.includes("in_place")) return null;
+  if (!normalized || normalized.includes("_in_place")) return null;
 
   const direction = normalized.match(/(?:^|_)(up|down|left|right)$/)?.[1];
   if (!direction) return null;
@@ -81,19 +101,38 @@ function movementStep(token: string): MovementStep | null {
   return { token, dx: vector.dx, dy: vector.dy, distance };
 }
 
+function neutralMovementToken(token: string): boolean {
+  const normalized = token.toLowerCase();
+  return (
+    normalized.includes("_in_place") ||
+    /^(face|delay|emote|lock|unlock|hide|show)/.test(normalized)
+  );
+}
+
+function splitArguments(value: string | undefined): string[] {
+  if (!value?.trim()) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 /**
- * Extrai apenas fatos espaciais declarativos de scripts.inc. Não tenta
- * interpretar todo o bytecode/event language; isso mantém o parser auditável.
+ * Extrai fatos espaciais declarativos de scripts.inc e fontes comuns de
+ * movimento. Não tenta interpretar todo o bytecode/event language; isso mantém
+ * o parser auditável e fail-closed quando o fluxo depende de estado runtime.
  *
  * Cobertura intencional:
  * - `setobjectxy` / `setobjectxyperm`: posições futuras de NPCs;
  * - `applymovement`: uso de sequências de movimento;
- * - labels de movimento locais terminados em `step_end`.
+ * - labels de movimento terminados em `step_end`;
+ * - warps e setters de warp declarados diretamente em script.
  */
 export function parseScriptSpatialContracts(source: string): ScriptSpatialContracts {
   const lines = source.replace(/\r/g, "").split("\n");
   const anchors: ScriptObjectAnchor[] = [];
   const movementUses: ScriptMovementUse[] = [];
+  const scriptWarps: ScriptWarpUse[] = [];
   const blocks = new Map<string, { line: number; tokens: string[] }>();
   let currentLabel: string | null = null;
 
@@ -135,6 +174,19 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
       });
     }
 
+    const warpUse = line.match(
+      /^(warp|warpsilent|warpdoor|warphole|warpteleport|setwarp|setdynamicwarp|setdivewarp|setholewarp)\s+([^,\s]+)(?:\s*,\s*(.*))?$/i,
+    );
+    if (warpUse) {
+      scriptWarps.push({
+        command: (warpUse[1]?.toLowerCase() ?? "warp") as ScriptWarpCommand,
+        destMap: (warpUse[2] ?? "").trim(),
+        args: splitArguments(warpUse[3]),
+        scriptLabel: currentLabel,
+        line: lineNumber,
+      });
+    }
+
     if (currentLabel) blocks.get(currentLabel)?.tokens.push(line);
   });
 
@@ -157,12 +209,13 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
         continue;
       }
       if (
-        /^(walk|run|jump|slide|step|face|delay|lock|unlock|hide|show|emote|walk_in_place)/i.test(token)
+        /^(walk|run|jump|slide|step|face|delay|lock|unlock|hide|show|emote)/i.test(token)
       ) {
         sawMovementLikeToken = true;
-        // Face/delay/in-place são geometricamente neutros; outros tokens `step*`
-        // desconhecidos tornam a simulação não determinística.
-        if (!/^(face|delay|walk_in_place)/i.test(token)) deterministic = false;
+        // Facing, delays, emotes, visibility e animações in-place não mudam a
+        // célula lógica. Qualquer outro token espacial desconhecido rebaixa a
+        // sequência para não determinística em vez de inventar deslocamento.
+        if (!neutralMovementToken(token)) deterministic = false;
       }
     }
 
@@ -171,7 +224,21 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
     }
   }
 
-  return { anchors, movementUses, movements };
+  return { anchors, movementUses, scriptWarps, movements };
+}
+
+export function referencedScriptWarpMapIds(contracts: ScriptSpatialContracts): string[] {
+  const ids = new Set<string>();
+  for (const warp of contracts.scriptWarps) {
+    if (
+      warp.destMap.startsWith("MAP_") &&
+      warp.destMap !== "MAP_DYNAMIC" &&
+      warp.destMap !== "MAP_UNDEFINED"
+    ) {
+      ids.add(warp.destMap);
+    }
+  }
+  return [...ids].sort();
 }
 
 export function uniqueScriptAnchorCells(contracts: ScriptSpatialContracts) {
