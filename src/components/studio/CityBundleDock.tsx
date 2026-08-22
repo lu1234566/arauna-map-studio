@@ -1,11 +1,18 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, Download, FileJson2, ShieldCheck, Upload } from "lucide-react";
-import { serializeCityBundle } from "@/lib/araunaCityBundle";
+import {
+  canonicalJson,
+  parseCityBundle,
+  serializeCityBundle,
+} from "@/lib/araunaCityBundle";
 import {
   importedSharedEventsSnapshot,
   installBundleDependencyContextFromImport,
 } from "@/lib/bundleDependencyContext";
 import {
+  scriptSpatialSnapshotFromBundle,
+  sharedEventsSnapshotFromBundle,
+  validateBundleDependencies,
   withScriptSpatialSnapshot,
   withSharedEventsSnapshot,
 } from "@/lib/cityBundleDependencies";
@@ -15,13 +22,18 @@ import { withActiveScriptSpatialAudit } from "@/lib/gameImplementabilityWithScri
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import {
+  buildScriptSpatialContext,
   getScriptSpatialContext,
   installScriptSpatialContextFromBundle,
+  refreshScriptSpatialContext,
 } from "@/lib/scriptSpatialContext";
 import {
+  buildWorkspaceAuditContext,
   getWorkspaceAuditContext,
+  refreshWorkspaceAuditContext,
   sharedEventsContextKey,
 } from "@/lib/workspaceAuditContext";
+import { useWorkspaceSession } from "@/lib/workspaceSession";
 import { cn } from "@/lib/utils";
 
 function downloadText(source: string, fileName: string) {
@@ -38,6 +50,10 @@ function safeName(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "mapa";
 }
 
+function dependencyErrorText(issues: Array<{ code: string; message: string }>) {
+  return issues.map((found) => `${found.code}: ${found.message}`).join("\n");
+}
+
 /**
  * Entrada/saída do bundle completo. Fica separado dos botões BIN/JSON para
  * deixar claro que este arquivo contém grid + map.json + contratos + checksums.
@@ -45,6 +61,7 @@ function safeName(value: string) {
 export function CityBundleDock() {
   const state = useEditor();
   const atlas = useRealAtlas();
+  const session = useWorkspaceSession();
   const inputRef = useRef<HTMLInputElement>(null);
   const previousAtlasRef = useRef<string | null | undefined>(undefined);
   const audit = state.gameAudit
@@ -66,6 +83,69 @@ export function CityBundleDock() {
 
   const importBundle = async (file: File) => {
     const source = await file.text();
+
+    // PRE-FLIGHT: nenhuma mutação do EditorStore acontece antes de todos os
+    // snapshots externos passarem formato, checksum e derivação.
+    let parsed;
+    try {
+      parsed = parseCityBundle(source);
+      const dependencyIssues = validateBundleDependencies(parsed);
+      if (dependencyIssues.length) {
+        window.alert(
+          `Cidade JSON rejeitada sem alterar o editor.\n\n${dependencyErrorText(dependencyIssues)}`,
+        );
+        return;
+      }
+
+      if (session?.workspace) {
+        // Se a mesma fonte existe na pasta aberta, bundle e Workspace precisam
+        // concordar. Um snapshot antigo não pode substituir silenciosamente a
+        // versão atual dos eventos/scripts do jogo.
+        const [workspacePreview, scriptPreview] = await Promise.all([
+          buildWorkspaceAuditContext(session.workspace, parsed.mapJson),
+          buildScriptSpatialContext(session.workspace, parsed.mapJson),
+        ]);
+
+        const sharedName = typeof parsed.mapJson.shared_events_map === "string"
+          ? parsed.mapJson.shared_events_map.trim()
+          : "";
+        const bundledShared = sharedEventsSnapshotFromBundle(parsed);
+        const liveShared = sharedName
+          ? workspacePreview.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null
+          : null;
+        if (
+          bundledShared &&
+          liveShared &&
+          canonicalJson(bundledShared.mapJson) !== canonicalJson(liveShared)
+        ) {
+          window.alert(
+            `Cidade JSON rejeitada sem alterar o editor.\n\n` +
+              `BUNDLE_SHARED_EVENTS_STALE: o snapshot de ${sharedName} difere do map.json existente no Workspace.`,
+          );
+          return;
+        }
+
+        const bundledScripts = scriptSpatialSnapshotFromBundle(parsed);
+        if (
+          bundledScripts &&
+          scriptPreview.contracts &&
+          !scriptPreview.error &&
+          bundledScripts.sourceChecksum !== scriptPreview.sourceChecksum
+        ) {
+          window.alert(
+            `Cidade JSON rejeitada sem alterar o editor.\n\n` +
+              `BUNDLE_SCRIPT_SPATIAL_STALE: ${bundledScripts.sourcePath} difere do scripts.inc efetivo existente no Workspace.`,
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      window.alert(
+        `Cidade JSON rejeitada sem alterar o editor.\n\n${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+
     const before = editorStore.getState();
     const result = editorStore.importCityBundle(source, file.name);
     if (!result.ok) {
@@ -78,7 +158,20 @@ export function CityBundleDock() {
 
     const after = editorStore.getState();
     installBundleDependencyContextFromImport(result.bundle, after.mapJsonDocument);
-    installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
+
+    if (session?.workspace && after.mapJsonDocument) {
+      // Recarrega contra a MESMA instância de mapJson instalada pelo editor.
+      // Se a pasta não contiver esse mapa, o snapshot autocontido continua sendo
+      // o fallback legítimo da importação.
+      const live = await refreshScriptSpatialContext(session.workspace, after.mapJsonDocument);
+      if (!live?.contracts || live.error) {
+        installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
+      }
+      await refreshWorkspaceAuditContext(session.workspace, after.mapJsonDocument);
+    } else {
+      installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
+    }
+
     requestMapCameraFit();
   };
 
