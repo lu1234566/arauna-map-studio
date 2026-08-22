@@ -1,24 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, Download, FileJson2, ShieldCheck, Upload } from "lucide-react";
 import {
   canonicalJson,
   parseCityBundle,
   serializeCityBundle,
 } from "@/lib/araunaCityBundle";
-import {
-  importedSharedEventsSnapshot,
-  installBundleDependencyContextFromImport,
-} from "@/lib/bundleDependencyContext";
+import { installBundleDependencyContextFromImport } from "@/lib/bundleDependencyContext";
 import {
   scriptSpatialSnapshotFromBundle,
   sharedEventsSnapshotFromBundle,
   validateBundleDependencies,
-  withScriptSpatialSnapshot,
-  withSharedEventsSnapshot,
 } from "@/lib/cityBundleDependencies";
+import { auditCompleteGameState } from "@/lib/completeGameAudit";
 import { editorStore, useEditor } from "@/lib/editorStore";
-import { auditGameImplementability } from "@/lib/gameImplementability";
-import { withActiveScriptSpatialAudit } from "@/lib/gameImplementabilityWithScripts";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import {
@@ -29,7 +23,6 @@ import {
 } from "@/lib/scriptSpatialContext";
 import {
   buildWorkspaceAuditContext,
-  getWorkspaceAuditContext,
   refreshWorkspaceAuditContext,
   sharedEventsContextKey,
 } from "@/lib/workspaceAuditContext";
@@ -64,9 +57,17 @@ export function CityBundleDock() {
   const session = useWorkspaceSession();
   const inputRef = useRef<HTMLInputElement>(null);
   const previousAtlasRef = useRef<string | null | undefined>(undefined);
-  const audit = state.gameAudit
-    ? withActiveScriptSpatialAudit(state.gameAudit, state.map, state.mapJsonDocument)
-    : null;
+  const audit = useMemo(
+    () => state.gameAudit
+      ? auditCompleteGameState({
+          map: state.map,
+          mapJson: state.mapJsonDocument,
+          mapName: state.mapName,
+          atlas,
+        }).report
+      : null,
+    [state.gameAudit, state.map, state.mapJsonDocument, state.mapName, atlas],
+  );
 
   useEffect(() => {
     const key = atlas?.createdAt ?? null;
@@ -172,16 +173,15 @@ export function CityBundleDock() {
       installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
     }
 
+    // O gameAudit calculado dentro do import antecede a instalação dos
+    // snapshots acima. Nunca exibimos esse selo como atual: o usuário roda
+    // Validar e recebe a auditoria completa unificada.
+    editorStore.clearValidation();
+    editorStore.setMessage("Cidade JSON importada com dependências preservadas. Rode Validar para calcular o selo Game-ready atual.");
     requestMapCameraFit();
   };
 
   const exportBundle = () => {
-    const result = editorStore.exportCityBundle();
-    if (!result.ok) {
-      window.alert(`Não foi possível montar a Cidade JSON.\n\n${result.message}`);
-      return;
-    }
-
     const document = state.mapJsonDocument;
     const scriptContext = getScriptSpatialContext();
     if (
@@ -201,59 +201,40 @@ export function CityBundleDock() {
       return;
     }
 
-    let bundle = {
-      ...result.bundle,
-      semantics: withScriptSpatialSnapshot(
-        result.bundle.semantics,
-        scriptContext.scriptMapName,
-        scriptContext.sourcePath,
-        scriptContext.source,
-      ),
-    };
+    const complete = auditCompleteGameState({
+      map: state.map,
+      mapJson: document,
+      mapName: state.mapName,
+      atlas,
+    });
+    if (!complete.bundle) {
+      window.alert("Não foi possível montar a Cidade JSON completa. Rode Validar e corrija os erros do mapa.json/grid.");
+      return;
+    }
 
-    const workspaceContext = getWorkspaceAuditContext();
+    if (!scriptSpatialSnapshotFromBundle(complete.bundle)) {
+      window.alert("Exportação bloqueada: o snapshot íntegro de scripts.inc não pôde ser embutido no bundle.");
+      return;
+    }
+
     const sharedName = typeof document.shared_events_map === "string"
       ? document.shared_events_map.trim()
       : "";
-
-    if (sharedName) {
-      const workspaceShared = workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
-      const importedShared = importedSharedEventsSnapshot(document, sharedName)?.mapJson ?? null;
-      const sharedDocument = workspaceShared ?? importedShared;
-      if (!sharedDocument) {
-        window.alert(
-          `Exportação bloqueada por segurança.\n\n` +
-          `Este mapa usa shared_events_map=${sharedName}, mas a fonte compartilhada não está disponível nem no Workspace nem no bundle importado.`,
-        );
-        return;
-      }
-
-      bundle = {
-        ...bundle,
-        semantics: withSharedEventsSnapshot(bundle.semantics, sharedName, sharedDocument),
-      };
+    if (sharedName && !sharedEventsSnapshotFromBundle(complete.bundle)) {
+      window.alert(
+        `Exportação bloqueada por segurança.\n\n` +
+          `Este mapa usa shared_events_map=${sharedName}, mas a fonte compartilhada não está disponível no Workspace nem no bundle importado.`,
+      );
+      return;
     }
 
-    const source = serializeCityBundle(bundle);
-    const gameAudit = withActiveScriptSpatialAudit(
-      auditGameImplementability({
-        map: state.map,
-        mapJson: document,
-        atlas,
-        bundle,
-        declaredTilesets: bundle.tilesets,
-        workspaceContext,
-      }),
-      state.map,
-      document,
-    );
-
-    const base = safeName(bundle.identity.name);
+    const source = serializeCityBundle(complete.bundle);
+    const base = safeName(complete.bundle.identity.name);
     downloadText(source, `${base}.arauna-city.json`);
     editorStore.setMessage(
-      gameAudit.implementable
+      complete.report.implementable
         ? `Cidade JSON exportada: ${base}.arauna-city.json — IMPLEMENTÁVEL NO JOGO.`
-        : `Cidade JSON exportada para revisão. Auditoria: ${gameAudit.counts.errors} erro(s), ${gameAudit.counts.warnings} aviso(s); dependências externas podem continuar parciais.`,
+        : `Cidade JSON exportada para revisão. Auditoria: ${complete.report.counts.errors} erro(s), ${complete.report.counts.warnings} aviso(s); dependências externas podem continuar parciais.`,
     );
   };
 
