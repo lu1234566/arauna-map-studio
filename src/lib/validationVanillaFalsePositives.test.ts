@@ -7,7 +7,11 @@ import type {
   ImplementabilityCategory,
   ImplementabilityWorkspaceContext,
 } from "./gameImplementability";
-import { normalizeWorkspacePath, type AraunaWorkspace, type WorkspaceMap } from "./repoWorkspace";
+import {
+  normalizeWorkspacePath,
+  type AraunaWorkspace,
+  type WorkspaceMap,
+} from "./repoWorkspace";
 import { auditScriptSpatialContracts } from "./scriptSpatialAudit";
 import { parseScriptSpatialContracts } from "./scriptSpatialContracts";
 import { withScriptDoorNpcReconciliation } from "./scriptDoorNpcReconciliation";
@@ -39,6 +43,12 @@ const ATLAS: FingerprintAtlas = {
   primary: "gTileset_General",
   secondary: "gTileset_Slateport",
   records: [{ id: 1, behavior: 0, layerType: 0 }],
+};
+
+const DOOR_ATLAS: FingerprintAtlas = {
+  primary: "gTileset_General",
+  secondary: "gTileset_Slateport",
+  records: [{ id: 1, behavior: 0x69, layerType: 0 }],
 };
 
 function baseReport(): GameImplementabilityReport {
@@ -83,6 +93,12 @@ function openMap(width: number, height: number): MapData {
     metatiles: Uint16Array.from({ length: width * height }, () => 1),
     physical: Uint16Array.from({ length: width * height }, () => 0x3000),
   };
+}
+
+function blockedScottMap(): MapData {
+  const map = openMap(40, 60);
+  map.physical[12 * map.width + 10] = 0x3400;
+  return map;
 }
 
 function fakeFile(source: string): File {
@@ -315,21 +331,40 @@ describe("vanilla audit false-positive regressions", () => {
       },
     ]);
 
-    const map = openMap(40, 60);
-    map.physical[12 * map.width + 10] = 0x3400;
-    const issues = auditScriptSpatialContracts(contracts, map, scottDocument());
+    const issues = auditScriptSpatialContracts(contracts, blockedScottMap(), scottDocument());
     expect(issues.some((issue) => issue.code === "SCRIPT_OBJECT_ANCHOR_DOOR_OK")).toBe(true);
     expect(issues.some((issue) => issue.code === "SCRIPT_OBJECT_ANCHOR_BLOCKED")).toBe(false);
   });
 
-  it("replaces the base NPC_BLOCKED error only when scripts prove the door spawn", async () => {
+  it("replaces NPC_BLOCKED only when the tile is an animated door and scripts prove the spawn", async () => {
     const mapJson = scottDocument();
     await refreshScriptSpatialContext(scriptWorkspace(SCOTT_SCRIPT), mapJson);
 
-    const report = withScriptDoorNpcReconciliation(blockedNpcReport(), mapJson);
+    const report = withScriptDoorNpcReconciliation(
+      blockedNpcReport(),
+      mapJson,
+      blockedScottMap(),
+      DOOR_ATLAS,
+    );
     expect(report.pass).toBe(true);
     expect(report.counts.errors).toBe(0);
     expect(has(report, "NPC_BLOCKED")).toBe(false);
     expect(has(report, "NPC_SCRIPTED_DOOR_SPAWN_OK")).toBe(true);
+  });
+
+  it("keeps NPC_BLOCKED when opendoor/addobject exists on a non-door metatile", async () => {
+    const mapJson = scottDocument();
+    await refreshScriptSpatialContext(scriptWorkspace(SCOTT_SCRIPT), mapJson);
+
+    const report = withScriptDoorNpcReconciliation(
+      blockedNpcReport(),
+      mapJson,
+      blockedScottMap(),
+      ATLAS,
+    );
+    expect(report.pass).toBe(false);
+    expect(report.counts.errors).toBe(1);
+    expect(has(report, "NPC_BLOCKED")).toBe(true);
+    expect(has(report, "NPC_SCRIPTED_DOOR_SPAWN_OK")).toBe(false);
   });
 });
