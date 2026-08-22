@@ -5,7 +5,9 @@ import type {
   GameImplementabilityReport,
   ImplementabilityCategory,
   ImplementabilityIssue,
+  WorkspaceAuditMap,
 } from "./gameImplementability";
+import { cellPassability } from "./mapPassability";
 import { auditScriptSpatialContracts } from "./scriptSpatialAudit";
 import {
   getScriptSpatialContext,
@@ -26,6 +28,12 @@ const SYMBOLIC_WARP_IDS: Record<string, number> = {
 
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function integerLike(value: string | undefined): number | null {
@@ -105,15 +113,77 @@ function warpIssue(
   };
 }
 
+function currentWorkspaceDestination(
+  mapJson: EditableMapJson,
+  destMap: string,
+): WorkspaceAuditMap | null {
+  const mapId = text(mapJson.id);
+  const workspace = getWorkspaceAuditContext();
+  if (!mapId || !workspace || workspace.sourceMapId !== mapId) return null;
+  if (workspace.maps[mapId]?.mapJson !== mapJson) return null;
+  return workspace.maps[destMap] ?? null;
+}
+
 function destinationWarpCount(destination: ScriptWarpDestinationContext): number | null {
   const events = destination.effectiveEvents;
   if (!events) return null;
   return Array.isArray(events.warp_events) ? events.warp_events.length : 0;
 }
 
+function auditSpawnCell(
+  warp: ScriptWarpUse,
+  workspaceDestination: WorkspaceAuditMap | null,
+  x: number,
+  y: number,
+  okCode: string,
+  okMessage: string,
+): ImplementabilityIssue {
+  if (!workspaceDestination?.map || !workspaceDestination.atlas) {
+    return warpIssue(
+      warp,
+      "SCRIPT_WARP_DEST_SPAWN_UNVERIFIED",
+      "warning",
+      `destino (${x},${y}) existe, mas map.bin/behavior não está disponível para certificar a célula de chegada.`,
+    );
+  }
+  if (x < 0 || y < 0 || x >= workspaceDestination.map.width || y >= workspaceDestination.map.height) {
+    return warpIssue(
+      warp,
+      "SCRIPT_WARP_DEST_COORDS_OUT_OF_BOUNDS",
+      "error",
+      `célula de chegada (${x},${y}) fica fora do map.bin ${workspaceDestination.map.width}×${workspaceDestination.map.height}.`,
+    );
+  }
+
+  const passability = cellPassability(
+    workspaceDestination.map,
+    x,
+    y,
+    workspaceDestination.atlas,
+  );
+  if (passability.state === "blocked") {
+    return warpIssue(
+      warp,
+      "SCRIPT_WARP_DEST_SPAWN_BLOCKED",
+      "error",
+      `célula de chegada (${x},${y}) é bloqueada: ${passability.reason}.`,
+    );
+  }
+  if (passability.state === "unknown") {
+    return warpIssue(
+      warp,
+      "SCRIPT_WARP_DEST_SPAWN_UNKNOWN",
+      "warning",
+      `célula de chegada (${x},${y}) usa behavior não certificável: ${passability.reason}.`,
+    );
+  }
+  return warpIssue(warp, okCode, "info", `${okMessage} Chegada (${x},${y}) é ${passability.state}.`);
+}
+
 function auditWarpId(
   warp: ScriptWarpUse,
   destination: ScriptWarpDestinationContext,
+  workspaceDestination: WorkspaceAuditMap | null,
   rawWarpId: string,
 ): ImplementabilityIssue {
   const warpId = integerLike(rawWarpId);
@@ -128,9 +198,9 @@ function auditWarpId(
   if (warpId === -1) {
     return warpIssue(
       warp,
-      "SCRIPT_WARP_CENTER_DESTINATION_OK",
-      "info",
-      "WARP_ID_NONE delega a posição ao comportamento padrão/coords do comando.",
+      "SCRIPT_WARP_DEFAULT_SPAWN_UNVERIFIED",
+      "warning",
+      "WARP_ID_NONE sem coordenadas concretas delega a posição final ao engine; spawn não pode ser certificado estaticamente.",
     );
   }
   if (warpId === 0x7e || warpId === 0x7f) {
@@ -150,8 +220,9 @@ function auditWarpId(
     );
   }
 
-  const count = destinationWarpCount(destination);
-  if (count === null) {
+  const events = destination.effectiveEvents;
+  const targetWarps = Array.isArray(events?.warp_events) ? events.warp_events : null;
+  if (!targetWarps) {
     return warpIssue(
       warp,
       "SCRIPT_WARP_DEST_EVENTS_UNVERIFIED",
@@ -159,25 +230,41 @@ function auditWarpId(
       `eventos efetivos do destino não estão disponíveis para conferir warp id ${warpId}.`,
     );
   }
-  if (warpId >= count) {
+  if (warpId >= targetWarps.length) {
     return warpIssue(
       warp,
       "SCRIPT_WARP_DEST_ID_OUT_OF_RANGE",
       "error",
-      `warp id ${warpId} não existe no destino (${count} warp_event(s), índices 0..${Math.max(0, count - 1)}).`,
+      `warp id ${warpId} não existe no destino (${targetWarps.length} warp_event(s), índices 0..${Math.max(0, targetWarps.length - 1)}).`,
     );
   }
-  return warpIssue(
+
+  const target = record(targetWarps[warpId]);
+  const x = typeof target?.x === "number" && Number.isInteger(target.x) ? target.x : null;
+  const y = typeof target?.y === "number" && Number.isInteger(target.y) ? target.y : null;
+  if (x === null || y === null) {
+    return warpIssue(
+      warp,
+      "SCRIPT_WARP_DEST_EVENT_COORDS_INVALID",
+      "error",
+      `warp_event ${warpId} do destino não possui x/y inteiros válidos.`,
+    );
+  }
+
+  return auditSpawnCell(
     warp,
-    "SCRIPT_WARP_DEST_ID_OK",
-    "info",
-    `warp id ${warpId} existe entre os ${count} warp_event(s) efetivos do destino.`,
+    workspaceDestination,
+    x,
+    y,
+    "SCRIPT_WARP_DEST_ID_AND_SPAWN_OK",
+    `warp id ${warpId} existe no destino.`,
   );
 }
 
 function auditWarpCoordinates(
   warp: ScriptWarpUse,
   destination: ScriptWarpDestinationContext,
+  workspaceDestination: WorkspaceAuditMap | null,
   rawX: string,
   rawY: string,
 ): ImplementabilityIssue {
@@ -194,9 +281,9 @@ function auditWarpCoordinates(
   if (x === -1 && y === -1) {
     return warpIssue(
       warp,
-      "SCRIPT_WARP_CENTER_DESTINATION_OK",
-      "info",
-      "coordenadas dummy (-1,-1) usam a posição padrão do engine.",
+      "SCRIPT_WARP_DEFAULT_SPAWN_UNVERIFIED",
+      "warning",
+      "coordenadas dummy (-1,-1) delegam a posição final ao engine; spawn não pode ser certificado estaticamente.",
     );
   }
   if (destination.width === undefined || destination.height === undefined) {
@@ -215,10 +302,12 @@ function auditWarpCoordinates(
       `coordenadas (${x},${y}) ficam fora do layout ${destination.width}×${destination.height}.`,
     );
   }
-  return warpIssue(
+  return auditSpawnCell(
     warp,
-    "SCRIPT_WARP_DEST_COORDS_OK",
-    "info",
+    workspaceDestination,
+    x,
+    y,
+    "SCRIPT_WARP_DEST_COORDS_AND_SPAWN_OK",
     `coordenadas (${x},${y}) ficam dentro do layout ${destination.width}×${destination.height}.`,
   );
 }
@@ -226,6 +315,7 @@ function auditWarpCoordinates(
 function auditConcreteWarpTarget(
   warp: ScriptWarpUse,
   destination: ScriptWarpDestinationContext,
+  workspaceDestination: WorkspaceAuditMap | null,
 ): ImplementabilityIssue {
   if (warp.command === "setholewarp") {
     return warpIssue(
@@ -249,23 +339,38 @@ function auditConcreteWarpTarget(
   if (args.length === 0) {
     return warpIssue(
       warp,
-      "SCRIPT_WARP_DEFAULT_DESTINATION_OK",
-      "info",
-      "destino existe e o comando usa a posição padrão do engine.",
+      "SCRIPT_WARP_DEFAULT_SPAWN_UNVERIFIED",
+      "warning",
+      "comando sem warp id/coords usa a posição padrão do engine; a célula final não pode ser certificada estaticamente.",
     );
   }
-  if (args.length === 1) return auditWarpId(warp, destination, args[0] ?? "");
+  if (args.length === 1) return auditWarpId(warp, destination, workspaceDestination, args[0] ?? "");
   if (args.length === 2) {
-    return auditWarpCoordinates(warp, destination, args[0] ?? "", args[1] ?? "");
+    return auditWarpCoordinates(
+      warp,
+      destination,
+      workspaceDestination,
+      args[0] ?? "",
+      args[1] ?? "",
+    );
   }
 
   const warpId = integerLike(args[0]);
-  if (warpId !== null && warpId !== -1) return auditWarpId(warp, destination, args[0] ?? "");
-  return auditWarpCoordinates(warp, destination, args[1] ?? "", args[2] ?? "");
+  if (warpId !== null && warpId !== -1) {
+    return auditWarpId(warp, destination, workspaceDestination, args[0] ?? "");
+  }
+  return auditWarpCoordinates(
+    warp,
+    destination,
+    workspaceDestination,
+    args[1] ?? "",
+    args[2] ?? "",
+  );
 }
 
 function auditScriptWarps(
   context: ScriptSpatialContext,
+  mapJson: EditableMapJson,
 ): ImplementabilityIssue[] {
   const contracts = context.contracts;
   if (!contracts?.scriptWarps.length) return [];
@@ -313,7 +418,8 @@ function auditScriptWarps(
       continue;
     }
 
-    issues.push(auditConcreteWarpTarget(warp, destination));
+    const workspaceDestination = currentWorkspaceDestination(mapJson, warp.destMap);
+    issues.push(auditConcreteWarpTarget(warp, destination, workspaceDestination));
   }
 
   return issues;
@@ -403,7 +509,7 @@ export function withActiveScriptSpatialAudit(
       ...(found.x !== undefined ? { x: found.x } : {}),
       ...(found.y !== undefined ? { y: found.y } : {}),
     } satisfies ImplementabilityIssue)),
-    ...auditScriptWarps(context),
+    ...auditScriptWarps(context, mapJson),
   ];
 
   return appendIssues(base, additions);
