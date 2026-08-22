@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildCityBundle } from "./araunaCityBundle";
 import {
   clearBundleDependencyContext,
+  importedBundleSemanticBase,
   importedSharedEventsSnapshot,
   installBundleDependencyContextFromImport,
 } from "./bundleDependencyContext";
@@ -53,6 +54,26 @@ describe("bundleDependencyContext", () => {
     expect(importedSharedEventsSnapshot(installedDocument, "Other")).toBeNull();
   });
 
+  it("preserves semantic authoring data but strips recalculable dependency snapshots", () => {
+    const authored = {
+      districts: [
+        { id: "harbor", role: "porto", bounds: [0, 0, 10, 8] },
+      ],
+      structures: [
+        { id: "market", template: "porto-market", x: 4, y: 6 },
+      ],
+      notes: { intent: "Porto do Sal" },
+    };
+    const semantics = withSharedEventsSnapshot(authored, "Shared", shared());
+    const bundle = buildCityBundle({ map: map(), mapJson: consumer(), semantics });
+    const installedDocument = { ...bundle.mapJson };
+
+    expect(installBundleDependencyContextFromImport(bundle, installedDocument)).not.toBeNull();
+    expect(importedBundleSemanticBase(installedDocument)).toEqual(authored);
+    expect((importedBundleSemanticBase(installedDocument) as Record<string, unknown>)?.externalDependencies).toBeUndefined();
+    expect(importedBundleSemanticBase({ ...installedDocument })).toBeUndefined();
+  });
+
   it("rejects a document with a different map identity", () => {
     const semantics = withSharedEventsSnapshot(undefined, "Shared", shared());
     const bundle = buildCityBundle({ map: map(), mapJson: consumer(), semantics });
@@ -60,5 +81,6 @@ describe("bundleDependencyContext", () => {
 
     expect(installBundleDependencyContextFromImport(bundle, wrongDocument)).toBeNull();
     expect(importedSharedEventsSnapshot(wrongDocument, "Shared")).toBeNull();
+    expect(importedBundleSemanticBase(wrongDocument)).toBeUndefined();
   });
 });
