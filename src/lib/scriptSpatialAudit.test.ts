@@ -124,6 +124,55 @@ A_Movement:
     }));
   });
 
+  it("resolves numeric applymovement IDs using tools/mapjson index + 1 semantics", () => {
+    const numericEvents: EditableMapJson = {
+      id: "MAP_A",
+      name: "A",
+      layout: "LAYOUT_A",
+      object_events: [
+        {
+          graphics_id: "OBJ_EVENT_GFX_MAN_1",
+          x: 4,
+          y: 4,
+          elevation: 3,
+          movement_type: "MOVEMENT_TYPE_FACE_DOWN",
+          movement_range_x: 0,
+          movement_range_y: 0,
+          trainer_type: "TRAINER_TYPE_NONE",
+          trainer_sight_or_berry_tree_id: "0",
+          script: "0x0",
+          flag: "0",
+        },
+      ],
+    };
+    const issues = codes(`
+A::
+  applymovement 1, A_Movement
+  end
+A_Movement:
+  walk_right
+  step_end
+`, map(), numericEvents);
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_LOCALID_MISSING")).toBe(false);
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_HAS_SAFE_PATH")).toBe(true);
+  });
+
+  it("blocks a numeric object ID outside the generated object_event range", () => {
+    const issues = codes(`
+A::
+  applymovement 2, A_Movement
+  end
+A_Movement:
+  walk_right
+  step_end
+`);
+    expect(issues).toContainEqual(expect.objectContaining({
+      code: "SCRIPT_MOVEMENT_LOCALID_MISSING",
+      severity: "error",
+      localId: "2",
+    }));
+  });
+
   it("never requires an object_event template for engine-reserved LOCALID_PLAYER/CAMERA", () => {
     const issues = codes(`
 A::
@@ -139,6 +188,19 @@ A_CameraMovement:
 `);
     expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_LOCALID_MISSING")).toBe(false);
     expect(issues.some((issue) => issue.code === "SCRIPT_OBJECT_LOCALID_MISSING")).toBe(false);
+    expect(issues.filter((issue) => issue.code === "SCRIPT_MOVEMENT_START_UNVERIFIED")).toHaveLength(2);
+  });
+
+  it("downgrades unresolved external movement definitions instead of silently accepting them", () => {
+    const issues = codes(`
+A::
+  applymovement LOCALID_SLATEPORT_SCOTT, External_Movement
+  end
+`);
+    expect(issues).toContainEqual(expect.objectContaining({
+      code: "SCRIPT_MOVEMENT_DEFINITION_EXTERNAL",
+      severity: "warning",
+    }));
   });
 
   it("keeps uncertain movement geometry as review warning rather than inventing an engine failure", () => {
