@@ -1,5 +1,10 @@
 import type { AraunaCityBundle } from "./araunaCityBundle";
 import { sharedEventsSnapshotFromBundle } from "./cityBundleDependencies";
+import {
+  connectionEdgeDirection,
+  edgeInteriorAnchor,
+  isConnectionEdgeWarpPosition,
+} from "./connectionEdgeWarp";
 import type { EditableMapJson } from "./eventMapJson";
 import type {
   GameImplementabilityReport,
@@ -85,10 +90,89 @@ function appendIssues(
   };
 }
 
+function firstMarginDestinationIssue(
+  eventIndex: number,
+  destMap: string,
+  destWarpId: number,
+  destination: NonNullable<ImplementabilityWorkspaceContext["maps"][string]>,
+  x: number,
+  y: number,
+): ImplementabilityIssue | null {
+  if (!destination.map || !destination.atlas) return null;
+  const point = { x, y };
+  const direction = connectionEdgeDirection(destination.map.width, destination.map.height, point);
+  if (!direction) return null;
+
+  const anchor = edgeInteriorAnchor(destination.map.width, destination.map.height, point);
+  if (!anchor) return null;
+  const passability = cellPassability(destination.map, anchor.x, anchor.y, destination.atlas);
+  const declaredConnection = isConnectionEdgeWarpPosition(
+    destination.mapJson,
+    destination.map.width,
+    destination.map.height,
+    point,
+  );
+
+  if (!declaredConnection) {
+    return {
+      code: "WARP_DEST_SPAWN_EDGE_UNVERIFIED",
+      severity: "warning",
+      category: "warps",
+      message:
+        `Warp ${eventIndex} chega a ${destMap}:${destWarpId} na primeira margem ${direction} em (${x},${y}). ` +
+        `Esse padrão existe em mapas vanilla (ex.: Harbor), mas o destino não declara conexão nessa borda; ` +
+        `âncora interna (${anchor.x},${anchor.y}) está ${passability.state}.`,
+      eventSource: "warp",
+      eventIndex,
+      x,
+      y,
+    };
+  }
+
+  if (passability.state === "blocked") {
+    return {
+      code: "WARP_DEST_SPAWN_EDGE_BLOCKED",
+      severity: "error",
+      category: "warps",
+      message: `Warp ${eventIndex} chega à margem ${direction} de ${destMap}:${destWarpId}, mas a âncora interna (${anchor.x},${anchor.y}) é bloqueada: ${passability.reason}.`,
+      eventSource: "warp",
+      eventIndex,
+      x,
+      y,
+    };
+  }
+  if (passability.state === "unknown") {
+    return {
+      code: "WARP_DEST_SPAWN_EDGE_UNKNOWN",
+      severity: "warning",
+      category: "warps",
+      message: `Warp ${eventIndex} chega à margem ${direction} de ${destMap}:${destWarpId}; a âncora interna (${anchor.x},${anchor.y}) usa behavior não certificável: ${passability.reason}.`,
+      eventSource: "warp",
+      eventIndex,
+      x,
+      y,
+    };
+  }
+  return {
+    code: "WARP_DEST_SPAWN_EDGE_OK",
+    severity: "info",
+    category: "warps",
+    message: `Warp ${eventIndex} chega à primeira margem ${direction} de ${destMap}:${destWarpId}; conexão declarada e âncora interna (${anchor.x},${anchor.y}) com passagem ${passability.state} certificada.`,
+    eventSource: "warp",
+    eventIndex,
+    x,
+    y,
+  };
+}
+
 /**
  * Complementa a validação de referência de warp com a célula de spawn real no
  * mapa destino. Um destination warp existente não é suficiente se a edição do
  * mapa vizinho o colocou dentro de collision ou em behavior desconhecido.
+ *
+ * O pokeemerald também usa a primeira célula fora do layout como posição de
+ * evento válida em casos vanilla. Por isso essa margem é tratada explicitamente
+ * em vez de virar OUT_OF_BOUNDS automaticamente.
  */
 export function withWarpEndpointSafetyAudit(
   base: GameImplementabilityReport,
@@ -145,14 +229,25 @@ export function withWarpEndpointSafetyAudit(
     }
 
     if (x < 0 || y < 0 || x >= destination.map.width || y >= destination.map.height) {
-      additions.push({
-        code: "WARP_DEST_SPAWN_OUT_OF_BOUNDS",
-        severity: "error",
-        category: "warps",
-        message: `Warp ${eventIndex} chega a ${destMap}:${destWarpId} em (${x},${y}), fora do map.bin ${destination.map.width}×${destination.map.height}.`,
-        eventSource: "warp",
+      const edgeIssue = firstMarginDestinationIssue(
         eventIndex,
-      });
+        destMap,
+        destWarpId,
+        destination,
+        x,
+        y,
+      );
+      if (edgeIssue) additions.push(edgeIssue);
+      else {
+        additions.push({
+          code: "WARP_DEST_SPAWN_OUT_OF_BOUNDS",
+          severity: "error",
+          category: "warps",
+          message: `Warp ${eventIndex} chega a ${destMap}:${destWarpId} em (${x},${y}), fora do map.bin ${destination.map.width}×${destination.map.height}.`,
+          eventSource: "warp",
+          eventIndex,
+        });
+      }
       return;
     }
 
