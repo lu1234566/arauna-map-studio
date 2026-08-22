@@ -40,6 +40,10 @@ import { referencedScriptWarpMapIds } from "@/lib/scriptSpatialContracts";
 import { smartPathStore } from "@/lib/smartPathStore";
 import { clearWorkspaceAuditContext } from "@/lib/workspaceAuditContext";
 import { refreshWorkspaceAuditContextWithScriptMaps } from "@/lib/workspaceScriptDependencies";
+import {
+  clearWorkspaceSymbolAuditContext,
+  refreshWorkspaceSymbolAuditContext,
+} from "@/lib/workspaceSymbolAudit";
 import { useWorkspaceSession } from "@/lib/workspaceSession";
 
 export const Route = createFileRoute("/")({ component: Index });
@@ -154,22 +158,24 @@ function Index() {
       try {
         if (session?.workspace) {
           // Scripts primeiro: eles podem introduzir MAP_* que não aparecem em
-          // warp_events/connections. Depois o Workspace carrega também esses
-          // destinos usando o mesmo pipeline de map.bin + atlas real.
+          // warp_events/connections. Depois carregamos destinos e símbolos reais.
           const scriptContext = await refreshScriptSpatialContext(session.workspace, document);
           const scriptMapIds = scriptContext?.contracts
             ? referencedScriptWarpMapIds(scriptContext.contracts)
             : [];
-          await refreshWorkspaceAuditContextWithScriptMaps(
-            session.workspace,
-            document,
-            scriptMapIds,
-          );
+          await Promise.all([
+            refreshWorkspaceAuditContextWithScriptMaps(
+              session.workspace,
+              document,
+              scriptMapIds,
+            ),
+            refreshWorkspaceSymbolAuditContext(session.workspace, document),
+          ]);
         } else {
           // Sem Workspace, o contexto de scripts pode ter vindo de um bundle
-          // autocontido. Preservamos somente quando pertence à MESMA instância
-          // de map.json; qualquer outro contexto é stale e deve ser descartado.
+          // autocontido. Provas de símbolos/fontes do jogo não são inventadas.
           clearWorkspaceAuditContext();
+          clearWorkspaceSymbolAuditContext();
           const scriptContext = getScriptSpatialContext();
           if (!document || scriptContext?.sourceDocument !== document) {
             clearScriptSpatialContext();
@@ -177,6 +183,7 @@ function Index() {
         }
       } catch (error) {
         clearWorkspaceAuditContext();
+        clearWorkspaceSymbolAuditContext();
         // Não apague à cegas um snapshot íntegro vindo de bundle. O guard de
         // identidade na auditoria completa já impede contexto stale.
         const scriptContext = getScriptSpatialContext();
@@ -184,7 +191,7 @@ function Index() {
           clearScriptSpatialContext();
         }
         editorStore.setMessage(
-          `Não foi possível carregar dependências do Workspace para a auditoria: ${error instanceof Error ? error.message : String(error)}. A validação seguirá como parcial.`,
+          `Não foi possível carregar dependências/fontes do Workspace para a auditoria: ${error instanceof Error ? error.message : String(error)}. A validação seguirá como parcial.`,
         );
       }
 
