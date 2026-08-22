@@ -21,11 +21,12 @@ import {
   installScriptSpatialContextFromBundle,
   refreshScriptSpatialContext,
 } from "@/lib/scriptSpatialContext";
+import { referencedScriptWarpMapIds } from "@/lib/scriptSpatialContracts";
 import {
   buildWorkspaceAuditContext,
-  refreshWorkspaceAuditContext,
   sharedEventsContextKey,
 } from "@/lib/workspaceAuditContext";
+import { refreshWorkspaceAuditContextWithScriptMaps } from "@/lib/workspaceScriptDependencies";
 import { useWorkspaceSession } from "@/lib/workspaceSession";
 import { cn } from "@/lib/utils";
 
@@ -135,7 +136,7 @@ export function CityBundleDock() {
         ) {
           window.alert(
             `Cidade JSON rejeitada sem alterar o editor.\n\n` +
-              `BUNDLE_SCRIPT_SPATIAL_STALE: ${bundledScripts.sourcePath} difere do scripts.inc efetivo existente no Workspace.`,
+              `BUNDLE_SCRIPT_SPATIAL_STALE: ${bundledScripts.sourcePath} difere das fontes de script efetivas existentes no Workspace.`,
           );
           return;
         }
@@ -162,13 +163,17 @@ export function CityBundleDock() {
 
     if (session?.workspace && after.mapJsonDocument) {
       // Recarrega contra a MESMA instância de mapJson instalada pelo editor.
-      // Se a pasta não contiver esse mapa, o snapshot autocontido continua sendo
-      // o fallback legítimo da importação.
+      // A lista de dependências inclui também MAP_* descobertos nos scripts.
       const live = await refreshScriptSpatialContext(session.workspace, after.mapJsonDocument);
       if (!live?.contracts || live.error) {
         installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
       }
-      await refreshWorkspaceAuditContext(session.workspace, after.mapJsonDocument);
+      const activeContracts = getScriptSpatialContext()?.contracts;
+      await refreshWorkspaceAuditContextWithScriptMaps(
+        session.workspace,
+        after.mapJsonDocument,
+        activeContracts ? referencedScriptWarpMapIds(activeContracts) : [],
+      );
     } else {
       installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
     }
@@ -195,7 +200,7 @@ export function CityBundleDock() {
     ) {
       window.alert(
         "Exportação bloqueada por segurança.\n\n" +
-          "O scripts.inc efetivo ainda não está certificado para esta versão do mapa. " +
+          "As fontes de script efetivas ainda não estão certificadas para esta versão do mapa. " +
           "Abra/importe pelo Workspace e rode Validar; bundles importados também precisam conter o snapshot espacial íntegro.",
       );
       return;
@@ -213,7 +218,7 @@ export function CityBundleDock() {
     }
 
     if (!scriptSpatialSnapshotFromBundle(complete.bundle)) {
-      window.alert("Exportação bloqueada: o snapshot íntegro de scripts.inc não pôde ser embutido no bundle.");
+      window.alert("Exportação bloqueada: o snapshot íntegro das fontes de script não pôde ser embutido no bundle.");
       return;
     }
 
