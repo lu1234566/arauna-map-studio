@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { CityBundleDock } from "@/components/studio/CityBundleDock";
 import { ClipboardDock } from "@/components/studio/ClipboardDock";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
@@ -24,8 +24,9 @@ import { TilePalette } from "@/components/studio/TilePalette";
 import { TopToolbar } from "@/components/studio/TopToolbar";
 import { ValidationPanel } from "@/components/studio/ValidationPanel";
 import { clipboardStore } from "@/lib/clipboardStore";
+import { auditCompleteGameState } from "@/lib/completeGameAudit";
 import { editorStore, useEditor } from "@/lib/editorStore";
-import { withActiveScriptSpatialAudit } from "@/lib/gameImplementabilityWithScripts";
+import type { GameImplementabilityReport } from "@/lib/gameImplementability";
 import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { patternLibraryStore } from "@/lib/patternLibraryStore";
 import { ensureAuthenticEmeraldPreviewAtlas } from "@/lib/pretEmeraldBootstrap";
@@ -47,9 +48,8 @@ export const Route = createFileRoute("/")({ component: Index });
 function Index() {
   const state = useEditor();
   const session = useWorkspaceSession();
-  const renderedGameAudit = state.gameAudit
-    ? withActiveScriptSpatialAudit(state.gameAudit, state.map, state.mapJsonDocument)
-    : null;
+  const [completeGameAudit, setCompleteGameAudit] = useState<GameImplementabilityReport | null>(null);
+  const renderedGameAudit = state.gameAudit ? completeGameAudit : null;
 
   useEffect(() => {
     // A prévia vazia do Lovable/Chrome deve mostrar o Emerald real, nunca
@@ -67,6 +67,10 @@ function Index() {
         );
       });
   }, []);
+
+  useEffect(() => {
+    if (!state.gameAudit && completeGameAudit) setCompleteGameAudit(null);
+  }, [state.gameAudit, completeGameAudit]);
 
   useEffect(() => {
     if (state.tool !== "pencil" && smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
@@ -167,7 +171,7 @@ function Index() {
       } catch (error) {
         clearWorkspaceAuditContext();
         // Não apague à cegas um snapshot íntegro vindo de bundle. O guard de
-        // identidade em withActiveScriptSpatialAudit já impede contexto stale.
+        // identidade na auditoria completa já impede contexto stale.
         const scriptContext = getScriptSpatialContext();
         if (!document || scriptContext?.sourceDocument !== document) {
           clearScriptSpatialContext();
@@ -180,17 +184,21 @@ function Index() {
       editorStore.runValidation();
       const after = editorStore.getState();
       if (after.gameAudit) {
-        const deep = withActiveScriptSpatialAudit(
-          after.gameAudit,
-          after.map,
-          after.mapJsonDocument,
-        );
-        const status = deep.implementable
+        const complete = auditCompleteGameState({
+          map: after.map,
+          mapJson: after.mapJsonDocument,
+          mapName: after.mapName,
+          atlas: realAtlasStore.ensureHydrated(),
+        });
+        setCompleteGameAudit(complete.report);
+        const status = complete.report.implementable
           ? "IMPLEMENTÁVEL NO JOGO"
-          : deep.pass
-            ? `parcial: ${deep.counts.warnings} aviso(s) pendente(s)`
-            : `${deep.counts.errors} erro(s) de implementação`;
+          : complete.report.pass
+            ? `parcial: ${complete.report.counts.warnings} aviso(s) pendente(s)`
+            : `${complete.report.counts.errors} erro(s) de implementação`;
         editorStore.setMessage(`Validação concluída: ${status}.`);
+      } else {
+        setCompleteGameAudit(null);
       }
     })();
   };
