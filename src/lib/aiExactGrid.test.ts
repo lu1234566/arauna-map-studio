@@ -145,6 +145,11 @@ describe("Exact Grid compiler", () => {
     map.physical[idx(0, 0, map.width)] = 0x1000;
     const compiled = compiledPlan(contextHouse);
     expect(compiled.valid).toBe(true);
+    expect(compiled.blueprint?.patterns[0]).toMatchObject({
+      pattern: "context-house",
+      x: 2,
+      y: 4,
+    });
 
     const exact = compileAiExactGrid({
       sourceMap: map,
@@ -167,8 +172,10 @@ describe("Exact Grid compiler", () => {
     expect(exact.cells[idx(2, 2, map.width)]!.owner).toBe("ground");
     expect(exact.map.metatiles[idx(2, 4, map.width)]).toBe(1);
     expect(exact.cells[idx(2, 4, map.width)]!.owner).toBe("ground");
-    expect(exact.map.metatiles[idx(4, 3, map.width)]).toBe(7);
-    expect(exact.cells[idx(4, 3, map.width)]!.owner).toBe("structure");
+    expect(exact.map.metatiles[idx(4, 3, map.width)]).toBe(2);
+    expect(exact.cells[idx(4, 3, map.width)]!.owner).toBe("ground");
+    expect(exact.map.metatiles[idx(4, 5, map.width)]).toBe(7);
+    expect(exact.cells[idx(4, 5, map.width)]!.owner).toBe("structure");
   });
 
   it("normalizes rebuilt ground physics to the canonical physical value of that metatile", () => {
