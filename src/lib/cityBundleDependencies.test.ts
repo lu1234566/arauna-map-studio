@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildCityBundle, type AraunaCityBundle } from "./araunaCityBundle";
 import {
+  buildScriptSpatialSnapshot,
   buildSharedEventsSnapshot,
+  scriptSpatialSnapshotFromBundle,
   sharedEventsSnapshotFromBundle,
   validateBundleDependencies,
+  withScriptSpatialSnapshot,
   withSharedEventsSnapshot,
 } from "./cityBundleDependencies";
 import type { MapData } from "./emeraldMap";
@@ -77,8 +80,27 @@ function sharedSource(): EditableMapJson {
   };
 }
 
+function scriptsSource() {
+  return (
+    "ContestHall_MapScripts::\n" +
+    "\tsetobjectxyperm LOCALID_CONTEST_MC, 1, 2\n" +
+    "\tend\n"
+  );
+}
+
 function withSnapshot(): AraunaCityBundle {
   const semantics = withSharedEventsSnapshot(undefined, "ContestHall", sharedSource());
+  return buildCityBundle({ map: map(), mapJson: consumer(), semantics });
+}
+
+function withCompleteSnapshot(): AraunaCityBundle {
+  const withShared = withSharedEventsSnapshot(undefined, "ContestHall", sharedSource());
+  const semantics = withScriptSpatialSnapshot(
+    withShared,
+    "ContestHall",
+    "data/maps/ContestHall/scripts.inc",
+    scriptsSource(),
+  );
   return buildCityBundle({ map: map(), mapJson: consumer(), semantics });
 }
 
@@ -129,5 +151,48 @@ describe("city bundle external dependencies", () => {
     const snapshot = buildSharedEventsSnapshot("ContestHall", sharedSource());
     expect(snapshot.mapJsonChecksum).toMatch(/^[0-9a-f]{8}$/);
     expect(snapshot.protectedCells).toHaveLength(1);
+  });
+
+  it("embeds scripts.inc plus derived spatial contracts as a self-contained dependency", () => {
+    const bundle = withCompleteSnapshot();
+    const snapshot = scriptSpatialSnapshotFromBundle(bundle);
+    expect(snapshot?.mapName).toBe("ContestHall");
+    expect(snapshot?.sourcePath).toBe("data/maps/ContestHall/scripts.inc");
+    expect(snapshot?.sourceChecksum).toMatch(/^[0-9a-f]{8}$/);
+    expect(snapshot?.contractsChecksum).toMatch(/^[0-9a-f]{8}$/);
+    expect(snapshot?.contracts.anchors).toEqual([
+      expect.objectContaining({ localId: "LOCALID_CONTEST_MC", x: 1, y: 2 }),
+    ]);
+    expect(validateBundleDependencies(bundle)).toEqual([]);
+  });
+
+  it("detects tampered scripts source, contracts and wrong shared_scripts_map source", () => {
+    const sourceTamper = withCompleteSnapshot();
+    scriptSpatialSnapshotFromBundle(sourceTamper)!.source += "@ tampered\n";
+    expect(validateBundleDependencies(sourceTamper).map((issue) => issue.code)).toContain(
+      "BUNDLE_SCRIPT_SPATIAL_SOURCE_CHECKSUM",
+    );
+
+    const contractTamper = withCompleteSnapshot();
+    scriptSpatialSnapshotFromBundle(contractTamper)!.contracts.anchors[0]!.x = 3;
+    const contractCodes = validateBundleDependencies(contractTamper).map((issue) => issue.code);
+    expect(contractCodes).toContain("BUNDLE_SCRIPT_SPATIAL_CONTRACTS_CHECKSUM");
+    expect(contractCodes).toContain("BUNDLE_SCRIPT_SPATIAL_DERIVATION_MISMATCH");
+
+    const wrongSource = withCompleteSnapshot();
+    scriptSpatialSnapshotFromBundle(wrongSource)!.mapName = "ContestHallCute";
+    expect(validateBundleDependencies(wrongSource).map((issue) => issue.code)).toContain(
+      "BUNDLE_SCRIPT_SPATIAL_SOURCE_MISMATCH",
+    );
+  });
+
+  it("buildScriptSpatialSnapshot normalizes CRLF and derives contracts itself", () => {
+    const snapshot = buildScriptSpatialSnapshot(
+      "ContestHall",
+      "data/maps/ContestHall/scripts.inc",
+      scriptsSource().replace(/\n/g, "\r\n"),
+    );
+    expect(snapshot.source.includes("\r")).toBe(false);
+    expect(snapshot.contracts.anchors).toHaveLength(1);
   });
 });
