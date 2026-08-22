@@ -1,14 +1,19 @@
-import type { AraunaCityBundle } from "./araunaCityBundle";
+import type {
+  AraunaCityBundle,
+  CitySemantics,
+} from "./araunaCityBundle";
 import {
   sharedEventsSnapshotFromBundle,
   validateBundleDependencies,
   type SharedEventsSnapshot,
 } from "./cityBundleDependencies";
-import type { EditableMapJson } from "./eventMapJson";
+import { cloneMapJson, type EditableMapJson } from "./eventMapJson";
 
 export interface BundleDependencyContext {
   sourceDocument: EditableMapJson;
   sharedEvents: SharedEventsSnapshot | null;
+  /** Semântica de autoria preservada sem os snapshots técnicos recalculáveis. */
+  semanticBase?: CitySemantics;
 }
 
 let activeContext: BundleDependencyContext | null = null;
@@ -17,7 +22,19 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-/** Guarda somente dependências cujo checksum/derivação já foram validados. */
+function semanticBaseFromBundle(bundle: AraunaCityBundle): CitySemantics | undefined {
+  if (!bundle.semantics) return undefined;
+  const cloned = cloneMapJson(bundle.semantics) as CitySemantics & {
+    externalDependencies?: unknown;
+  };
+  // shared events/scripts são provas técnicas vinculadas ao estado atual e são
+  // sempre reconstruídas por CompleteGameAudit. O resto da semântica (zonas,
+  // estruturas, notas de autoria etc.) deve sobreviver ao round-trip.
+  delete cloned.externalDependencies;
+  return Object.keys(cloned).length ? cloned : undefined;
+}
+
+/** Guarda dependências e semântica apenas após validação integral do bundle. */
 export function installBundleDependencyContextFromImport(
   bundle: AraunaCityBundle,
   document: EditableMapJson | null | undefined,
@@ -28,18 +45,18 @@ export function installBundleDependencyContextFromImport(
   }
 
   const dependencyIssues = validateBundleDependencies(bundle);
-  const sharedIssues = dependencyIssues.filter((found) =>
-    found.code.startsWith("BUNDLE_SHARED_EVENTS_"),
-  );
-  const shared = sharedEventsSnapshotFromBundle(bundle);
-  if (sharedIssues.length) {
+  if (dependencyIssues.length) {
     activeContext = null;
     return null;
   }
+  const shared = sharedEventsSnapshotFromBundle(bundle);
 
   activeContext = {
     sourceDocument: document,
     sharedEvents: shared,
+    ...(semanticBaseFromBundle(bundle)
+      ? { semanticBase: semanticBaseFromBundle(bundle) }
+      : {}),
   };
   return activeContext;
 }
@@ -52,6 +69,15 @@ export function importedSharedEventsSnapshot(
   const snapshot = activeContext.sharedEvents;
   if (!snapshot || snapshot.name !== expectedName) return null;
   return snapshot;
+}
+
+export function importedBundleSemanticBase(
+  document: EditableMapJson | null | undefined,
+): CitySemantics | undefined {
+  if (!document || activeContext?.sourceDocument !== document || !activeContext.semanticBase) {
+    return undefined;
+  }
+  return cloneMapJson(activeContext.semanticBase);
 }
 
 export function clearBundleDependencyContext() {
