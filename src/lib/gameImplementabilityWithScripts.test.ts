@@ -1,4 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { buildCityBundle } from "./araunaCityBundle";
+import {
+  clearBundleDependencyContext,
+  installBundleDependencyContextFromImport,
+} from "./bundleDependencyContext";
+import {
+  withScriptSpatialSnapshot,
+  withSharedEventsSnapshot,
+} from "./cityBundleDependencies";
 import type { MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
 import type {
@@ -9,6 +18,7 @@ import { withActiveScriptSpatialAudit } from "./gameImplementabilityWithScripts"
 import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
 import {
   clearScriptSpatialContext,
+  installScriptSpatialContextFromBundle,
   refreshScriptSpatialContext,
 } from "./scriptSpatialContext";
 
@@ -98,7 +108,10 @@ function has(report: GameImplementabilityReport, code: string) {
   return report.issues.some((issue) => issue.code === code);
 }
 
-afterEach(() => clearScriptSpatialContext());
+afterEach(() => {
+  clearScriptSpatialContext();
+  clearBundleDependencyContext();
+});
 
 describe("withActiveScriptSpatialAudit", () => {
   it("keeps Game-ready when every declared runtime anchor is valid", async () => {
@@ -156,5 +169,56 @@ describe("withActiveScriptSpatialAudit", () => {
     expect(report.pass).toBe(true);
     expect(report.implementable).toBe(false);
     expect(has(report, "SCRIPT_SPATIAL_CONTEXT_STALE")).toBe(true);
+  });
+
+  it("uses bundled shared events when a self-contained city is audited without Workspace", () => {
+    const consumer: EditableMapJson = {
+      id: "MAP_CHILD",
+      name: "Child",
+      layout: "LAYOUT_CHILD",
+      shared_events_map: "Shared",
+      shared_scripts_map: "Shared",
+    };
+    const shared: EditableMapJson = {
+      id: "MAP_SHARED",
+      name: "Shared",
+      layout: "LAYOUT_SHARED",
+      object_events: [
+        {
+          local_id: "LOCALID_A",
+          graphics_id: "OBJ_EVENT_GFX_MAN_1",
+          x: 1,
+          y: 1,
+          elevation: 3,
+          movement_type: "MOVEMENT_TYPE_FACE_DOWN",
+          movement_range_x: 0,
+          movement_range_y: 0,
+          trainer_type: "TRAINER_TYPE_NONE",
+          trainer_sight_or_berry_tree_id: "0",
+          script: "0x0",
+          flag: "0",
+        },
+      ],
+      warp_events: [],
+      coord_events: [],
+      bg_events: [],
+    };
+    const scriptSource = "Shared::\n\tsetobjectxyperm LOCALID_A, 2, 2\n\tend\n";
+    const sharedSemantics = withSharedEventsSnapshot(undefined, "Shared", shared);
+    const semantics = withScriptSpatialSnapshot(
+      sharedSemantics,
+      "Shared",
+      "data/maps/Shared/scripts.inc",
+      scriptSource,
+    );
+    const bundle = buildCityBundle({ map: openMap(), mapJson: consumer, semantics });
+    const installedDocument = { ...bundle.mapJson };
+    installBundleDependencyContextFromImport(bundle, installedDocument);
+    installScriptSpatialContextFromBundle(bundle, installedDocument);
+
+    const report = withActiveScriptSpatialAudit(baseReport(), openMap(), installedDocument);
+    expect(report.implementable).toBe(true);
+    expect(has(report, "SCRIPT_SPATIAL_EFFECTIVE_EVENTS_UNVERIFIED")).toBe(false);
+    expect(has(report, "SCRIPT_OBJECT_ANCHOR_OK")).toBe(true);
   });
 });
