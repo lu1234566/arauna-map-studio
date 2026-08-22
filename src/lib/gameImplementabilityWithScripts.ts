@@ -32,8 +32,16 @@ function appendIssues(
   const counts = { ...base.counts };
 
   for (const found of additions) {
-    counts[found.severity]++;
-    categories[found.category][found.severity]++;
+    if (found.severity === "error") {
+      counts.errors++;
+      categories[found.category].errors++;
+    } else if (found.severity === "warning") {
+      counts.warnings++;
+      categories[found.category].warnings++;
+    } else {
+      counts.info++;
+      categories[found.category].info++;
+    }
   }
 
   const pass = base.pass && additions.every((found) => found.severity !== "error");
