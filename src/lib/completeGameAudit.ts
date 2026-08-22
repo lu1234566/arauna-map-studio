@@ -12,6 +12,7 @@ import {
   type ImplementabilityWorkspaceContext,
 } from "./gameImplementability";
 import { withActiveScriptSpatialAudit } from "./gameImplementabilityWithScripts";
+import { withScriptDoorNpcReconciliation } from "./scriptDoorNpcReconciliation";
 import { getScriptSpatialContext } from "./scriptSpatialContext";
 import { withWarpEndpointSafetyAudit } from "./warpEndpointSafety";
 import { getWorkspaceAuditContext, sharedEventsContextKey } from "./workspaceAuditContext";
@@ -59,6 +60,7 @@ function currentWorkspaceContext(
  * - shared events preferem a fonte atual do Workspace;
  * - referências de scripts/flags/vars/constants precisam existir nas fontes;
  * - endpoints de warp conferem a célula de spawn real quando o Workspace a tem;
+ * - NPCs sobre portas podem ser reconciliados com prova opendoor -> addobject;
  * - a camada espacial/cutscenes/warps de script é aplicada por último.
  */
 export function auditCompleteGameState(input: CompleteGameAuditInput): CompleteGameAuditResult {
@@ -126,10 +128,16 @@ export function auditCompleteGameState(input: CompleteGameAuditInput): CompleteG
   });
   const symbolsSafe = withWorkspaceSymbolReferenceAudit(base, mapJson);
   const endpointSafe = withWarpEndpointSafetyAudit(symbolsSafe, mapJson, workspaceContext, bundle);
+  const doorNpcSafe = withScriptDoorNpcReconciliation(
+    endpointSafe,
+    mapJson,
+    map,
+    atlas ?? null,
+  );
 
   return {
     bundle,
-    report: withActiveScriptSpatialAudit(endpointSafe, map, mapJson),
+    report: withActiveScriptSpatialAudit(doorNpcSafe, map, mapJson),
     workspaceContext,
   };
 }

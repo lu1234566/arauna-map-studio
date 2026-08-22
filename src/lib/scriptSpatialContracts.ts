@@ -35,6 +35,19 @@ export interface ScriptWarpUse {
   line: number;
 }
 
+export interface ScriptDoorOpening {
+  x: number;
+  y: number;
+  scriptLabel: string | null;
+  line: number;
+}
+
+export interface ScriptObjectAdd {
+  localId: string;
+  scriptLabel: string | null;
+  line: number;
+}
+
 export interface MovementStep {
   token: string;
   dx: number;
@@ -54,6 +67,8 @@ export interface ScriptSpatialContracts {
   anchors: ScriptObjectAnchor[];
   movementUses: ScriptMovementUse[];
   scriptWarps: ScriptWarpUse[];
+  doorOpenings: ScriptDoorOpening[];
+  objectAdds: ScriptObjectAdd[];
   movements: Record<string, ScriptMovementDefinition>;
 }
 
@@ -125,6 +140,7 @@ function splitArguments(value: string | undefined): string[] {
  * Cobertura intencional:
  * - `setobjectxy` / `setobjectxyperm`: posições futuras de NPCs;
  * - `applymovement`: uso de sequências de movimento;
+ * - `opendoor` + `addobject`: prova de spawn intencional sobre porta animada;
  * - labels de movimento terminados em `step_end`;
  * - warps e setters de warp declarados diretamente em script.
  */
@@ -133,6 +149,8 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
   const anchors: ScriptObjectAnchor[] = [];
   const movementUses: ScriptMovementUse[] = [];
   const scriptWarps: ScriptWarpUse[] = [];
+  const doorOpenings: ScriptDoorOpening[] = [];
+  const objectAdds: ScriptObjectAdd[] = [];
   const blocks = new Map<string, { line: number; tokens: string[] }>();
   let currentLabel: string | null = null;
 
@@ -171,6 +189,24 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
       movementUses.push({
         localId: (movementUse[1] ?? "").trim(),
         movementLabel: movementUse[2] ?? "",
+        scriptLabel: currentLabel,
+        line: lineNumber,
+      });
+    }
+
+    const door = line.match(/^opendoor\s+([^,]+),\s*([^,\s]+)\s*$/i);
+    if (door) {
+      const x = parseInteger(door[1] ?? "");
+      const y = parseInteger(door[2] ?? "");
+      if (x !== null && y !== null) {
+        doorOpenings.push({ x, y, scriptLabel: currentLabel, line: lineNumber });
+      }
+    }
+
+    const objectAdd = line.match(/^addobject\s+([^,\s]+)\s*$/i);
+    if (objectAdd) {
+      objectAdds.push({
+        localId: (objectAdd[1] ?? "").trim(),
         scriptLabel: currentLabel,
         line: lineNumber,
       });
@@ -224,7 +260,7 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
     }
   }
 
-  return { anchors, movementUses, scriptWarps, movements };
+  return { anchors, movementUses, scriptWarps, doorOpenings, objectAdds, movements };
 }
 
 export function referencedScriptWarpMapIds(contracts: ScriptSpatialContracts): string[] {

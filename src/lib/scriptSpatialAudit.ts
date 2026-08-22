@@ -19,6 +19,15 @@ export interface ScriptSpatialIssue {
   line?: number;
 }
 
+export interface ScriptDoorSpawnProof {
+  localId: string;
+  x: number;
+  y: number;
+  scriptLabel: string | null;
+  openDoorLine: number;
+  addObjectLine: number;
+}
+
 /** IDs reservados pelo engine e que não precisam de object_event no map.json. */
 const ENGINE_LOCAL_IDS = new Set([
   "LOCALID_NONE",
@@ -121,6 +130,40 @@ function samePoint(a: { x: number; y: number }, b: { x: number; y: number }) {
 }
 
 /**
+ * Prova conservadora para o padrão vanilla `opendoor x,y` -> `addobject ID`.
+ * A porta e o add precisam estar no mesmo bloco de script e a abertura precisa
+ * ocorrer antes do objeto aparecer. A âncora setobjectxy pode ter sido definida
+ * em outro bloco, como acontece com Scott em Slateport.
+ */
+export function findScriptDoorSpawnProof(
+  contracts: ScriptSpatialContracts,
+  localId: string,
+  x: number,
+  y: number,
+): ScriptDoorSpawnProof | null {
+  for (const add of contracts.objectAdds) {
+    if (add.localId !== localId || !add.scriptLabel) continue;
+    const door = contracts.doorOpenings.find(
+      (candidate) =>
+        candidate.scriptLabel === add.scriptLabel &&
+        candidate.line < add.line &&
+        candidate.x === x &&
+        candidate.y === y,
+    );
+    if (!door) continue;
+    return {
+      localId,
+      x,
+      y,
+      scriptLabel: add.scriptLabel,
+      openDoorLine: door.line,
+      addObjectLine: add.line,
+    };
+  }
+  return null;
+}
+
+/**
  * Audita fatos espaciais extraídos de scripts sem fingir interpretar o fluxo
  * completo do bytecode. Erros são reservados a fatos inequívocos; qualquer
  * geometria não resolvida vira warning para impedir falso Game-ready.
@@ -184,15 +227,35 @@ export function auditScriptSpatialContracts(
 
     const collision = collisionAt(map, anchor.x, anchor.y) ?? 0;
     if (collision > 0) {
-      issues.push({
-        code: "SCRIPT_OBJECT_ANCHOR_BLOCKED",
-        severity: "warning",
-        message: `${anchor.command} posiciona ${anchor.localId} em (${anchor.x},${anchor.y}) com collision=${collision}; revise a cutscene/estado futuro antes de exportar.`,
-        x: anchor.x,
-        y: anchor.y,
-        localId: anchor.localId,
-        line: anchor.line,
-      });
+      const doorProof = findScriptDoorSpawnProof(
+        contracts,
+        anchor.localId,
+        anchor.x,
+        anchor.y,
+      );
+      if (doorProof) {
+        issues.push({
+          code: "SCRIPT_OBJECT_ANCHOR_DOOR_OK",
+          severity: "info",
+          message:
+            `${anchor.command} mantém ${anchor.localId} em (${anchor.x},${anchor.y}) sobre collision=${collision}, ` +
+            `mas ${doorProof.scriptLabel} executa opendoor nessas coordenadas antes de addobject; spawn runtime compatível com porta animada.`,
+          x: anchor.x,
+          y: anchor.y,
+          localId: anchor.localId,
+          line: anchor.line,
+        });
+      } else {
+        issues.push({
+          code: "SCRIPT_OBJECT_ANCHOR_BLOCKED",
+          severity: "warning",
+          message: `${anchor.command} posiciona ${anchor.localId} em (${anchor.x},${anchor.y}) com collision=${collision}; revise a cutscene/estado futuro antes de exportar.`,
+          x: anchor.x,
+          y: anchor.y,
+          localId: anchor.localId,
+          line: anchor.line,
+        });
+      }
     } else {
       issues.push({
         code: "SCRIPT_OBJECT_ANCHOR_OK",

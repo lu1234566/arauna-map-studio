@@ -59,19 +59,19 @@ export interface OpenWorkspaceMapResult {
 
 export class WorkspaceError extends Error {}
 
+const WORKSPACE_SOURCE_ROOTS = new Set(["data", "include", "src", "asm", "tools"]);
+
 export function normalizeWorkspacePath(input: string): string {
   let path = input.replace(/\\/g, "/").replace(/^\.\//, "");
   while (path.startsWith("/")) path = path.slice(1);
 
-  const lower = path.toLowerCase();
-  const dataIndex = lower.indexOf("/data/");
-  if (dataIndex >= 0) path = path.slice(dataIndex + 1);
-  else if (lower.startsWith("data/")) path = path.slice(0);
-  else {
-    const parts = path.split("/").filter(Boolean);
-    const index = parts.findIndex((part) => part.toLowerCase() === "data");
-    if (index >= 0) path = parts.slice(index).join("/");
-  }
+  // webkitRelativePath inclui o nome da pasta escolhida. Para o Studio, os
+  // caminhos precisam ser relativos à raiz real do pokeemerald, não à pasta
+  // selecionada no Chrome. Antes só `data/` era recortado e headers ficavam
+  // como `pokemon-juramento-de-arauna/include/...`, invisíveis à auditoria.
+  const parts = path.split("/").filter(Boolean);
+  const sourceRootIndex = parts.findIndex((part) => WORKSPACE_SOURCE_ROOTS.has(part.toLowerCase()));
+  if (sourceRootIndex >= 0) path = parts.slice(sourceRootIndex).join("/");
 
   return path.replace(/\/{2,}/g, "/");
 }
