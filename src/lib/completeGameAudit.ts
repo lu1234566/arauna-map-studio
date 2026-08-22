@@ -128,7 +128,12 @@ export function auditCompleteGameState(input: CompleteGameAuditInput): CompleteG
   });
   const symbolsSafe = withWorkspaceSymbolReferenceAudit(base, mapJson);
   const endpointSafe = withWarpEndpointSafetyAudit(symbolsSafe, mapJson, workspaceContext, bundle);
-  const doorNpcSafe = withScriptDoorNpcReconciliation(endpointSafe, mapJson);
+  const doorNpcSafe = withScriptDoorNpcReconciliation(
+    endpointSafe,
+    mapJson,
+    map,
+    atlas ?? null,
+  );
 
   return {
     bundle,
