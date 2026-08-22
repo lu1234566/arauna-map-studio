@@ -1,3 +1,8 @@
+import { fnv1a, type AraunaCityBundle } from "./araunaCityBundle";
+import {
+  scriptSpatialSnapshotFromBundle,
+  validateBundleDependencies,
+} from "./cityBundleDependencies";
 import type { EditableMapJson } from "./eventMapJson";
 import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
 import {
@@ -10,8 +15,11 @@ export interface ScriptSpatialContext {
   sourceDocument: EditableMapJson;
   scriptMapName: string;
   sourcePath: string;
+  source: string;
+  sourceChecksum: string;
   contracts: ScriptSpatialContracts | null;
   error: string | null;
+  origin: "workspace" | "bundle";
 }
 
 let activeContext: ScriptSpatialContext | null = null;
@@ -44,8 +52,11 @@ function failedContext(
     sourceDocument: document,
     scriptMapName,
     sourcePath,
+    source: "",
+    sourceChecksum: "",
     contracts: null,
     error,
+    origin: "workspace",
   };
 }
 
@@ -111,14 +122,18 @@ export async function buildScriptSpatialContext(
   }
 
   try {
-    const contracts = parseScriptSpatialContracts(await file.text());
+    const source = (await file.text()).replace(/\r/g, "");
+    const contracts = parseScriptSpatialContracts(source);
     return {
       sourceMapId,
       sourceDocument: document,
       scriptMapName: scriptMap.name,
       sourcePath,
+      source,
+      sourceChecksum: fnv1a(source),
       contracts,
       error: null,
+      origin: "workspace",
     };
   } catch (error) {
     return failedContext(
@@ -142,6 +157,41 @@ export async function refreshScriptSpatialContext(
   const context = await buildScriptSpatialContext(workspace, document);
   activeContext = context;
   return context;
+}
+
+/**
+ * Restaura a prova espacial embutida em uma Cidade JSON importada. A camada só
+ * é ativada se os checksums e a derivação contracts <- scripts.inc passarem.
+ */
+export function installScriptSpatialContextFromBundle(
+  bundle: AraunaCityBundle,
+  document: EditableMapJson | null | undefined,
+): ScriptSpatialContext | null {
+  if (!document || text(bundle.mapJson.id) !== text(document.id)) {
+    activeContext = null;
+    return null;
+  }
+  const snapshot = scriptSpatialSnapshotFromBundle(bundle);
+  const dependencyErrors = validateBundleDependencies(bundle).filter((found) =>
+    found.code.startsWith("BUNDLE_SCRIPT_SPATIAL_"),
+  );
+  if (!snapshot || dependencyErrors.length) {
+    activeContext = null;
+    return null;
+  }
+
+  activeContext = {
+    sourceMapId: text(document.id),
+    sourceDocument: document,
+    scriptMapName: snapshot.mapName,
+    sourcePath: snapshot.sourcePath,
+    source: snapshot.source,
+    sourceChecksum: snapshot.sourceChecksum,
+    contracts: snapshot.contracts,
+    error: null,
+    origin: "bundle",
+  };
+  return activeContext;
 }
 
 export function getScriptSpatialContext(): ScriptSpatialContext | null {
