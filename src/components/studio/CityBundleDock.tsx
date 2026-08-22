@@ -1,12 +1,23 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle, Download, FileJson2, ShieldCheck, Upload } from "lucide-react";
 import { serializeCityBundle } from "@/lib/araunaCityBundle";
-import { withSharedEventsSnapshot } from "@/lib/cityBundleDependencies";
+import {
+  importedSharedEventsSnapshot,
+  installBundleDependencyContextFromImport,
+} from "@/lib/bundleDependencyContext";
+import {
+  withScriptSpatialSnapshot,
+  withSharedEventsSnapshot,
+} from "@/lib/cityBundleDependencies";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { auditGameImplementability } from "@/lib/gameImplementability";
 import { withActiveScriptSpatialAudit } from "@/lib/gameImplementabilityWithScripts";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { useRealAtlas } from "@/lib/realAtlasStore";
+import {
+  getScriptSpatialContext,
+  installScriptSpatialContextFromBundle,
+} from "@/lib/scriptSpatialContext";
 import {
   getWorkspaceAuditContext,
   sharedEventsContextKey,
@@ -64,6 +75,10 @@ export function CityBundleDock() {
       window.alert(`Cidade JSON rejeitada sem alterar o editor.\n\n${result.message}`);
       return;
     }
+
+    const after = editorStore.getState();
+    installBundleDependencyContextFromImport(result.bundle, after.mapJsonDocument);
+    installScriptSpatialContextFromBundle(result.bundle, after.mapJsonDocument);
     requestMapCameraFit();
   };
 
@@ -74,26 +89,48 @@ export function CityBundleDock() {
       return;
     }
 
-    let bundle = result.bundle;
-    let source = result.source;
-    let gameAudit = withActiveScriptSpatialAudit(
-      result.gameAudit,
-      state.map,
-      state.mapJsonDocument,
-    );
     const document = state.mapJsonDocument;
-    const sharedName = typeof document?.shared_events_map === "string"
+    const scriptContext = getScriptSpatialContext();
+    if (
+      !document ||
+      !scriptContext ||
+      scriptContext.sourceDocument !== document ||
+      scriptContext.sourceMapId !== document.id ||
+      !scriptContext.contracts ||
+      scriptContext.error ||
+      !scriptContext.source
+    ) {
+      window.alert(
+        "Exportação bloqueada por segurança.\n\n" +
+          "O scripts.inc efetivo ainda não está certificado para esta versão do mapa. " +
+          "Abra/importe pelo Workspace e rode Validar; bundles importados também precisam conter o snapshot espacial íntegro.",
+      );
+      return;
+    }
+
+    let bundle = {
+      ...result.bundle,
+      semantics: withScriptSpatialSnapshot(
+        result.bundle.semantics,
+        scriptContext.scriptMapName,
+        scriptContext.sourcePath,
+        scriptContext.source,
+      ),
+    };
+
+    const workspaceContext = getWorkspaceAuditContext();
+    const sharedName = typeof document.shared_events_map === "string"
       ? document.shared_events_map.trim()
       : "";
 
     if (sharedName) {
-      const context = getWorkspaceAuditContext();
-      const sharedDocument = context?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
+      const workspaceShared = workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
+      const importedShared = importedSharedEventsSnapshot(document, sharedName)?.mapJson ?? null;
+      const sharedDocument = workspaceShared ?? importedShared;
       if (!sharedDocument) {
         window.alert(
           `Exportação bloqueada por segurança.\n\n` +
-          `Este mapa usa shared_events_map=${sharedName}, mas a fonte compartilhada não está carregada no contexto de auditoria. ` +
-          `Abra o Workspace e rode Validar para que o Studio possa embutir um snapshot íntegro dos NPCs/warps/triggers efetivos.`,
+          `Este mapa usa shared_events_map=${sharedName}, mas a fonte compartilhada não está disponível nem no Workspace nem no bundle importado.`,
         );
         return;
       }
@@ -102,20 +139,21 @@ export function CityBundleDock() {
         ...bundle,
         semantics: withSharedEventsSnapshot(bundle.semantics, sharedName, sharedDocument),
       };
-      source = serializeCityBundle(bundle);
-      gameAudit = withActiveScriptSpatialAudit(
-        auditGameImplementability({
-          map: state.map,
-          mapJson: document,
-          atlas,
-          bundle,
-          declaredTilesets: bundle.tilesets,
-          workspaceContext: context,
-        }),
-        state.map,
-        document,
-      );
     }
+
+    const source = serializeCityBundle(bundle);
+    const gameAudit = withActiveScriptSpatialAudit(
+      auditGameImplementability({
+        map: state.map,
+        mapJson: document,
+        atlas,
+        bundle,
+        declaredTilesets: bundle.tilesets,
+        workspaceContext,
+      }),
+      state.map,
+      document,
+    );
 
     const base = safeName(bundle.identity.name);
     downloadText(source, `${base}.arauna-city.json`);
