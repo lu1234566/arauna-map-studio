@@ -10,6 +10,8 @@ import {
   type ScriptSpatialContracts,
 } from "./scriptSpatialContracts";
 
+const COMMON_MOVEMENT_PATH = "data/scripts/movement.inc";
+
 export interface ScriptSpatialContext {
   sourceMapId: string | null;
   sourceDocument: EditableMapJson;
@@ -60,8 +62,27 @@ function failedContext(
   };
 }
 
+function combinedScriptSource(
+  mapPath: string,
+  mapSource: string,
+  commonSource: string,
+): { sourcePath: string; source: string } {
+  const normalizedMap = mapSource.replace(/\r/g, "");
+  const normalizedCommon = commonSource.replace(/\r/g, "");
+  return {
+    sourcePath: `${mapPath} + ${COMMON_MOVEMENT_PATH}`,
+    // O mapa vem primeiro para preservar seus line numbers originais. A fonte
+    // comum é anexada apenas para resolver Common_Movement_* de forma auditável.
+    source:
+      `${normalizedMap}\n\n` +
+      `@ ARAUNA_AUDIT_SUPPORT_SOURCE ${COMMON_MOVEMENT_PATH}\n` +
+      normalizedCommon,
+  };
+}
+
 /**
- * Resolve o scripts.inc efetivamente usado pelo MapHeader.
+ * Resolve o scripts.inc efetivamente usado pelo MapHeader e a biblioteca comum
+ * de movimentos que ele pode referenciar.
  *
  * Quando shared_scripts_map existe, tools/mapjson aponta MapScripts para o mapa
  * compartilhado; portanto auditar o scripts.inc local daria falsa segurança.
@@ -109,28 +130,43 @@ export async function buildScriptSpatialContext(
     );
   }
 
-  const sourcePath = `data/maps/${scriptMap.directory}/scripts.inc`;
-  const file = fileForPath(workspace, sourcePath);
-  if (!file) {
+  const mapSourcePath = `data/maps/${scriptMap.directory}/scripts.inc`;
+  const mapFile = fileForPath(workspace, mapSourcePath);
+  if (!mapFile) {
     return failedContext(
       document,
       sourceMapId,
       scriptMap.name,
-      sourcePath,
-      `arquivo ${sourcePath} não encontrado`,
+      mapSourcePath,
+      `arquivo ${mapSourcePath} não encontrado`,
+    );
+  }
+
+  const commonMovementFile = fileForPath(workspace, COMMON_MOVEMENT_PATH);
+  if (!commonMovementFile) {
+    return failedContext(
+      document,
+      sourceMapId,
+      scriptMap.name,
+      `${mapSourcePath} + ${COMMON_MOVEMENT_PATH}`,
+      `arquivo obrigatório ${COMMON_MOVEMENT_PATH} não encontrado; Common_Movement_* não pode ser certificado`,
     );
   }
 
   try {
-    const source = (await file.text()).replace(/\r/g, "");
-    const contracts = parseScriptSpatialContracts(source);
+    const [mapSource, commonSource] = await Promise.all([
+      mapFile.text(),
+      commonMovementFile.text(),
+    ]);
+    const combined = combinedScriptSource(mapSourcePath, mapSource, commonSource);
+    const contracts = parseScriptSpatialContracts(combined.source);
     return {
       sourceMapId,
       sourceDocument: document,
       scriptMapName: scriptMap.name,
-      sourcePath,
-      source,
-      sourceChecksum: fnv1a(source),
+      sourcePath: combined.sourcePath,
+      source: combined.source,
+      sourceChecksum: fnv1a(combined.source),
       contracts,
       error: null,
       origin: "workspace",
@@ -140,7 +176,7 @@ export async function buildScriptSpatialContext(
       document,
       sourceMapId,
       scriptMap.name,
-      sourcePath,
+      `${mapSourcePath} + ${COMMON_MOVEMENT_PATH}`,
       error instanceof Error ? error.message : String(error),
     );
   }
@@ -161,7 +197,7 @@ export async function refreshScriptSpatialContext(
 
 /**
  * Restaura a prova espacial embutida em uma Cidade JSON importada. A camada só
- * é ativada se os checksums e a derivação contracts <- scripts.inc passarem.
+ * é ativada se os checksums e a derivação contracts <- fontes de script passarem.
  */
 export function installScriptSpatialContextFromBundle(
   bundle: AraunaCityBundle,
