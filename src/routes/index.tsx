@@ -25,10 +25,15 @@ import { TopToolbar } from "@/components/studio/TopToolbar";
 import { ValidationPanel } from "@/components/studio/ValidationPanel";
 import { clipboardStore } from "@/lib/clipboardStore";
 import { editorStore, useEditor } from "@/lib/editorStore";
+import { withActiveScriptSpatialAudit } from "@/lib/gameImplementabilityWithScripts";
 import { mapTemplateStore } from "@/lib/mapTemplateStore";
 import { patternLibraryStore } from "@/lib/patternLibraryStore";
 import { ensureAuthenticEmeraldPreviewAtlas } from "@/lib/pretEmeraldBootstrap";
 import { realAtlasStore } from "@/lib/realAtlasStore";
+import {
+  clearScriptSpatialContext,
+  refreshScriptSpatialContext,
+} from "@/lib/scriptSpatialContext";
 import { smartPathStore } from "@/lib/smartPathStore";
 import {
   clearWorkspaceAuditContext,
@@ -41,6 +46,9 @@ export const Route = createFileRoute("/")({ component: Index });
 function Index() {
   const state = useEditor();
   const session = useWorkspaceSession();
+  const renderedGameAudit = state.gameAudit
+    ? withActiveScriptSpatialAudit(state.gameAudit, state.map, state.mapJsonDocument)
+    : null;
 
   useEffect(() => {
     // A prévia vazia do Lovable/Chrome deve mostrar o Emerald real, nunca
@@ -138,18 +146,35 @@ function Index() {
 
   const validateForGame = () => {
     void (async () => {
+      const document = editorStore.getState().mapJsonDocument;
       try {
-        await refreshWorkspaceAuditContext(
-          session?.workspace,
-          editorStore.getState().mapJsonDocument,
-        );
+        await Promise.all([
+          refreshWorkspaceAuditContext(session?.workspace, document),
+          refreshScriptSpatialContext(session?.workspace, document),
+        ]);
       } catch (error) {
         clearWorkspaceAuditContext();
+        clearScriptSpatialContext();
         editorStore.setMessage(
           `Não foi possível carregar dependências do Workspace para a auditoria: ${error instanceof Error ? error.message : String(error)}. A validação seguirá como parcial.`,
         );
       }
+
       editorStore.runValidation();
+      const after = editorStore.getState();
+      if (after.gameAudit) {
+        const deep = withActiveScriptSpatialAudit(
+          after.gameAudit,
+          after.map,
+          after.mapJsonDocument,
+        );
+        const status = deep.implementable
+          ? "IMPLEMENTÁVEL NO JOGO"
+          : deep.pass
+            ? `parcial: ${deep.counts.warnings} aviso(s) pendente(s)`
+            : `${deep.counts.errors} erro(s) de implementação`;
+        editorStore.setMessage(`Validação concluída: ${status}.`);
+      }
     })();
   };
 
@@ -182,7 +207,7 @@ function Index() {
         {state.validation && (
           <ValidationPanel
             report={state.validation}
-            gameAudit={state.gameAudit}
+            gameAudit={renderedGameAudit}
             onClose={() => editorStore.clearValidation()}
           />
         )}
