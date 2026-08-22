@@ -25,6 +25,15 @@ const ENGINE_LOCAL_IDS = new Set([
   "LOCALID_CAMERA",
   "LOCALID_BERRY_BLENDER_PLAYER_END",
   "LOCALID_PLAYER",
+  // Equivalentes numéricos definidos em include/constants/event_objects.h.
+  "0",
+  "127",
+  "236",
+  "237",
+  "238",
+  "239",
+  "240",
+  "255",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,24 +49,48 @@ function collisionAt(map: MapData, x: number, y: number): number | null {
   return getPhysicalLayerValue(map.physical[idx(x, y, map.width)] ?? 0, "collision");
 }
 
+function addStart(
+  starts: Map<string, Array<{ x: number; y: number }>>,
+  key: string,
+  point: { x: number; y: number },
+) {
+  const values = starts.get(key) ?? [];
+  if (!values.some((value) => value.x === point.x && value.y === point.y)) values.push(point);
+  starts.set(key, values);
+}
+
+/**
+ * tools/mapjson gera object_event com local id `index + 1`, mesmo quando o
+ * map.json não possui um campo local_id textual. Por isso registramos sempre a
+ * chave numérica e, quando existir, também o alias LOCALID_* explícito.
+ */
 function objectStarts(document: EditableMapJson) {
   const starts = new Map<string, Array<{ x: number; y: number }>>();
   if (!Array.isArray(document.object_events)) return starts;
-  for (const raw of document.object_events) {
-    if (!isRecord(raw)) continue;
-    const localId = typeof raw.local_id === "string" ? raw.local_id.trim() : "";
+  document.object_events.forEach((raw, index) => {
+    if (!isRecord(raw)) return;
     const x = integer(raw.x);
     const y = integer(raw.y);
-    if (!localId || x === null || y === null) continue;
-    const values = starts.get(localId) ?? [];
-    values.push({ x, y });
-    starts.set(localId, values);
-  }
+    if (x === null || y === null) return;
+    const point = { x, y };
+    addStart(starts, String(index + 1), point);
+    const localId = typeof raw.local_id === "string" ? raw.local_id.trim() : "";
+    if (localId) addStart(starts, localId, point);
+  });
   return starts;
 }
 
+function numericObjectId(localId: string): number | null {
+  const normalized = localId.trim();
+  return /^\d+$/.test(normalized) ? Number(normalized) : null;
+}
+
 function needsObjectTemplate(localId: string): boolean {
-  return localId.startsWith("LOCALID_") && !ENGINE_LOCAL_IDS.has(localId);
+  const normalized = localId.trim();
+  if (ENGINE_LOCAL_IDS.has(normalized)) return false;
+  if (normalized.startsWith("LOCALID_")) return true;
+  const numeric = numericObjectId(normalized);
+  return numeric !== null && numeric > 0 && numeric < 127;
 }
 
 function simulate(
@@ -88,10 +121,9 @@ function samePoint(a: { x: number; y: number }, b: { x: number; y: number }) {
 }
 
 /**
- * Audita fatos espaciais extraídos do scripts.inc sem fingir interpretar o
- * fluxo completo do bytecode. Erros são reservados a fatos inequívocos
- * (âncora fora do mapa / LOCALID inexistente); movimento com estado runtime
- * incerto vira warning quando nenhuma posição conhecida é segura.
+ * Audita fatos espaciais extraídos de scripts sem fingir interpretar o fluxo
+ * completo do bytecode. Erros são reservados a fatos inequívocos; qualquer
+ * geometria não resolvida vira warning para impedir falso Game-ready.
  */
 export function auditScriptSpatialContracts(
   contracts: ScriptSpatialContracts,
@@ -110,8 +142,6 @@ export function auditScriptSpatialContracts(
     message: string,
     point?: { x: number; y: number },
   ) => {
-    // O mesmo LOCALID pode aparecer em dezenas de applymovement; um erro por ID
-    // é suficiente para bloquear Game-ready sem inundar o relatório.
     if (missingLocalIds.has(localId)) return;
     missingLocalIds.add(localId);
     issues.push({
@@ -134,7 +164,7 @@ export function auditScriptSpatialContracts(
         "SCRIPT_OBJECT_LOCALID_MISSING",
         anchor.localId,
         anchor.line,
-        `${anchor.command} referencia ${anchor.localId}, mas nenhum object_event efetivo declara esse local_id.`,
+        `${anchor.command} referencia ${anchor.localId}, mas nenhum object_event efetivo possui esse local id (nominal ou índice + 1).`,
         { x: anchor.x, y: anchor.y },
       );
     }
@@ -183,30 +213,27 @@ export function auditScriptSpatialContracts(
         "SCRIPT_MOVEMENT_LOCALID_MISSING",
         use.localId,
         use.line,
-        `applymovement referencia ${use.localId}, mas nenhum object_event efetivo nem âncora setobjectxy/setobjectxyperm declara esse local_id.`,
+        `applymovement referencia ${use.localId}, mas nenhum object_event efetivo nem âncora setobjectxy/setobjectxyperm resolve esse local id.`,
       );
     }
 
     const movement = contracts.movements[use.movementLabel];
     if (!movement) {
-      // Common_Movement_* e labels de outros includes são externos ao arquivo.
-      if (!use.movementLabel.startsWith("Common_")) {
-        issues.push({
-          code: "SCRIPT_MOVEMENT_DEFINITION_EXTERNAL",
-          severity: "info",
-          message: `${use.movementLabel} usado por ${use.localId} não é definido neste scripts.inc; mantido como dependência externa de movimento.`,
-          localId: use.localId,
-          line: use.line,
-        });
-      }
+      issues.push({
+        code: "SCRIPT_MOVEMENT_DEFINITION_EXTERNAL",
+        severity: "warning",
+        message: `${use.movementLabel} usado por ${use.localId} não foi encontrado nas fontes espaciais carregadas; a trajetória não pode ser certificada.`,
+        localId: use.localId,
+        line: use.line,
+      });
       continue;
     }
 
     if (!movement.deterministic) {
       issues.push({
         code: "SCRIPT_MOVEMENT_GEOMETRY_PARTIAL",
-        severity: "info",
-        message: `${use.movementLabel} contém comandos que o simulador espacial conservador não resolve por completo.`,
+        severity: "warning",
+        message: `${use.movementLabel} contém comandos espaciais que o simulador conservador não resolve por completo.`,
         localId: use.localId,
         line: use.line,
       });
@@ -218,9 +245,30 @@ export function auditScriptSpatialContracts(
       ...(anchorsByObject.get(use.localId) ?? []).map((anchor) => ({ x: anchor.x, y: anchor.y })),
     ].filter((candidate, index, all) => all.findIndex((other) => samePoint(candidate, other)) === index);
 
-    // LOCALID_PLAYER/CAMERA e outros IDs de engine têm posição runtime fora do
-    // map.json; a existência do movimento é válida, mas não inventamos um start.
-    if (!candidates.length || !movement.steps.length) continue;
+    if (!movement.steps.length) {
+      // Facing/delay/emote/in-place: geometricamente neutro, logo não depende de
+      // conhecermos a posição runtime do player/camera.
+      issues.push({
+        code: "SCRIPT_MOVEMENT_GEOMETRY_NEUTRAL",
+        severity: "info",
+        message: `${use.movementLabel} para ${use.localId} não desloca a célula lógica.`,
+        localId: use.localId,
+        line: use.line,
+      });
+      continue;
+    }
+
+    if (!candidates.length) {
+      issues.push({
+        code: "SCRIPT_MOVEMENT_START_UNVERIFIED",
+        severity: "warning",
+        message: `${use.movementLabel} move ${use.localId}, mas nenhuma posição inicial verificável está disponível no map.json/âncoras.`,
+        localId: use.localId,
+        line: use.line,
+      });
+      continue;
+    }
+
     const simulations = candidates.map((candidate) => ({
       candidate,
       result: simulate(map, candidate, movement),
