@@ -36,11 +36,10 @@ import {
   getScriptSpatialContext,
   refreshScriptSpatialContext,
 } from "@/lib/scriptSpatialContext";
+import { referencedScriptWarpMapIds } from "@/lib/scriptSpatialContracts";
 import { smartPathStore } from "@/lib/smartPathStore";
-import {
-  clearWorkspaceAuditContext,
-  refreshWorkspaceAuditContext,
-} from "@/lib/workspaceAuditContext";
+import { clearWorkspaceAuditContext } from "@/lib/workspaceAuditContext";
+import { refreshWorkspaceAuditContextWithScriptMaps } from "@/lib/workspaceScriptDependencies";
 import { useWorkspaceSession } from "@/lib/workspaceSession";
 
 export const Route = createFileRoute("/")({ component: Index });
@@ -154,10 +153,18 @@ function Index() {
       const document = editorStore.getState().mapJsonDocument;
       try {
         if (session?.workspace) {
-          await Promise.all([
-            refreshWorkspaceAuditContext(session.workspace, document),
-            refreshScriptSpatialContext(session.workspace, document),
-          ]);
+          // Scripts primeiro: eles podem introduzir MAP_* que não aparecem em
+          // warp_events/connections. Depois o Workspace carrega também esses
+          // destinos usando o mesmo pipeline de map.bin + atlas real.
+          const scriptContext = await refreshScriptSpatialContext(session.workspace, document);
+          const scriptMapIds = scriptContext?.contracts
+            ? referencedScriptWarpMapIds(scriptContext.contracts)
+            : [];
+          await refreshWorkspaceAuditContextWithScriptMaps(
+            session.workspace,
+            document,
+            scriptMapIds,
+          );
         } else {
           // Sem Workspace, o contexto de scripts pode ter vindo de um bundle
           // autocontido. Preservamos somente quando pertence à MESMA instância
