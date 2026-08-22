@@ -89,9 +89,19 @@ function Index() {
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
 
-      if (modifier && key === "z") { event.preventDefault(); event.shiftKey ? editorStore.redo() : editorStore.undo(); return; }
+      if (modifier && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) editorStore.redo();
+        else editorStore.undo();
+        return;
+      }
       if (modifier && key === "y") { event.preventDefault(); editorStore.redo(); return; }
-      if (modifier && key === "c") { event.preventDefault(); event.shiftKey ? clipboardStore.copyRawSelection() : clipboardStore.copySelection(); return; }
+      if (modifier && key === "c") {
+        event.preventDefault();
+        if (event.shiftKey) clipboardStore.copyRawSelection();
+        else clipboardStore.copySelection();
+        return;
+      }
       if (modifier && key === "x") { event.preventDefault(); clipboardStore.cutSelection(event.shiftKey ? "raw" : undefined); return; }
       if (modifier && key === "v") { event.preventDefault(); clipboardStore.pasteAtSelected(); return; }
 
