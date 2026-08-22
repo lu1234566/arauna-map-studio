@@ -90,8 +90,16 @@ async function loadLightweightAuditAtlas(
   if (existing) return existing;
 
   const pending = (async () => {
-    const primaryDir = resolveTilesetDirectory(workspace.tilesets, "primary", layout.primary_tileset);
-    const secondaryDir = resolveTilesetDirectory(workspace.tilesets, "secondary", layout.secondary_tileset);
+    const primaryDir = resolveTilesetDirectory(
+      workspace.tilesets,
+      "primary",
+      layout.primary_tileset,
+    );
+    const secondaryDir = resolveTilesetDirectory(
+      workspace.tilesets,
+      "secondary",
+      layout.secondary_tileset,
+    );
     if (!primaryDir || !secondaryDir) {
       throw new Error(
         `tileset(s) de auditoria não encontrados: ${layout.primary_tileset} + ${layout.secondary_tileset}`,
@@ -134,7 +142,8 @@ async function currentMapAuditEntry(
 ): Promise<NonNullable<ImplementabilityWorkspaceContext["maps"][string]>> {
   const descriptor = byId.get(sourceMapId);
   if (!descriptor) {
-    loadErrors[sourceMapId] = "mapa atual não encontrado no Workspace; identidade do layout/tilesets não pôde ser certificada";
+    loadErrors[sourceMapId] =
+      "mapa atual não encontrado no Workspace; identidade do layout/tilesets não pôde ser certificada";
     return { mapJson: currentDocument };
   }
   if (descriptor.error) {
@@ -144,7 +153,8 @@ async function currentMapAuditEntry(
 
   const layout = descriptor.layout ?? workspace.layouts.get(descriptor.layoutId);
   if (!layout) {
-    loadErrors[sourceMapId] = `layout ${descriptor.layoutId || "(vazio)"} do mapa atual não encontrado`;
+    loadErrors[sourceMapId] =
+      `layout ${descriptor.layoutId || "(vazio)"} do mapa atual não encontrado`;
     return { mapJson: currentDocument };
   }
 

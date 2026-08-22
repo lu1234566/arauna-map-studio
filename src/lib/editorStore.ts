@@ -11,10 +11,7 @@ import {
   type ValidationReport,
   validateMap,
 } from "./emeraldMap";
-import {
-  edgeInteriorAnchor,
-  isConnectionEdgeWarpPosition,
-} from "./connectionEdgeWarp";
+import { edgeInteriorAnchor, isConnectionEdgeWarpPosition } from "./connectionEdgeWarp";
 import {
   clampCollision,
   clampElevation,
@@ -53,10 +50,7 @@ import {
   serializeCityBundle,
   type AraunaCityBundle,
 } from "./araunaCityBundle";
-import {
-  auditGameImplementability,
-  type GameImplementabilityReport,
-} from "./gameImplementability";
+import { auditGameImplementability, type GameImplementabilityReport } from "./gameImplementability";
 import { realAtlasStore } from "./realAtlasStore";
 
 export type Tool = "pencil" | "picker" | "fill" | "select";
@@ -137,14 +131,7 @@ interface EditorSnapshot {
 const STORAGE_MAP = "arauna.map.v3";
 const STORAGE_PREFS = "arauna.prefs.v1";
 const MAX_HISTORY = 100;
-const VALID_CONNECTION_DIRECTIONS = new Set([
-  "up",
-  "down",
-  "left",
-  "right",
-  "dive",
-  "emerge",
-]);
+const VALID_CONNECTION_DIRECTIONS = new Set(["up", "down", "left", "right", "dive", "emerge"]);
 
 function defaultMap(): MapData {
   return createEmptyMap(20, 20, 0x000);
@@ -189,8 +176,10 @@ function eventCoordinateAllowed(
   y: number,
 ): boolean {
   if (pointInsideMap(map, x, y)) return true;
-  return event.source === "warp" &&
-    isConnectionEdgeWarpPosition(document, map.width, map.height, { x, y });
+  return (
+    event.source === "warp" &&
+    isConnectionEdgeWarpPosition(document, map.width, map.height, { x, y })
+  );
 }
 
 function deriveMapJson(document: EditableMapJson) {
@@ -335,8 +324,12 @@ class EditorStore {
           tool: prefs.tool ?? this.state.tool,
           viewMode: prefs.viewMode ?? this.state.viewMode,
           selectedMetatile: prefs.selectedMetatile ?? this.state.selectedMetatile,
-          selectedCollision: clampCollision(prefs.selectedCollision ?? this.state.selectedCollision),
-          selectedElevation: clampElevation(prefs.selectedElevation ?? this.state.selectedElevation),
+          selectedCollision: clampCollision(
+            prefs.selectedCollision ?? this.state.selectedCollision,
+          ),
+          selectedElevation: clampElevation(
+            prefs.selectedElevation ?? this.state.selectedElevation,
+          ),
           zoom: prefs.zoom ?? this.state.zoom,
           showGrid: prefs.showGrid ?? this.state.showGrid,
           showCoords: prefs.showCoords ?? this.state.showCoords,
@@ -369,16 +362,21 @@ class EditorStore {
           let mapMetadata: PokeemeraldMapMetadata | null = null;
           let events: DemoEvent[] = [];
           let protectedCells: ProtectedCell[] = [];
-          if (saved.mapJsonDocument && typeof saved.mapJsonDocument === "object" && !Array.isArray(saved.mapJsonDocument)) {
+          if (
+            saved.mapJsonDocument &&
+            typeof saved.mapJsonDocument === "object" &&
+            !Array.isArray(saved.mapJsonDocument)
+          ) {
             mapJsonDocument = cloneMapJson(saved.mapJsonDocument as EditableMapJson);
             const derived = deriveMapJson(mapJsonDocument);
             mapMetadata = derived.metadata;
             events = derived.events;
             protectedCells = derived.protectedCells;
           } else {
-            mapMetadata = saved.mapMetadata && typeof saved.mapMetadata === "object"
-              ? (saved.mapMetadata as PokeemeraldMapMetadata)
-              : null;
+            mapMetadata =
+              saved.mapMetadata && typeof saved.mapMetadata === "object"
+                ? (saved.mapMetadata as PokeemeraldMapMetadata)
+                : null;
             events = Array.isArray(saved.events) ? (saved.events as DemoEvent[]) : [];
             protectedCells = Array.isArray(saved.protectedCells)
               ? (saved.protectedCells as ProtectedCell[])
@@ -392,14 +390,16 @@ class EditorStore {
             mapJsonSource: typeof saved.mapJsonSource === "string" ? saved.mapJsonSource : null,
             mapJsonDocument,
             mapJsonDirty: Boolean(saved.mapJsonDirty),
-            selectedEventId: typeof saved.selectedEventId === "string" ? saved.selectedEventId : null,
+            selectedEventId:
+              typeof saved.selectedEventId === "string" ? saved.selectedEventId : null,
             mapMetadata,
             events,
             protectedCells,
             map: restoredMap,
             validation: null,
             gameAudit: null,
-            lastMessage: "Projeto restaurado do armazenamento local. Rode Validar antes de exportar para o jogo.",
+            lastMessage:
+              "Projeto restaurado do armazenamento local. Rode Validar antes de exportar para o jogo.",
           };
         }
       }
@@ -491,7 +491,8 @@ class EditorStore {
         event.source !== "warp" ||
         pointInsideMap(this.state.map, event.x, event.y) ||
         !isConnectionEdgeWarpPosition(document, this.state.map.width, this.state.map.height, event)
-      ) return false;
+      )
+        return false;
       const anchor = edgeInteriorAnchor(this.state.map.width, this.state.map.height, event);
       return anchor?.x === x && anchor.y === y;
     });
@@ -505,7 +506,9 @@ class EditorStore {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
     if (this.isProtected(x, y)) {
       this.set(
-        { lastMessage: `Célula (${x},${y}) protegida — desligue "Proteger progressão" para editar.` },
+        {
+          lastMessage: `Célula (${x},${y}) protegida — desligue "Proteger progressão" para editar.`,
+        },
         false,
       );
       return;
@@ -536,7 +539,11 @@ class EditorStore {
     const i = idx(x, y, s.map.width);
     if (s.viewMode === "visual") {
       const id = s.map.metatiles[i] ?? 0;
-      this.set({ selectedMetatile: id, selectedCell: i, lastMessage: `Metatile ${id} selecionado.` });
+      this.set({
+        selectedMetatile: id,
+        selectedCell: i,
+        lastMessage: `Metatile ${id} selecionado.`,
+      });
       return;
     }
     const physicalLayer = editablePhysicalLayer(s.viewMode);
@@ -564,27 +571,25 @@ class EditorStore {
     }
 
     const map = cloneMap(s.map);
-    const changed = s.viewMode === "visual"
-      ? floodFill(map, x, y, s.selectedMetatile, (cx, cy) => this.isProtected(cx, cy))
-      : floodFillPhysical(
-          map,
-          x,
-          y,
-          physicalLayer!,
-          physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation,
-          (cx, cy) => this.isProtected(cx, cy),
-        );
+    const changed =
+      s.viewMode === "visual"
+        ? floodFill(map, x, y, s.selectedMetatile, (cx, cy) => this.isProtected(cx, cy))
+        : floodFillPhysical(
+            map,
+            x,
+            y,
+            physicalLayer!,
+            physicalLayer === "collision" ? s.selectedCollision : s.selectedElevation,
+            (cx, cy) => this.isProtected(cx, cy),
+          );
 
     if (!changed.length) {
       this.set({ lastMessage: "Nada para preencher." }, false);
       return;
     }
     this.pushHistory();
-    const layerName = s.viewMode === "visual"
-      ? "visual"
-      : physicalLayer === "collision"
-        ? "colisão"
-        : "elevação";
+    const layerName =
+      s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
@@ -624,11 +629,8 @@ class EditorStore {
 
     if (!changed) return;
     this.pushHistory();
-    const layerName = s.viewMode === "visual"
-      ? "visual"
-      : physicalLayer === "collision"
-        ? "colisão"
-        : "elevação";
+    const layerName =
+      s.viewMode === "visual" ? "visual" : physicalLayer === "collision" ? "colisão" : "elevação";
     this.syncHistoryDepths({
       map,
       dirty: true,
@@ -657,13 +659,17 @@ class EditorStore {
     const event = this.state.events.find((candidate) => candidate.id === selectedEventId);
     if (!event) return;
     const selectedCell = eventSelectionIndex(event, this.state.map, this.state.mapJsonDocument);
-    this.set({
-      selectedEventId,
-      selectedCell,
-      lastMessage: selectedCell === null
-        ? `${event.label} selecionado; coordenada (${event.x},${event.y}) não possui âncora visual no layout.`
-        : `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
-    }, false);
+    this.set(
+      {
+        selectedEventId,
+        selectedCell,
+        lastMessage:
+          selectedCell === null
+            ? `${event.label} selecionado; coordenada (${event.x},${event.y}) não possui âncora visual no layout.`
+            : `${event.label} selecionado — arraste para mover ou edite no inspetor.`,
+      },
+      false,
+    );
   };
 
   moveEvent = (id: string, x: number, y: number, continuous = false) => {
@@ -682,7 +688,12 @@ class EditorStore {
         lastMessage: `${current.label} movido para (${x},${y}).`,
       });
     } catch (error) {
-      this.set({ lastMessage: `Falha ao mover evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao mover evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
     }
   };
 
@@ -698,7 +709,7 @@ class EditorStore {
           if (!eventCoordinateAllowed(current, s.map, s.mapJsonDocument, x, y)) {
             throw new Error(
               `Coordenada (${x},${y}) fora do mapa ${s.map.width}×${s.map.height}; ` +
-              "somente warps na primeira célula de uma face com conexão podem ficar na margem.",
+                "somente warps na primeira célula de uma face com conexão podem ficar na margem.",
             );
           }
         }
@@ -713,15 +724,18 @@ class EditorStore {
         events: derived.events,
         protectedCells: derived.protectedCells,
         selectedEventId: id,
-        selectedCell: selected
-          ? eventSelectionIndex(selected, s.map, document)
-          : s.selectedCell,
+        selectedCell: selected ? eventSelectionIndex(selected, s.map, document) : s.selectedCell,
         mapJsonDirty: true,
         validation: null,
         lastMessage: `Campo ${key} atualizado em ${id}.`,
       });
     } catch (error) {
-      this.set({ lastMessage: `Falha ao editar evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao editar evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
     }
   };
 
@@ -732,9 +746,10 @@ class EditorStore {
       return null;
     }
     const fallbackIndex = s.selectedCell ?? 0;
-    const targetX = x ?? (fallbackIndex % s.map.width);
+    const targetX = x ?? fallbackIndex % s.map.width;
     const targetY = y ?? Math.floor(fallbackIndex / s.map.width);
-    if (targetX < 0 || targetY < 0 || targetX >= s.map.width || targetY >= s.map.height) return null;
+    if (targetX < 0 || targetY < 0 || targetX >= s.map.width || targetY >= s.map.height)
+      return null;
     try {
       this.pushHistory();
       const result = addEditableEvent(s.mapJsonDocument, source, targetX, targetY);
@@ -746,7 +761,12 @@ class EditorStore {
       });
       return result.id;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao criar evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao criar evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return null;
     }
   };
@@ -764,7 +784,12 @@ class EditorStore {
         lastMessage: `${current?.label ?? id} removido do map.json.`,
       });
     } catch (error) {
-      this.set({ lastMessage: `Falha ao remover evento: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao remover evento: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
     }
   };
 
@@ -781,7 +806,12 @@ class EditorStore {
       });
       return true;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao editar ${key}: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao editar ${key}: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return false;
     }
   };
@@ -802,7 +832,12 @@ class EditorStore {
       });
       return true;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao editar conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao editar conexão: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return false;
     }
   };
@@ -819,7 +854,12 @@ class EditorStore {
       });
       return result.index;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao criar conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao criar conexão: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return null;
     }
   };
@@ -836,7 +876,12 @@ class EditorStore {
       });
       return true;
     } catch (error) {
-      this.set({ lastMessage: `Falha ao remover conexão: ${error instanceof Error ? error.message : String(error)}` }, false);
+      this.set(
+        {
+          lastMessage: `Falha ao remover conexão: ${error instanceof Error ? error.message : String(error)}`,
+        },
+        false,
+      );
       return false;
     }
   };
@@ -848,8 +893,10 @@ class EditorStore {
   setTool = (tool: Tool) => this.set({ tool });
   setViewMode = (viewMode: ViewMode) => this.set({ viewMode });
   setMetatile = (selectedMetatile: number) => this.set({ selectedMetatile });
-  setCollision = (selectedCollision: number) => this.set({ selectedCollision: clampCollision(selectedCollision) });
-  setElevation = (selectedElevation: number) => this.set({ selectedElevation: clampElevation(selectedElevation) });
+  setCollision = (selectedCollision: number) =>
+    this.set({ selectedCollision: clampCollision(selectedCollision) });
+  setElevation = (selectedElevation: number) =>
+    this.set({ selectedElevation: clampElevation(selectedElevation) });
   setZoom = (zoom: number) => this.set({ zoom: Math.min(8, Math.max(0.5, zoom)) });
   setPan = (pan: { x: number; y: number }) => this.set({ pan }, false);
   toggleGrid = () => this.set({ showGrid: !this.state.showGrid });
@@ -961,18 +1008,29 @@ class EditorStore {
       if (atlas) {
         const activeFingerprint = atlasFingerprint(atlas);
         if (bundle.tilesets.primary && bundle.tilesets.primary !== atlas.primary) {
-          throw new Error(`Tileset primário incompatível: bundle=${bundle.tilesets.primary}; atlas=${atlas.primary}.`);
+          throw new Error(
+            `Tileset primário incompatível: bundle=${bundle.tilesets.primary}; atlas=${atlas.primary}.`,
+          );
         }
         if (bundle.tilesets.secondary && bundle.tilesets.secondary !== atlas.secondary) {
-          throw new Error(`Tileset secundário incompatível: bundle=${bundle.tilesets.secondary}; atlas=${atlas.secondary}.`);
+          throw new Error(
+            `Tileset secundário incompatível: bundle=${bundle.tilesets.secondary}; atlas=${atlas.secondary}.`,
+          );
         }
-        if (bundle.tilesets.atlasFingerprint && bundle.tilesets.atlasFingerprint !== activeFingerprint) {
-          throw new Error(`Fingerprint do atlas incompatível: bundle=${bundle.tilesets.atlasFingerprint}; ativo=${activeFingerprint}.`);
+        if (
+          bundle.tilesets.atlasFingerprint &&
+          bundle.tilesets.atlasFingerprint !== activeFingerprint
+        ) {
+          throw new Error(
+            `Fingerprint do atlas incompatível: bundle=${bundle.tilesets.atlasFingerprint}; ativo=${activeFingerprint}.`,
+          );
         }
         const ids = new Set(atlas.records.map((record) => record.id));
         const missing = bundle.tilesets.metatileIdsUsed.filter((id) => !ids.has(id));
         if (missing.length) {
-          throw new Error(`Atlas ativo não contém ${missing.length} metatile(s) usados pelo bundle.`);
+          throw new Error(
+            `Atlas ativo não contém ${missing.length} metatile(s) usados pelo bundle.`,
+          );
         }
       }
 
@@ -1068,7 +1126,8 @@ class EditorStore {
     if (!metadata) {
       issues.push({
         level: "warn" as const,
-        message: "map.json ainda não foi importado; warps, triggers, NPCs, clima e conexões não entraram nesta validação.",
+        message:
+          "map.json ainda não foi importado; warps, triggers, NPCs, clima e conexões não entraram nesta validação.",
       });
     } else {
       const outside = metadataOutOfBounds(metadata, this.state.map.width, this.state.map.height);
@@ -1089,7 +1148,10 @@ class EditorStore {
         const seen = new Set<string>();
         document.connections.forEach((value, index) => {
           if (!value || typeof value !== "object" || Array.isArray(value)) {
-            issues.push({ level: "error" as const, message: `Conexão ${index} não é um objeto válido.` });
+            issues.push({
+              level: "error" as const,
+              message: `Conexão ${index} não é um objeto válido.`,
+            });
             return;
           }
           const connection = value as Record<string, unknown>;
@@ -1097,17 +1159,29 @@ class EditorStore {
           const map = connection.map;
           const offset = connection.offset;
           if (typeof direction !== "string" || !VALID_CONNECTION_DIRECTIONS.has(direction)) {
-            issues.push({ level: "error" as const, message: `Conexão ${index}: direção inválida (${String(direction)}).` });
+            issues.push({
+              level: "error" as const,
+              message: `Conexão ${index}: direção inválida (${String(direction)}).`,
+            });
           }
           if (typeof map !== "string" || !map.startsWith("MAP_")) {
-            issues.push({ level: "warn" as const, message: `Conexão ${index}: destino ${String(map)} não parece um MAP_* válido.` });
+            issues.push({
+              level: "warn" as const,
+              message: `Conexão ${index}: destino ${String(map)} não parece um MAP_* válido.`,
+            });
           }
           if (!Number.isInteger(offset)) {
-            issues.push({ level: "error" as const, message: `Conexão ${index}: offset precisa ser inteiro.` });
+            issues.push({
+              level: "error" as const,
+              message: `Conexão ${index}: offset precisa ser inteiro.`,
+            });
           }
           const signature = `${String(direction)}|${String(map)}|${String(offset)}`;
           if (seen.has(signature)) {
-            issues.push({ level: "warn" as const, message: `Conexão ${index} duplica exatamente direção, destino e offset de outra conexão.` });
+            issues.push({
+              level: "warn" as const,
+              message: `Conexão ${index} duplica exatamente direção, destino e offset de outra conexão.`,
+            });
           }
           seen.add(signature);
         });

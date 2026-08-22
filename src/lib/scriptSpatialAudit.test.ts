@@ -59,11 +59,7 @@ SlateportCity_Movement_ScottApproachPlayer:
 `;
 
 function codes(source: string, mapData = map(), eventDocument = events()) {
-  return auditScriptSpatialContracts(
-    parseScriptSpatialContracts(source),
-    mapData,
-    eventDocument,
-  );
+  return auditScriptSpatialContracts(parseScriptSpatialContracts(source), mapData, eventDocument);
 }
 
 describe("scriptSpatialAudit", () => {
@@ -79,22 +75,26 @@ describe("scriptSpatialAudit", () => {
 A::
   setobjectxyperm LOCALID_SLATEPORT_SCOTT, 40, 61
 `);
-    expect(issues).toContainEqual(expect.objectContaining({
-      code: "SCRIPT_OBJECT_ANCHOR_OUT_OF_BOUNDS",
-      severity: "error",
-    }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCRIPT_OBJECT_ANCHOR_OUT_OF_BOUNDS",
+        severity: "error",
+      }),
+    );
   });
 
   it("flags a runtime anchor painted over by hard collision", () => {
     const blocked = map();
     blocked.physical[27 * blocked.width + 23] = 0x3400;
     const issues = codes(SOURCE, blocked);
-    expect(issues).toContainEqual(expect.objectContaining({
-      code: "SCRIPT_OBJECT_ANCHOR_BLOCKED",
-      severity: "warning",
-      x: 23,
-      y: 27,
-    }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCRIPT_OBJECT_ANCHOR_BLOCKED",
+        severity: "warning",
+        x: 23,
+        y: 27,
+      }),
+    );
   });
 
   it("detects LOCALID names that no longer exist after event refactors", () => {
@@ -102,10 +102,12 @@ A::
 A::
   setobjectxyperm LOCALID_REMOVED_STORY_NPC, 5, 5
 `);
-    expect(issues).toContainEqual(expect.objectContaining({
-      code: "SCRIPT_OBJECT_LOCALID_MISSING",
-      severity: "error",
-    }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCRIPT_OBJECT_LOCALID_MISSING",
+        severity: "error",
+      }),
+    );
   });
 
   it("also catches a removed story NPC referenced only by applymovement", () => {
@@ -117,11 +119,13 @@ A_Movement:
   walk_right
   step_end
 `);
-    expect(issues).toContainEqual(expect.objectContaining({
-      code: "SCRIPT_MOVEMENT_LOCALID_MISSING",
-      severity: "error",
-      localId: "LOCALID_REMOVED_STORY_NPC",
-    }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCRIPT_MOVEMENT_LOCALID_MISSING",
+        severity: "error",
+        localId: "LOCALID_REMOVED_STORY_NPC",
+      }),
+    );
   });
 
   it("resolves numeric applymovement IDs using tools/mapjson index + 1 semantics", () => {
@@ -145,14 +149,18 @@ A_Movement:
         },
       ],
     };
-    const issues = codes(`
+    const issues = codes(
+      `
 A::
   applymovement 1, A_Movement
   end
 A_Movement:
   walk_right
   step_end
-`, map(), numericEvents);
+`,
+      map(),
+      numericEvents,
+    );
     expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_LOCALID_MISSING")).toBe(false);
     expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_HAS_SAFE_PATH")).toBe(true);
   });
@@ -166,11 +174,13 @@ A_Movement:
   walk_right
   step_end
 `);
-    expect(issues).toContainEqual(expect.objectContaining({
-      code: "SCRIPT_MOVEMENT_LOCALID_MISSING",
-      severity: "error",
-      localId: "2",
-    }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCRIPT_MOVEMENT_LOCALID_MISSING",
+        severity: "error",
+        localId: "2",
+      }),
+    );
   });
 
   it("never requires an object_event template for engine-reserved LOCALID_PLAYER/CAMERA", () => {
@@ -188,7 +198,9 @@ A_CameraMovement:
 `);
     expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_LOCALID_MISSING")).toBe(false);
     expect(issues.some((issue) => issue.code === "SCRIPT_OBJECT_LOCALID_MISSING")).toBe(false);
-    expect(issues.filter((issue) => issue.code === "SCRIPT_MOVEMENT_START_UNVERIFIED")).toHaveLength(2);
+    expect(
+      issues.filter((issue) => issue.code === "SCRIPT_MOVEMENT_START_UNVERIFIED"),
+    ).toHaveLength(2);
   });
 
   it("downgrades unresolved external movement definitions instead of silently accepting them", () => {
@@ -197,10 +209,12 @@ A::
   applymovement LOCALID_SLATEPORT_SCOTT, External_Movement
   end
 `);
-    expect(issues).toContainEqual(expect.objectContaining({
-      code: "SCRIPT_MOVEMENT_DEFINITION_EXTERNAL",
-      severity: "warning",
-    }));
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        code: "SCRIPT_MOVEMENT_DEFINITION_EXTERNAL",
+        severity: "warning",
+      }),
+    );
   });
 
   it("keeps uncertain movement geometry as review warning rather than inventing an engine failure", () => {
@@ -209,6 +223,8 @@ A::
     for (let x = 23; x <= 30; x++) blocked.physical[27 * blocked.width + x] = 0x3400;
     const issues = codes(SOURCE, blocked);
     expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_NO_KNOWN_SAFE_PATH")).toBe(true);
-    expect(issues.find((issue) => issue.code === "SCRIPT_MOVEMENT_NO_KNOWN_SAFE_PATH")?.severity).toBe("warning");
+    expect(
+      issues.find((issue) => issue.code === "SCRIPT_MOVEMENT_NO_KNOWN_SAFE_PATH")?.severity,
+    ).toBe("warning");
   });
 });

@@ -1,10 +1,4 @@
-import {
-  METATILE_MASK,
-  PHYSICAL_MASK,
-  exportMapBin,
-  idx,
-  type MapData,
-} from "./emeraldMap";
+import { METATILE_MASK, PHYSICAL_MASK, exportMapBin, idx, type MapData } from "./emeraldMap";
 import { cloneMapJson, stringifyMapJson, type EditableMapJson } from "./eventMapJson";
 import { buildPassabilityGrid, type PassabilityAtlas } from "./mapPassability";
 import { getPhysicalLayerValue } from "./physicalMap";
@@ -122,13 +116,16 @@ function requireInteger(
   max = Number.MAX_SAFE_INTEGER,
 ): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
-    throw new CityBundleError(`Bundle inválido: "${field}" precisa ser inteiro entre ${min} e ${max}.`);
+    throw new CityBundleError(
+      `Bundle inválido: "${field}" precisa ser inteiro entre ${min} e ${max}.`,
+    );
   }
   return value;
 }
 
 function requireIntegerArray(value: unknown, field: string, min: number, max: number): number[] {
-  if (!Array.isArray(value)) throw new CityBundleError(`Bundle inválido: "${field}" precisa ser uma lista.`);
+  if (!Array.isArray(value))
+    throw new CityBundleError(`Bundle inválido: "${field}" precisa ser uma lista.`);
   return value.map((item, index) => requireInteger(item, `${field}[${index}]`, min, max));
 }
 
@@ -145,19 +142,24 @@ function requirePhysicalArray(value: unknown, field: string): number[] {
 }
 
 function requireNullableStringArray(value: unknown, field: string): (string | null)[] {
-  if (!Array.isArray(value)) throw new CityBundleError(`Bundle inválido: "${field}" precisa ser lista.`);
+  if (!Array.isArray(value))
+    throw new CityBundleError(`Bundle inválido: "${field}" precisa ser lista.`);
   return value.map((item, index) => {
     if (item !== null && typeof item !== "string") {
-      throw new CityBundleError(`Bundle inválido: "${field}[${index}]" precisa ser string ou null.`);
+      throw new CityBundleError(
+        `Bundle inválido: "${field}[${index}]" precisa ser string ou null.`,
+      );
     }
     return item as string | null;
   });
 }
 
 function requireProtectedCells(value: unknown): ParsedProtectedCell[] {
-  if (!Array.isArray(value)) throw new CityBundleError("Bundle inválido: protectedCells precisa ser lista.");
+  if (!Array.isArray(value))
+    throw new CityBundleError("Bundle inválido: protectedCells precisa ser lista.");
   return value.map((item, index) => {
-    if (!isRecord(item)) throw new CityBundleError(`Bundle inválido: protectedCells[${index}] precisa ser objeto.`);
+    if (!isRecord(item))
+      throw new CityBundleError(`Bundle inválido: protectedCells[${index}] precisa ser objeto.`);
     return {
       x: requireInteger(item.x, `protectedCells[${index}].x`),
       y: requireInteger(item.y, `protectedCells[${index}].y`),
@@ -167,19 +169,28 @@ function requireProtectedCells(value: unknown): ParsedProtectedCell[] {
 }
 
 function requireConnectionContracts(value: unknown): CityConnectionContract[] {
-  if (!Array.isArray(value)) throw new CityBundleError("Bundle inválido: connectionContracts precisa ser lista.");
+  if (!Array.isArray(value))
+    throw new CityBundleError("Bundle inválido: connectionContracts precisa ser lista.");
   return value.map((item, index) => {
-    if (!isRecord(item)) throw new CityBundleError(`Bundle inválido: connectionContracts[${index}] precisa ser objeto.`);
+    if (!isRecord(item))
+      throw new CityBundleError(
+        `Bundle inválido: connectionContracts[${index}] precisa ser objeto.`,
+      );
     return {
       index: requireInteger(item.index, `connectionContracts[${index}].index`, 0),
       map: requireNullableString(item.map, `connectionContracts[${index}].map`),
       direction: requireNullableString(item.direction, `connectionContracts[${index}].direction`),
-      offset: item.offset === null
-        ? null
-        : requireInteger(item.offset, `connectionContracts[${index}].offset`),
+      offset:
+        item.offset === null
+          ? null
+          : requireInteger(item.offset, `connectionContracts[${index}].offset`),
       borderCells: requireInteger(item.borderCells, `connectionContracts[${index}].borderCells`, 0),
       openCells: requireInteger(item.openCells, `connectionContracts[${index}].openCells`, 0),
-      conditionalCells: requireInteger(item.conditionalCells, `connectionContracts[${index}].conditionalCells`, 0),
+      conditionalCells: requireInteger(
+        item.conditionalCells,
+        `connectionContracts[${index}].conditionalCells`,
+        0,
+      ),
     };
   });
 }
@@ -235,11 +246,13 @@ export function atlasFingerprint(atlas: FingerprintAtlas | null | undefined): st
   const records = [...atlas.records]
     .sort((a, b) => a.id - b.id)
     .map((record) => [record.id, record.behavior ?? null, record.layerType ?? null]);
-  return fnv1a(canonicalJson({
-    primary: atlas.primary ?? null,
-    secondary: atlas.secondary ?? null,
-    records,
-  }));
+  return fnv1a(
+    canonicalJson({
+      primary: atlas.primary ?? null,
+      secondary: atlas.secondary ?? null,
+      records,
+    }),
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -275,7 +288,12 @@ export function buildCityBundle(input: BuildCityBundleInput): AraunaCityBundle {
       "Exportar Cidade JSON exige map.json carregado; um grid isolado não é considerado implementável.",
     );
   }
-  if (!Number.isInteger(map.width) || !Number.isInteger(map.height) || map.width <= 0 || map.height <= 0) {
+  if (
+    !Number.isInteger(map.width) ||
+    !Number.isInteger(map.height) ||
+    map.width <= 0 ||
+    map.height <= 0
+  ) {
     throw new CityBundleError(`Dimensões inválidas: ${map.width}×${map.height}.`);
   }
   const size = map.width * map.height;
@@ -301,7 +319,12 @@ export function buildCityBundle(input: BuildCityBundleInput): AraunaCityBundle {
     if (!Number.isInteger(rawId) || rawId < 0 || rawId > METATILE_MASK) {
       throw new CityBundleError(`Metatile fora da faixa na célula ${i}: ${rawId}.`);
     }
-    if (!Number.isInteger(rawPhysical) || rawPhysical < 0 || rawPhysical > 0xffff || (rawPhysical & ~PHYSICAL_MASK) !== 0) {
+    if (
+      !Number.isInteger(rawPhysical) ||
+      rawPhysical < 0 ||
+      rawPhysical > 0xffff ||
+      (rawPhysical & ~PHYSICAL_MASK) !== 0
+    ) {
       throw new CityBundleError(`Bits físicos inválidos na célula ${i}: ${rawPhysical}.`);
     }
     metatiles[i] = rawId;
@@ -381,15 +404,22 @@ export function parseCityBundle(source: string | unknown): AraunaCityBundle {
     try {
       parsed = JSON.parse(source);
     } catch (error) {
-      throw new CityBundleError(`Cidade JSON inválido: ${error instanceof Error ? error.message : String(error)}`);
+      throw new CityBundleError(
+        `Cidade JSON inválido: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  if (!isRecord(parsed)) throw new CityBundleError("Cidade JSON inválido: a raiz precisa ser objeto.");
+  if (!isRecord(parsed))
+    throw new CityBundleError("Cidade JSON inválido: a raiz precisa ser objeto.");
   if (parsed.format !== ARAUNA_CITY_FORMAT) {
-    throw new CityBundleError(`Formato não suportado: ${String(parsed.format)}; esperado ${ARAUNA_CITY_FORMAT}.`);
+    throw new CityBundleError(
+      `Formato não suportado: ${String(parsed.format)}; esperado ${ARAUNA_CITY_FORMAT}.`,
+    );
   }
   if (parsed.version !== ARAUNA_CITY_VERSION) {
-    throw new CityBundleError(`Versão não suportada: ${String(parsed.version)}; esperado ${ARAUNA_CITY_VERSION}.`);
+    throw new CityBundleError(
+      `Versão não suportada: ${String(parsed.version)}; esperado ${ARAUNA_CITY_VERSION}.`,
+    );
   }
 
   requireText(parsed.createdAt, "createdAt");
@@ -420,13 +450,15 @@ export function parseCityBundle(source: string | unknown): AraunaCityBundle {
   requireIntegerArray(cells.collision, "cells.collision", 0, 3);
   requireIntegerArray(cells.elevation, "cells.elevation", 0, 15);
   if (cells.owner !== undefined) requireNullableStringArray(cells.owner, "cells.owner");
-  if (cells.semanticOwner !== undefined) requireNullableStringArray(cells.semanticOwner, "cells.semanticOwner");
+  if (cells.semanticOwner !== undefined)
+    requireNullableStringArray(cells.semanticOwner, "cells.semanticOwner");
 
   if (!isRecord(parsed.mapJson)) throw new CityBundleError("Bundle inválido: mapJson ausente.");
   requireText(parsed.mapJson.id, "mapJson.id");
   requireText(parsed.mapJson.name, "mapJson.name");
   requireText(parsed.mapJson.layout, "mapJson.layout");
-  if (!isRecord(parsed.properties)) throw new CityBundleError("Bundle inválido: properties ausente.");
+  if (!isRecord(parsed.properties))
+    throw new CityBundleError("Bundle inválido: properties ausente.");
   requireProtectedCells(parsed.protectedCells);
   requireConnectionContracts(parsed.connectionContracts);
   if (parsed.semantics !== undefined && !isRecord(parsed.semantics)) {
@@ -472,7 +504,8 @@ function connectionContractMetadataMatches(bundle: AraunaCityBundle): boolean {
     return (
       contract.map === (typeof connection.map === "string" ? connection.map : null) &&
       contract.direction === direction &&
-      contract.offset === (Number.isInteger(connection.offset) ? (connection.offset as number) : null) &&
+      contract.offset ===
+        (Number.isInteger(connection.offset) ? (connection.offset as number) : null) &&
       contract.borderCells === expectedBorderCells &&
       contract.openCells + contract.conditionalCells <= contract.borderCells
     );
@@ -491,18 +524,29 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
     ["cells.collision", collision.length],
     ["cells.elevation", elevation.length],
   ];
-  if (bundle.cells.owner && bundle.cells.owner.length !== expected) lengths.push(["cells.owner", bundle.cells.owner.length]);
-  if (bundle.cells.semanticOwner && bundle.cells.semanticOwner.length !== expected) lengths.push(["cells.semanticOwner", bundle.cells.semanticOwner.length]);
+  if (bundle.cells.owner && bundle.cells.owner.length !== expected)
+    lengths.push(["cells.owner", bundle.cells.owner.length]);
+  if (bundle.cells.semanticOwner && bundle.cells.semanticOwner.length !== expected)
+    lengths.push(["cells.semanticOwner", bundle.cells.semanticOwner.length]);
   for (const [field, length] of lengths) {
     if (length !== expected) {
-      issues.push({ code: "BUNDLE_CELL_COUNT", message: `${field} tem ${length}; esperado ${expected}.` });
+      issues.push({
+        code: "BUNDLE_CELL_COUNT",
+        message: `${field} tem ${length}; esperado ${expected}.`,
+      });
     }
   }
   if (bundle.integrity.cellCount !== expected) {
-    issues.push({ code: "BUNDLE_INTEGRITY_CELL_COUNT", message: `integrity.cellCount=${bundle.integrity.cellCount}; esperado ${expected}.` });
+    issues.push({
+      code: "BUNDLE_INTEGRITY_CELL_COUNT",
+      message: `integrity.cellCount=${bundle.integrity.cellCount}; esperado ${expected}.`,
+    });
   }
   if (bundle.integrity.binByteLength !== expected * 2) {
-    issues.push({ code: "BUNDLE_BIN_SIZE", message: `integrity.binByteLength=${bundle.integrity.binByteLength}; esperado ${expected * 2}.` });
+    issues.push({
+      code: "BUNDLE_BIN_SIZE",
+      message: `integrity.binByteLength=${bundle.integrity.binByteLength}; esperado ${expected * 2}.`,
+    });
   }
   if (issues.length) return issues;
 
@@ -513,7 +557,8 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
   ) {
     issues.push({
       code: "BUNDLE_IDENTITY_MISMATCH",
-      message: "identity não corresponde a id/name/layout do mapJson; o bundle pode apontar para outro mapa.",
+      message:
+        "identity não corresponde a id/name/layout do mapJson; o bundle pode apontar para outro mapa.",
     });
   }
 
@@ -528,7 +573,8 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
   if (canonicalJson(bundle.protectedCells) !== canonicalJson(derivedProtected)) {
     issues.push({
       code: "BUNDLE_PROTECTED_CELLS_MISMATCH",
-      message: "protectedCells não corresponde aos warps/NPCs/triggers/BG events derivados do mapJson.",
+      message:
+        "protectedCells não corresponde aos warps/NPCs/triggers/BG events derivados do mapJson.",
     });
   }
 
@@ -544,11 +590,17 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
     const id = metatiles[i] ?? -1;
     const bits = physical[i] ?? -1;
     if (!Number.isInteger(id) || id < 0 || id > METATILE_MASK) {
-      issues.push({ code: "BUNDLE_METATILE_RANGE", message: `Metatile ${id} na célula ${i} fora de 0x000–0x3FF.` });
+      issues.push({
+        code: "BUNDLE_METATILE_RANGE",
+        message: `Metatile ${id} na célula ${i} fora de 0x000–0x3FF.`,
+      });
       break;
     }
     if (!Number.isInteger(bits) || bits < 0 || bits > 0xffff || (bits & ~PHYSICAL_MASK) !== 0) {
-      issues.push({ code: "BUNDLE_PHYSICAL_RANGE", message: `Bits físicos ${bits} na célula ${i} inválidos.` });
+      issues.push({
+        code: "BUNDLE_PHYSICAL_RANGE",
+        message: `Bits físicos ${bits} na célula ${i} inválidos.`,
+      });
       break;
     }
     if (collision[i] !== derived[i]?.collision || elevation[i] !== derived[i]?.elevation) {
@@ -562,11 +614,17 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
 
   const cellsChecksum = fnv1a(canonicalJson({ metatiles, physical }));
   if (bundle.integrity.cellsChecksum !== cellsChecksum) {
-    issues.push({ code: "BUNDLE_CELLS_CHECKSUM", message: `Checksum de cells diverge: ${bundle.integrity.cellsChecksum} != ${cellsChecksum}.` });
+    issues.push({
+      code: "BUNDLE_CELLS_CHECKSUM",
+      message: `Checksum de cells diverge: ${bundle.integrity.cellsChecksum} != ${cellsChecksum}.`,
+    });
   }
   const mapJsonChecksum = fnv1a(canonicalJson(bundle.mapJson));
   if (bundle.integrity.mapJsonChecksum !== mapJsonChecksum) {
-    issues.push({ code: "BUNDLE_MAPJSON_CHECKSUM", message: `Checksum de mapJson diverge: ${bundle.integrity.mapJsonChecksum} != ${mapJsonChecksum}.` });
+    issues.push({
+      code: "BUNDLE_MAPJSON_CHECKSUM",
+      message: `Checksum de mapJson diverge: ${bundle.integrity.mapJsonChecksum} != ${mapJsonChecksum}.`,
+    });
   }
 
   const map: MapData = {
@@ -578,15 +636,24 @@ export function verifyBundleIntegrity(bundle: AraunaCityBundle): BundleIntegrity
   const bytes = exportMapBin(map);
   const binChecksum = checksumBytes(bytes);
   if (bytes.byteLength !== bundle.integrity.binByteLength) {
-    issues.push({ code: "BUNDLE_BIN_SIZE", message: `map.bin reconstruído tem ${bytes.byteLength}; bundle declara ${bundle.integrity.binByteLength}.` });
+    issues.push({
+      code: "BUNDLE_BIN_SIZE",
+      message: `map.bin reconstruído tem ${bytes.byteLength}; bundle declara ${bundle.integrity.binByteLength}.`,
+    });
   }
   if (binChecksum !== bundle.integrity.binChecksum) {
-    issues.push({ code: "BUNDLE_BIN_CHECKSUM", message: `Checksum de map.bin diverge: ${bundle.integrity.binChecksum} != ${binChecksum}.` });
+    issues.push({
+      code: "BUNDLE_BIN_CHECKSUM",
+      message: `Checksum de map.bin diverge: ${bundle.integrity.binChecksum} != ${binChecksum}.`,
+    });
   }
 
   const used = [...new Set(metatiles)].sort((a, b) => a - b);
   if (canonicalJson(used) !== canonicalJson(bundle.tilesets.metatileIdsUsed)) {
-    issues.push({ code: "BUNDLE_TILESET_USED_IDS", message: "tilesets.metatileIdsUsed não corresponde aos metatiles realmente usados." });
+    issues.push({
+      code: "BUNDLE_TILESET_USED_IDS",
+      message: "tilesets.metatileIdsUsed não corresponde aos metatiles realmente usados.",
+    });
   }
 
   return issues;

@@ -96,12 +96,16 @@ const OCCUPIABLE_SPECIAL_BEHAVIORS = new Set<number>([
 
 /** Behaviors que o engine reconhece como água/surf/corrente ou porta d'água. */
 export function isKnownWaterBehavior(behavior: number | null | undefined): boolean {
-  return behavior != null && Number.isInteger(behavior) && SURFABLE_OR_WATER_BEHAVIORS.has(behavior);
+  return (
+    behavior != null && Number.isInteger(behavior) && SURFABLE_OR_WATER_BEHAVIORS.has(behavior)
+  );
 }
 
 /** Behaviors especiais ocupáveis que o engine trata como warp/movimento. */
 export function isKnownWarpBehavior(behavior: number | null | undefined): boolean {
-  return behavior != null && Number.isInteger(behavior) && OCCUPIABLE_SPECIAL_BEHAVIORS.has(behavior);
+  return (
+    behavior != null && Number.isInteger(behavior) && OCCUPIABLE_SPECIAL_BEHAVIORS.has(behavior)
+  );
 }
 
 /** Condicional conhecido é verificável; unknown continua incerteza real. */

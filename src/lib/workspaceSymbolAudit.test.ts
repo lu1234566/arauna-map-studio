@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  GameImplementabilityReport,
-  ImplementabilityCategory,
-} from "./gameImplementability";
+import type { GameImplementabilityReport, ImplementabilityCategory } from "./gameImplementability";
 import type { EditableMapJson } from "./eventMapJson";
 import type { AraunaWorkspace } from "./repoWorkspace";
 import {

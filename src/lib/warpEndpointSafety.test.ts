@@ -58,9 +58,7 @@ function source(): EditableMapJson {
     id: "MAP_A",
     name: "A",
     layout: "LAYOUT_A",
-    warp_events: [
-      { x: 2, y: 2, elevation: 0, dest_map: "MAP_B", dest_warp_id: "0" },
-    ],
+    warp_events: [{ x: 2, y: 2, elevation: 0, dest_map: "MAP_B", dest_warp_id: "0" }],
   };
 }
 
@@ -69,9 +67,7 @@ function destination(): EditableMapJson {
     id: "MAP_B",
     name: "B",
     layout: "LAYOUT_B",
-    warp_events: [
-      { x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" },
-    ],
+    warp_events: [{ x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" }],
   };
 }
 
@@ -99,22 +95,14 @@ function has(report: GameImplementabilityReport, code: string) {
 describe("warpEndpointSafety", () => {
   it("keeps a verified destination spawn Game-ready", () => {
     const mapJson = source();
-    const report = withWarpEndpointSafetyAudit(
-      baseReport(),
-      mapJson,
-      workspace(mapJson),
-    );
+    const report = withWarpEndpointSafetyAudit(baseReport(), mapJson, workspace(mapJson));
     expect(report.implementable).toBe(true);
     expect(has(report, "WARP_DEST_SPAWN_OK")).toBe(true);
   });
 
   it("blocks a warp whose destination event lands on hard collision", () => {
     const mapJson = source();
-    const report = withWarpEndpointSafetyAudit(
-      baseReport(),
-      mapJson,
-      workspace(mapJson, true),
-    );
+    const report = withWarpEndpointSafetyAudit(baseReport(), mapJson, workspace(mapJson, true));
     expect(report.pass).toBe(false);
     expect(report.implementable).toBe(false);
     expect(has(report, "WARP_DEST_SPAWN_BLOCKED")).toBe(true);

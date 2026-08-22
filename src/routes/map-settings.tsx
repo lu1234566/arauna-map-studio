@@ -43,7 +43,9 @@ function TextSetting({ field, label, value }: { field: string; label: string; va
 
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
       <input
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -102,7 +104,9 @@ function ConnectionTextField({
 
   return (
     <label className="block min-w-0">
-      <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
       <input
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -120,9 +124,10 @@ function ConnectionTextField({
 }
 
 function ConnectionCard({ index, connection }: { index: number; connection: JsonRecord }) {
-  const direction = typeof connection.direction === "string" && connection.direction.length > 0
-    ? connection.direction
-    : "up";
+  const direction =
+    typeof connection.direction === "string" && connection.direction.length > 0
+      ? connection.direction
+      : "up";
   const borderDirection = BORDER_DIRECTIONS.includes(direction as ConnectionDirection)
     ? (direction as ConnectionDirection)
     : null;
@@ -135,7 +140,9 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
       <div className="mb-2 flex items-center gap-2">
         <Cable className="size-3.5 text-primary" />
         <span className="font-mono text-[10px] font-semibold">Conexão {index}</span>
-        <span className="rounded bg-surface px-1.5 py-0.5 text-[9px] uppercase text-muted-foreground">{direction}</span>
+        <span className="rounded bg-surface px-1.5 py-0.5 text-[9px] uppercase text-muted-foreground">
+          {direction}
+        </span>
         <button
           type="button"
           onClick={() => editorStore.removeConnection(index)}
@@ -146,16 +153,29 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
       </div>
 
       <div className="grid gap-2 sm:grid-cols-[1fr_110px_90px]">
-        <ConnectionTextField index={index} field="map" label="Mapa de destino" value={connection.map} />
+        <ConnectionTextField
+          index={index}
+          field="map"
+          label="Mapa de destino"
+          value={connection.map}
+        />
         <label className="block">
-          <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">Direção</span>
+          <span className="mb-0.5 block text-[9px] uppercase tracking-wide text-muted-foreground">
+            Direção
+          </span>
           {borderDirection ? (
             <select
               value={borderDirection}
-              onChange={(event) => editorStore.updateConnection(index, "direction", event.target.value)}
+              onChange={(event) =>
+                editorStore.updateConnection(index, "direction", event.target.value)
+              }
               className="h-7 w-full rounded-sm border border-border bg-background px-1.5 font-mono text-[10px] outline-none focus:border-primary/60"
             >
-              {BORDER_DIRECTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
+              {BORDER_DIRECTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
             </select>
           ) : (
             <div
@@ -170,7 +190,12 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
             </div>
           )}
         </label>
-        <ConnectionTextField index={index} field="offset" label="Offset" value={connection.offset} />
+        <ConnectionTextField
+          index={index}
+          field="offset"
+          label="Offset"
+          value={connection.offset}
+        />
       </div>
 
       {!borderDirection && (
@@ -183,10 +208,15 @@ function ConnectionCard({ index, connection }: { index: number; connection: Json
 
       {extras.length > 0 && (
         <details className="mt-2 rounded-sm border border-border bg-canvas p-1.5">
-          <summary className="cursor-pointer text-[9px] text-muted-foreground">Campos extras preservados ({extras.length})</summary>
+          <summary className="cursor-pointer text-[9px] text-muted-foreground">
+            Campos extras preservados ({extras.length})
+          </summary>
           <div className="mt-1 space-y-1 font-mono text-[9px] text-muted-foreground">
             {extras.map(([key, value]) => (
-              <div key={key} className="flex gap-2"><span>{key}</span><span className="ml-auto truncate">{JSON.stringify(value)}</span></div>
+              <div key={key} className="flex gap-2">
+                <span>{key}</span>
+                <span className="ml-auto truncate">{JSON.stringify(value)}</span>
+              </div>
             ))}
           </div>
         </details>
@@ -218,12 +248,18 @@ function MapSettingsPage() {
         </Link>
         <div>
           <h1 className="text-sm font-semibold">Configurações do mapa</h1>
-          <p className="text-[10px] text-muted-foreground">map.json · propriedades, clima e conexões</p>
+          <p className="text-[10px] text-muted-foreground">
+            map.json · propriedades, clima e conexões
+          </p>
         </div>
         <div className="ml-auto flex items-center gap-2 text-[10px]">
-          <span className="font-mono text-muted-foreground">{state.mapMetadata?.id ?? "sem map.json"}</span>
+          <span className="font-mono text-muted-foreground">
+            {state.mapMetadata?.id ?? "sem map.json"}
+          </span>
           {state.mapJsonDirty && (
-            <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-warning">JSON ALTERADO *</span>
+            <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-warning">
+              JSON ALTERADO *
+            </span>
           )}
         </div>
       </header>
@@ -234,7 +270,8 @@ function MapSettingsPage() {
             <Settings2 className="mx-auto mb-3 size-8 text-warning" />
             <h2 className="text-sm font-semibold">Nenhum map.json carregado</h2>
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Abra um mapa pelo Workspace ou importe um map.json no editor. Esta tela altera o documento real e participa do mesmo undo/redo.
+              Abra um mapa pelo Workspace ou importe um map.json no editor. Esta tela altera o
+              documento real e participa do mesmo undo/redo.
             </p>
           </div>
         </main>
@@ -243,16 +280,44 @@ function MapSettingsPage() {
           <section className="min-w-0 rounded border border-border bg-panel">
             <div className="border-b border-border px-3 py-2">
               <h2 className="panel-title">Propriedades gerais</h2>
-              <p className="mt-1 text-[10px] text-muted-foreground">ID, nome e layout ficam bloqueados aqui porque renomeá-los exige alterações em outros arquivos do repositório.</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                ID, nome e layout ficam bloqueados aqui porque renomeá-los exige alterações em
+                outros arquivos do repositório.
+              </p>
             </div>
 
             <div className="grid gap-2 border-b border-border p-3 text-[10px]">
-              <div className="flex gap-3"><span className="w-24 text-muted-foreground">ID</span><code>{state.mapMetadata.id}</code></div>
-              <div className="flex gap-3"><span className="w-24 text-muted-foreground">Nome</span><code>{state.mapMetadata.name}</code></div>
-              <div className="flex gap-3"><span className="w-24 text-muted-foreground">Layout</span><code>{state.mapMetadata.layout}</code></div>
-              <div className="flex gap-3"><span className="w-24 text-muted-foreground">Clima atual</span><code>{state.mapMetadata.weather ?? "—"}</code></div>
-              <div className="flex min-w-0 gap-3"><span className="w-24 shrink-0 text-muted-foreground">Tilesets</span><code className="truncate" title={atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas não carregado"}>{atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas não carregado"}</code></div>
-              <div className="flex min-w-0 gap-3"><span className="w-24 shrink-0 text-muted-foreground">Fingerprint</span><code className="truncate" title={fingerprint ?? "—"}>{fingerprint ?? "—"}</code></div>
+              <div className="flex gap-3">
+                <span className="w-24 text-muted-foreground">ID</span>
+                <code>{state.mapMetadata.id}</code>
+              </div>
+              <div className="flex gap-3">
+                <span className="w-24 text-muted-foreground">Nome</span>
+                <code>{state.mapMetadata.name}</code>
+              </div>
+              <div className="flex gap-3">
+                <span className="w-24 text-muted-foreground">Layout</span>
+                <code>{state.mapMetadata.layout}</code>
+              </div>
+              <div className="flex gap-3">
+                <span className="w-24 text-muted-foreground">Clima atual</span>
+                <code>{state.mapMetadata.weather ?? "—"}</code>
+              </div>
+              <div className="flex min-w-0 gap-3">
+                <span className="w-24 shrink-0 text-muted-foreground">Tilesets</span>
+                <code
+                  className="truncate"
+                  title={atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas não carregado"}
+                >
+                  {atlas ? `${atlas.primary} + ${atlas.secondary}` : "atlas não carregado"}
+                </code>
+              </div>
+              <div className="flex min-w-0 gap-3">
+                <span className="w-24 shrink-0 text-muted-foreground">Fingerprint</span>
+                <code className="truncate" title={fingerprint ?? "—"}>
+                  {fingerprint ?? "—"}
+                </code>
+              </div>
             </div>
 
             <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
@@ -268,7 +333,9 @@ function MapSettingsPage() {
             </div>
 
             <div className="border-t border-border p-3 text-[10px] leading-relaxed text-muted-foreground">
-              Alterações são aplicadas ao documento em memória, marcam <b className="text-foreground">map.json</b> como alterado e podem ser desfeitas com Ctrl+Z no editor. Clima e fingerprint entram na auditoria “Implementável no jogo”.
+              Alterações são aplicadas ao documento em memória, marcam{" "}
+              <b className="text-foreground">map.json</b> como alterado e podem ser desfeitas com
+              Ctrl+Z no editor. Clima e fingerprint entram na auditoria “Implementável no jogo”.
             </div>
           </section>
 
@@ -277,7 +344,8 @@ function MapSettingsPage() {
               <div>
                 <h2 className="panel-title">Conexões entre mapas</h2>
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Destino, direção e offset do array connections. Dive/Emerge existentes são preservados sem coerção para uma borda 2D.
+                  Destino, direção e offset do array connections. Dive/Emerge existentes são
+                  preservados sem coerção para uma borda 2D.
                 </p>
               </div>
               <div className="ml-auto flex flex-wrap gap-1">
@@ -304,7 +372,8 @@ function MapSettingsPage() {
               ))}
               {connections.length === 0 && (
                 <div className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                  Este mapa não possui conexões. Use os botões acima para criar uma conexão de borda.
+                  Este mapa não possui conexões. Use os botões acima para criar uma conexão de
+                  borda.
                 </div>
               )}
             </div>

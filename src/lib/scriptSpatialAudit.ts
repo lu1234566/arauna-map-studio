@@ -243,7 +243,9 @@ export function auditScriptSpatialContracts(
     const candidates = [
       ...(starts.get(use.localId) ?? []),
       ...(anchorsByObject.get(use.localId) ?? []).map((anchor) => ({ x: anchor.x, y: anchor.y })),
-    ].filter((candidate, index, all) => all.findIndex((other) => samePoint(candidate, other)) === index);
+    ].filter(
+      (candidate, index, all) => all.findIndex((other) => samePoint(candidate, other)) === index,
+    );
 
     if (!movement.steps.length) {
       // Facing/delay/emote/in-place: geometricamente neutro, logo não depende de

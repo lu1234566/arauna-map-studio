@@ -81,11 +81,7 @@ function sharedSource(): EditableMapJson {
 }
 
 function scriptsSource() {
-  return (
-    "ContestHall_MapScripts::\n" +
-    "\tsetobjectxyperm LOCALID_CONTEST_MC, 1, 2\n" +
-    "\tend\n"
-  );
+  return "ContestHall_MapScripts::\n" + "\tsetobjectxyperm LOCALID_CONTEST_MC, 1, 2\n" + "\tend\n";
 }
 
 function withSnapshot(): AraunaCityBundle {

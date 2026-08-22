@@ -17,10 +17,7 @@ import {
   clearScriptSpatialContext,
   installScriptSpatialContextFromBundle,
 } from "./scriptSpatialContext";
-import {
-  clearWorkspaceAuditContext,
-  setWorkspaceAuditContext,
-} from "./workspaceAuditContext";
+import { clearWorkspaceAuditContext, setWorkspaceAuditContext } from "./workspaceAuditContext";
 
 const atlas: FingerprintAtlas = {
   primary: "gTileset_General",

@@ -4,31 +4,18 @@ import {
   clearBundleDependencyContext,
   installBundleDependencyContextFromImport,
 } from "./bundleDependencyContext";
-import {
-  withScriptSpatialSnapshot,
-  withSharedEventsSnapshot,
-} from "./cityBundleDependencies";
+import { withScriptSpatialSnapshot, withSharedEventsSnapshot } from "./cityBundleDependencies";
 import type { MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
-import type {
-  GameImplementabilityReport,
-  ImplementabilityCategory,
-} from "./gameImplementability";
+import type { GameImplementabilityReport, ImplementabilityCategory } from "./gameImplementability";
 import { withActiveScriptSpatialAudit } from "./gameImplementabilityWithScripts";
-import type {
-  AraunaWorkspace,
-  WorkspaceLayout,
-  WorkspaceMap,
-} from "./repoWorkspace";
+import type { AraunaWorkspace, WorkspaceLayout, WorkspaceMap } from "./repoWorkspace";
 import {
   clearScriptSpatialContext,
   installScriptSpatialContextFromBundle,
   refreshScriptSpatialContext,
 } from "./scriptSpatialContext";
-import {
-  clearWorkspaceAuditContext,
-  setWorkspaceAuditContext,
-} from "./workspaceAuditContext";
+import { clearWorkspaceAuditContext, setWorkspaceAuditContext } from "./workspaceAuditContext";
 
 const CATEGORIES: ImplementabilityCategory[] = [
   "grid",
@@ -264,9 +251,7 @@ describe("withActiveScriptSpatialAudit", () => {
       id: "MAP_B",
       name: "B",
       layout: "LAYOUT_B",
-      warp_events: [
-        { x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" },
-      ],
+      warp_events: [{ x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" }],
     };
     await refreshScriptSpatialContext(
       workspaceWithDestination("A::\n\twarp MAP_B, 0\n\tend\n", destination),
@@ -285,9 +270,7 @@ describe("withActiveScriptSpatialAudit", () => {
       id: "MAP_B",
       name: "B",
       layout: "LAYOUT_B",
-      warp_events: [
-        { x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" },
-      ],
+      warp_events: [{ x: 1, y: 1, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" }],
     };
     await refreshScriptSpatialContext(
       workspaceWithDestination("A::\n\twarp MAP_B, 0\n\tend\n", destination),

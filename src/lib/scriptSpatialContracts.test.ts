@@ -58,7 +58,11 @@ describe("scriptSpatialContracts", () => {
       y: 13,
       scriptLabel: "SlateportCity_EventScript_MovePeopleForSternInterview",
     });
-    expect(contracts.anchors.filter((anchor) => anchor.localId === "LOCALID_SLATEPORT_SCOTT").map((anchor) => [anchor.x, anchor.y])).toEqual([
+    expect(
+      contracts.anchors
+        .filter((anchor) => anchor.localId === "LOCALID_SLATEPORT_SCOTT")
+        .map((anchor) => [anchor.x, anchor.y]),
+    ).toEqual([
       [23, 27],
       [22, 27],
     ]);
@@ -133,10 +137,7 @@ A::
       {
         x: 5,
         y: 6,
-        reasons: [
-          "setobjectxyperm LOCALID_A em A",
-          "setobjectxy LOCALID_B em A",
-        ],
+        reasons: ["setobjectxyperm LOCALID_A em A", "setobjectxy LOCALID_B em A"],
       },
     ]);
   });

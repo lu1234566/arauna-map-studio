@@ -5,14 +5,8 @@ import {
   type CitySemantics,
 } from "./araunaCityBundle";
 import { cloneMapJson, stringifyMapJson, type EditableMapJson } from "./eventMapJson";
-import {
-  parsePokeemeraldMapJson,
-  type ParsedProtectedCell,
-} from "./pokeemeraldMapJson";
-import {
-  parseScriptSpatialContracts,
-  type ScriptSpatialContracts,
-} from "./scriptSpatialContracts";
+import { parsePokeemeraldMapJson, type ParsedProtectedCell } from "./pokeemeraldMapJson";
+import { parseScriptSpatialContracts, type ScriptSpatialContracts } from "./scriptSpatialContracts";
 
 export const SHARED_EVENTS_SNAPSHOT_FORMAT = "pokeemerald-shared-events-v1" as const;
 export const SCRIPT_SPATIAL_SNAPSHOT_FORMAT = "pokeemerald-script-spatial-v1" as const;
@@ -62,9 +56,7 @@ function externalDependencies(
 ): CityBundleExternalDependencies {
   if (!semantics) return {};
   const raw = (semantics as CityDependencySemantics).externalDependencies;
-  return isRecord(raw)
-    ? (cloneMapJson(raw) as CityBundleExternalDependencies)
-    : {};
+  return isRecord(raw) ? (cloneMapJson(raw) as CityBundleExternalDependencies) : {};
 }
 
 export function buildSharedEventsSnapshot(
@@ -190,7 +182,8 @@ function validateSharedEventsDependency(bundle: AraunaCityBundle): DependencyInt
     if (raw != null) {
       issues.push({
         code: "BUNDLE_SHARED_EVENTS_UNEXPECTED",
-        message: "Bundle contém snapshot de shared events, mas mapJson não declara shared_events_map.",
+        message:
+          "Bundle contém snapshot de shared events, mas mapJson não declara shared_events_map.",
       });
     }
     return issues;
@@ -233,7 +226,8 @@ function validateSharedEventsDependency(bundle: AraunaCityBundle): DependencyInt
     if (canonicalJson(derived) !== canonicalJson(snapshot.protectedCells)) {
       issues.push({
         code: "BUNDLE_SHARED_EVENTS_PROTECTION_MISMATCH",
-        message: "protectedCells do shared-events snapshot não corresponde aos eventos efetivos do mapJson compartilhado.",
+        message:
+          "protectedCells do shared-events snapshot não corresponde aos eventos efetivos do mapJson compartilhado.",
       });
     }
   } catch (error) {
@@ -255,13 +249,14 @@ function validateScriptSpatialDependency(bundle: AraunaCityBundle): DependencyIn
   if (!snapshot) {
     issues.push({
       code: "BUNDLE_SCRIPT_SPATIAL_INVALID",
-      message: "Bundle contém scriptSpatial, mas o snapshot não possui formato/campos obrigatórios válidos.",
+      message:
+        "Bundle contém scriptSpatial, mas o snapshot não possui formato/campos obrigatórios válidos.",
     });
     return issues;
   }
 
-  const expectedMapName = nonEmptyText(bundle.mapJson.shared_scripts_map)
-    ?? nonEmptyText(bundle.mapJson.name);
+  const expectedMapName =
+    nonEmptyText(bundle.mapJson.shared_scripts_map) ?? nonEmptyText(bundle.mapJson.name);
   if (expectedMapName && snapshot.mapName !== expectedMapName) {
     issues.push({
       code: "BUNDLE_SCRIPT_SPATIAL_SOURCE_MISMATCH",
@@ -305,10 +300,7 @@ function validateScriptSpatialDependency(bundle: AraunaCityBundle): DependencyIn
 }
 
 export function validateBundleDependencies(bundle: AraunaCityBundle): DependencyIntegrityIssue[] {
-  return [
-    ...validateSharedEventsDependency(bundle),
-    ...validateScriptSpatialDependency(bundle),
-  ];
+  return [...validateSharedEventsDependency(bundle), ...validateScriptSpatialDependency(bundle)];
 }
 
 export function effectiveProtectedCellsFromBundle(

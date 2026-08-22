@@ -1,7 +1,4 @@
-import type {
-  AraunaCityBundle,
-  CitySemantics,
-} from "./araunaCityBundle";
+import type { AraunaCityBundle, CitySemantics } from "./araunaCityBundle";
 import {
   sharedEventsSnapshotFromBundle,
   validateBundleDependencies,

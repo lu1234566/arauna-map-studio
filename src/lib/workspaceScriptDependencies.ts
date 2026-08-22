@@ -24,9 +24,7 @@ export async function refreshWorkspaceAuditContextWithScriptMaps(
   }
 
   const unique = [...new Set([...mapIds].filter((id) => id.startsWith("MAP_")))].sort();
-  const existingConnections = Array.isArray(document.connections)
-    ? document.connections
-    : [];
+  const existingConnections = Array.isArray(document.connections) ? document.connections : [];
   const synthetic: EditableMapJson = {
     ...document,
     connections: [

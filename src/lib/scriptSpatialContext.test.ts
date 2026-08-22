@@ -25,10 +25,7 @@ function fakeFile(source: string): File {
   return { text: async () => source } as unknown as File;
 }
 
-function workspace(
-  maps: WorkspaceMap[],
-  files: Record<string, string>,
-): AraunaWorkspace {
+function workspace(maps: WorkspaceMap[], files: Record<string, string>): AraunaWorkspace {
   const exact = new Map<string, File>();
   const lower = new Map<string, File>();
   const allFiles = {
@@ -77,12 +74,10 @@ describe("scriptSpatialContext", () => {
       name: "A",
       layout: "LAYOUT_A",
     };
-    const ws = workspace(
-      [mapDescriptor("MAP_A", "A")],
-      {
-        "data/maps/A/scripts.inc": "A_Script::\n\tsetobjectxyperm LOCALID_A, 2, 3\n\tapplymovement LOCALID_A, Common_Movement_WalkUp\n\tend\n",
-      },
-    );
+    const ws = workspace([mapDescriptor("MAP_A", "A")], {
+      "data/maps/A/scripts.inc":
+        "A_Script::\n\tsetobjectxyperm LOCALID_A, 2, 3\n\tapplymovement LOCALID_A, Common_Movement_WalkUp\n\tend\n",
+    });
 
     const context = await buildScriptSpatialContext(ws, document);
     expect(context.error).toBeNull();
@@ -106,14 +101,18 @@ describe("scriptSpatialContext", () => {
         mapDescriptor("MAP_CONTEST_HALL", "ContestHall"),
       ],
       {
-        "data/maps/ContestHallCute/scripts.inc": "Wrong::\n\tsetobjectxyperm LOCALID_WRONG, 1, 1\n\tend\n",
-        "data/maps/ContestHall/scripts.inc": "Shared::\n\tsetobjectxyperm LOCALID_SHARED, 4, 5\n\tend\n",
+        "data/maps/ContestHallCute/scripts.inc":
+          "Wrong::\n\tsetobjectxyperm LOCALID_WRONG, 1, 1\n\tend\n",
+        "data/maps/ContestHall/scripts.inc":
+          "Shared::\n\tsetobjectxyperm LOCALID_SHARED, 4, 5\n\tend\n",
       },
     );
 
     const context = await refreshScriptSpatialContext(ws, document);
     expect(context?.scriptMapName).toBe("ContestHall");
-    expect(context?.sourcePath).toBe("data/maps/ContestHall/scripts.inc + data/scripts/movement.inc");
+    expect(context?.sourcePath).toBe(
+      "data/maps/ContestHall/scripts.inc + data/scripts/movement.inc",
+    );
     expect(context?.contracts?.anchors.map((anchor) => anchor.localId)).toEqual(["LOCALID_SHARED"]);
     expect(getScriptSpatialContext()).toBe(context);
   });

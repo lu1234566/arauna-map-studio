@@ -46,8 +46,12 @@ export function ValidationPanel({
               <XCircle className="size-5 text-destructive" />
             )}
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Validação rápida</div>
-              <div className={report.pass ? "font-bold text-success" : "font-bold text-destructive"}>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Validação rápida
+              </div>
+              <div
+                className={report.pass ? "font-bold text-success" : "font-bold text-destructive"}
+              >
                 {report.pass ? "PASS" : "FAIL"}
               </div>
             </div>
@@ -65,8 +69,18 @@ export function ValidationPanel({
               <XCircle className="size-5 text-destructive" />
             )}
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Implementável no jogo</div>
-              <div className={deepReady ? "font-bold text-success" : gameAudit?.pass ? "font-bold text-warning" : "font-bold text-destructive"}>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Implementável no jogo
+              </div>
+              <div
+                className={
+                  deepReady
+                    ? "font-bold text-success"
+                    : gameAudit?.pass
+                      ? "font-bold text-warning"
+                      : "font-bold text-destructive"
+                }
+              >
                 {deepReady ? "SIM · VERIFICADO" : gameAudit?.pass ? "PARCIAL" : "NÃO"}
               </div>
             </div>
@@ -93,9 +107,23 @@ export function ValidationPanel({
                       className="rounded border border-border bg-surface/40 px-2 py-1.5"
                       title={`${counts.errors} erro(s), ${counts.warnings} aviso(s), ${counts.info} info`}
                     >
-                      <div className="truncate text-[9px] font-semibold text-muted-foreground">{CATEGORY_LABELS[category]}</div>
-                      <div className={blocked ? "text-[10px] font-bold text-destructive" : warning ? "text-[10px] font-bold text-warning" : "text-[10px] font-bold text-success"}>
-                        {blocked ? `${counts.errors} erro` : warning ? `${counts.warnings} aviso` : "OK"}
+                      <div className="truncate text-[9px] font-semibold text-muted-foreground">
+                        {CATEGORY_LABELS[category]}
+                      </div>
+                      <div
+                        className={
+                          blocked
+                            ? "text-[10px] font-bold text-destructive"
+                            : warning
+                              ? "text-[10px] font-bold text-warning"
+                              : "text-[10px] font-bold text-success"
+                        }
+                      >
+                        {blocked
+                          ? `${counts.errors} erro`
+                          : warning
+                            ? `${counts.warnings} aviso`
+                            : "OK"}
                       </div>
                     </div>
                   );
@@ -107,7 +135,10 @@ export function ValidationPanel({
               </div>
               <ul className="mb-3">
                 {gameAudit.issues.map((found, n) => (
-                  <li key={`${found.code}-${n}`} className="flex items-start gap-2 rounded-sm px-2 py-1.5 hover:bg-surface">
+                  <li
+                    key={`${found.code}-${n}`}
+                    className="flex items-start gap-2 rounded-sm px-2 py-1.5 hover:bg-surface"
+                  >
                     {found.severity === "error" ? (
                       <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
                     ) : found.severity === "warning" ? (
@@ -116,10 +147,14 @@ export function ValidationPanel({
                       <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                     )}
                     <div className="min-w-0 text-[11px] leading-relaxed">
-                      <span className="mr-1.5 font-mono text-[9px] text-muted-foreground">{found.code}</span>
+                      <span className="mr-1.5 font-mono text-[9px] text-muted-foreground">
+                        {found.code}
+                      </span>
                       {found.message}
                       {found.x !== undefined && found.y !== undefined && (
-                        <span className="ml-1 font-mono text-[9px] text-muted-foreground">({found.x},{found.y})</span>
+                        <span className="ml-1 font-mono text-[9px] text-muted-foreground">
+                          ({found.x},{found.y})
+                        </span>
                       )}
                     </div>
                   </li>
@@ -133,7 +168,10 @@ export function ValidationPanel({
           </div>
           <ul>
             {report.issues.map((found, n) => (
-              <li key={n} className="flex items-start gap-2 rounded-sm px-2 py-1.5 hover:bg-surface">
+              <li
+                key={n}
+                className="flex items-start gap-2 rounded-sm px-2 py-1.5 hover:bg-surface"
+              >
                 {found.level === "error" ? (
                   <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
                 ) : found.level === "warn" ? (
@@ -148,7 +186,9 @@ export function ValidationPanel({
         </div>
 
         <div className="border-t border-border px-3 py-2 text-[10px] text-muted-foreground">
-          “Implementável no jogo” só fica verde com zero erro duro, atlas real verificado, bundle round-trip e dependências essenciais confirmadas. Avisos nunca são corrigidos automaticamente.
+          “Implementável no jogo” só fica verde com zero erro duro, atlas real verificado, bundle
+          round-trip e dependências essenciais confirmadas. Avisos nunca são corrigidos
+          automaticamente.
         </div>
       </div>
     </div>

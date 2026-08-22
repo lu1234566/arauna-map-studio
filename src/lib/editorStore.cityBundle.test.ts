@@ -88,9 +88,7 @@ function slateportMarginFixture() {
     show_map_name: true,
     battle_scene: "MAP_BATTLE_SCENE_NORMAL",
     connections: [{ map: "MAP_ROUTE134", offset: 0, direction: "right" }],
-    warp_events: [
-      { x: 39, y: 7, elevation: 3, dest_map: "MAP_ROUTE134", dest_warp_id: "0" },
-    ],
+    warp_events: [{ x: 39, y: 7, elevation: 3, dest_map: "MAP_ROUTE134", dest_warp_id: "0" }],
     object_events: [
       {
         local_id: "LOCALID_MARGIN_GUARD",
@@ -117,14 +115,25 @@ describe("editorStore Arauna City atomic import", () => {
   it("does not mutate state/history on failure and groups a valid import into one undo", () => {
     const initial = editorStore.getState();
     const initialUndoDepth = initial.undoDepth;
-    const invalid = editorStore.importCityBundle("{ definitely-not-json", "broken.arauna-city.json");
+    const invalid = editorStore.importCityBundle(
+      "{ definitely-not-json",
+      "broken.arauna-city.json",
+    );
     expect(invalid.ok).toBe(false);
     expect(editorStore.getState()).toBe(initial);
     expect(editorStore.getState().undoDepth).toBe(initialUndoDepth);
 
     const { map, mapJson } = fixture();
-    const bundle = buildCityBundle({ map, mapJson, mapName: "Atomic city", createdAt: "2026-08-21T00:00:00.000Z" });
-    const imported = editorStore.importCityBundle(serializeCityBundle(bundle), "atomic.arauna-city.json");
+    const bundle = buildCityBundle({
+      map,
+      mapJson,
+      mapName: "Atomic city",
+      createdAt: "2026-08-21T00:00:00.000Z",
+    });
+    const imported = editorStore.importCityBundle(
+      serializeCityBundle(bundle),
+      "atomic.arauna-city.json",
+    );
     expect(imported.ok).toBe(true);
     const after = editorStore.getState();
     expect(after.map.width).toBe(3);
@@ -132,10 +141,11 @@ describe("editorStore Arauna City atomic import", () => {
     expect(after.undoDepth).toBe(initialUndoDepth + 1);
     expect(after.mapName).toBe("Atomic city");
     expect(after.mapJsonDocument?.custom_field).toBe("preserve-me");
-    expect((after.mapJsonDocument?.object_events as Array<Record<string, unknown>>).map((event) => event.local_id)).toEqual([
-      "LOCALID_Z",
-      "LOCALID_A",
-    ]);
+    expect(
+      (after.mapJsonDocument?.object_events as Array<Record<string, unknown>>).map(
+        (event) => event.local_id,
+      ),
+    ).toEqual(["LOCALID_Z", "LOCALID_A"]);
 
     editorStore.undo();
     const restored = editorStore.getState();
@@ -169,9 +179,12 @@ describe("editorStore Arauna City atomic import", () => {
     expect(imported.ok).toBe(true);
 
     const validation = editorStore.runValidation();
-    expect(validation.issues.some((issue) => issue.message.includes("direção inválida"))).toBe(false);
-    const directions = (editorStore.getState().mapJsonDocument?.connections as Array<Record<string, unknown>>)
-      .map((connection) => connection.direction);
+    expect(validation.issues.some((issue) => issue.message.includes("direção inválida"))).toBe(
+      false,
+    );
+    const directions = (
+      editorStore.getState().mapJsonDocument?.connections as Array<Record<string, unknown>>
+    ).map((connection) => connection.direction);
     expect(directions).toEqual(["dive", "emerge"]);
 
     editorStore.undo();
@@ -207,7 +220,11 @@ describe("editorStore Arauna City atomic import", () => {
     expect(editorStore.getState().selectedCell).toBe(idx(39, 7, 40));
 
     const validation = editorStore.runValidation();
-    expect(validation.issues.some((issue) => issue.level === "error" && issue.message.includes("fora dos limites"))).toBe(false);
+    expect(
+      validation.issues.some(
+        (issue) => issue.level === "error" && issue.message.includes("fora dos limites"),
+      ),
+    ).toBe(false);
 
     editorStore.updateEventField("object:0", "x", "40");
     const afterNpcEdit = editorStore.getState();

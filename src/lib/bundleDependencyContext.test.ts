@@ -56,12 +56,8 @@ describe("bundleDependencyContext", () => {
 
   it("preserves semantic authoring data but strips recalculable dependency snapshots", () => {
     const authored = {
-      districts: [
-        { id: "harbor", role: "porto", bounds: [0, 0, 10, 8] },
-      ],
-      structures: [
-        { id: "market", template: "porto-market", x: 4, y: 6 },
-      ],
+      districts: [{ id: "harbor", role: "porto", bounds: [0, 0, 10, 8] }],
+      structures: [{ id: "market", template: "porto-market", x: 4, y: 6 }],
       notes: { intent: "Porto do Sal" },
     };
     const semantics = withSharedEventsSnapshot(authored, "Shared", shared());
@@ -70,7 +66,10 @@ describe("bundleDependencyContext", () => {
 
     expect(installBundleDependencyContextFromImport(bundle, installedDocument)).not.toBeNull();
     expect(importedBundleSemanticBase(installedDocument)).toEqual(authored);
-    expect((importedBundleSemanticBase(installedDocument) as Record<string, unknown>)?.externalDependencies).toBeUndefined();
+    expect(
+      (importedBundleSemanticBase(installedDocument) as Record<string, unknown>)
+        ?.externalDependencies,
+    ).toBeUndefined();
     expect(importedBundleSemanticBase({ ...installedDocument })).toBeUndefined();
   });
 

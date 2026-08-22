@@ -51,7 +51,9 @@ export const Route = createFileRoute("/")({ component: Index });
 function Index() {
   const state = useEditor();
   const session = useWorkspaceSession();
-  const [completeGameAudit, setCompleteGameAudit] = useState<GameImplementabilityReport | null>(null);
+  const [completeGameAudit, setCompleteGameAudit] = useState<GameImplementabilityReport | null>(
+    null,
+  );
   const renderedGameAudit = state.gameAudit ? completeGameAudit : null;
 
   useEffect(() => {
@@ -76,15 +78,22 @@ function Index() {
   }, [state.gameAudit, completeGameAudit]);
 
   useEffect(() => {
-    if (state.tool !== "pencil" && smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
-    if (state.tool !== "pencil" && patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
-    if (state.tool !== "pencil" && mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
+    if (state.tool !== "pencil" && smartPathStore.getState().enabled)
+      smartPathStore.setEnabled(false);
+    if (state.tool !== "pencil" && patternLibraryStore.getState().enabled)
+      patternLibraryStore.setEnabled(false);
+    if (state.tool !== "pencil" && mapTemplateStore.getState().enabled)
+      mapTemplateStore.setEnabled(false);
   }, [state.tool]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable;
       if (typing) return;
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
@@ -95,22 +104,42 @@ function Index() {
         else editorStore.undo();
         return;
       }
-      if (modifier && key === "y") { event.preventDefault(); editorStore.redo(); return; }
+      if (modifier && key === "y") {
+        event.preventDefault();
+        editorStore.redo();
+        return;
+      }
       if (modifier && key === "c") {
         event.preventDefault();
         if (event.shiftKey) clipboardStore.copyRawSelection();
         else clipboardStore.copySelection();
         return;
       }
-      if (modifier && key === "x") { event.preventDefault(); clipboardStore.cutSelection(event.shiftKey ? "raw" : undefined); return; }
-      if (modifier && key === "v") { event.preventDefault(); clipboardStore.pasteAtSelected(); return; }
+      if (modifier && key === "x") {
+        event.preventDefault();
+        clipboardStore.cutSelection(event.shiftKey ? "raw" : undefined);
+        return;
+      }
+      if (modifier && key === "v") {
+        event.preventDefault();
+        clipboardStore.pasteAtSelected();
+        return;
+      }
 
       if (key === "escape") {
-        if (mapTemplateStore.getState().enabled) { event.preventDefault(); mapTemplateStore.setEnabled(false); }
-        else if (patternLibraryStore.getState().enabled) { event.preventDefault(); patternLibraryStore.setEnabled(false); }
-        else if (smartPathStore.getState().enabled) { event.preventDefault(); smartPathStore.setEnabled(false); }
-        else if (clipboardStore.getState().stampMode) { event.preventDefault(); clipboardStore.toggleStampMode(false); }
-        else editorStore.setSelection(null);
+        if (mapTemplateStore.getState().enabled) {
+          event.preventDefault();
+          mapTemplateStore.setEnabled(false);
+        } else if (patternLibraryStore.getState().enabled) {
+          event.preventDefault();
+          patternLibraryStore.setEnabled(false);
+        } else if (smartPathStore.getState().enabled) {
+          event.preventDefault();
+          smartPathStore.setEnabled(false);
+        } else if (clipboardStore.getState().stampMode) {
+          event.preventDefault();
+          clipboardStore.toggleStampMode(false);
+        } else editorStore.setSelection(null);
         return;
       }
 
@@ -135,7 +164,11 @@ function Index() {
         smartPathStore.toggleEnabled();
         return;
       }
-      if (key === "e" && smartPathStore.getState().enabled) { event.preventDefault(); smartPathStore.toggleMode(); return; }
+      if (key === "e" && smartPathStore.getState().enabled) {
+        event.preventDefault();
+        smartPathStore.toggleMode();
+        return;
+      }
       if (key === "v") {
         event.preventDefault();
         if (mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
@@ -174,11 +207,7 @@ function Index() {
             ? referencedScriptWarpMapIds(scriptContext.contracts)
             : [];
           await Promise.all([
-            refreshWorkspaceAuditContextWithScriptMaps(
-              session.workspace,
-              document,
-              scriptMapIds,
-            ),
+            refreshWorkspaceAuditContextWithScriptMaps(session.workspace, document, scriptMapIds),
             refreshWorkspaceSymbolAuditContext(session.workspace, document),
           ]);
         } else {

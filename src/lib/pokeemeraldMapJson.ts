@@ -91,12 +91,7 @@ function requireString(root: JsonRecord, key: string): string {
   return value;
 }
 
-function addProtected(
-  map: Map<string, ParsedProtectedCell>,
-  x: number,
-  y: number,
-  reason: string,
-) {
+function addProtected(map: Map<string, ParsedProtectedCell>, x: number, y: number, reason: string) {
   const key = `${x},${y}`;
   const current = map.get(key);
   if (!current) {
@@ -233,11 +228,7 @@ export function parsePokeemeraldMapJson(source: string): PokeemeraldMapMetadata 
     const type = text(entry.type) ?? "bg";
     const facing = text(entry.player_facing_dir);
     const label = `S${index}`;
-    const detail = compact([
-      type.toUpperCase(),
-      script ? `script ${script}` : null,
-      facing,
-    ]);
+    const detail = compact([type.toUpperCase(), script ? `script ${script}` : null, facing]);
     events.push({
       id: editableId("bg", index),
       sourceIndex: index,
@@ -296,24 +287,32 @@ function isVanillaConnectionMarginWarp(
   if (event.source !== "warp") return false;
   if (
     event.x === width &&
-    event.y >= 0 && event.y < height &&
+    event.y >= 0 &&
+    event.y < height &&
     metadata.connections.some((connection) => connection.direction === "right")
-  ) return true;
+  )
+    return true;
   if (
     event.x === -1 &&
-    event.y >= 0 && event.y < height &&
+    event.y >= 0 &&
+    event.y < height &&
     metadata.connections.some((connection) => connection.direction === "left")
-  ) return true;
+  )
+    return true;
   if (
     event.y === height &&
-    event.x >= 0 && event.x < width &&
+    event.x >= 0 &&
+    event.x < width &&
     metadata.connections.some((connection) => connection.direction === "down")
-  ) return true;
+  )
+    return true;
   if (
     event.y === -1 &&
-    event.x >= 0 && event.x < width &&
+    event.x >= 0 &&
+    event.x < width &&
     metadata.connections.some((connection) => connection.direction === "up")
-  ) return true;
+  )
+    return true;
   return false;
 }
 

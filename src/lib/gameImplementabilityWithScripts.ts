@@ -15,10 +15,7 @@ import {
   type ScriptWarpDestinationContext,
 } from "./scriptSpatialContext";
 import type { ScriptWarpUse } from "./scriptSpatialContracts";
-import {
-  getWorkspaceAuditContext,
-  sharedEventsContextKey,
-} from "./workspaceAuditContext";
+import { getWorkspaceAuditContext, sharedEventsContextKey } from "./workspaceAuditContext";
 
 const SYMBOLIC_WARP_IDS: Record<string, number> = {
   WARP_ID_NONE: -1,
@@ -74,9 +71,7 @@ function appendIssues(
   }
 
   const pass = base.pass && additions.every((found) => found.severity !== "error");
-  const fullyVerified =
-    base.fullyVerified &&
-    additions.every((found) => found.severity === "info");
+  const fullyVerified = base.fullyVerified && additions.every((found) => found.severity === "info");
 
   return {
     ...base,
@@ -146,7 +141,12 @@ function auditSpawnCell(
       `destino (${x},${y}) existe, mas map.bin/behavior não está disponível para certificar a célula de chegada.`,
     );
   }
-  if (x < 0 || y < 0 || x >= workspaceDestination.map.width || y >= workspaceDestination.map.height) {
+  if (
+    x < 0 ||
+    y < 0 ||
+    x >= workspaceDestination.map.width ||
+    y >= workspaceDestination.map.height
+  ) {
     return warpIssue(
       warp,
       "SCRIPT_WARP_DEST_COORDS_OUT_OF_BOUNDS",
@@ -155,12 +155,7 @@ function auditSpawnCell(
     );
   }
 
-  const passability = cellPassability(
-    workspaceDestination.map,
-    x,
-    y,
-    workspaceDestination.atlas,
-  );
+  const passability = cellPassability(workspaceDestination.map, x, y, workspaceDestination.atlas);
   if (passability.state === "blocked") {
     return warpIssue(
       warp,
@@ -177,7 +172,12 @@ function auditSpawnCell(
       `célula de chegada (${x},${y}) usa behavior não certificável: ${passability.reason}.`,
     );
   }
-  return warpIssue(warp, okCode, "info", `${okMessage} Chegada (${x},${y}) é ${passability.state}.`);
+  return warpIssue(
+    warp,
+    okCode,
+    "info",
+    `${okMessage} Chegada (${x},${y}) é ${passability.state}.`,
+  );
 }
 
 function auditWarpId(
@@ -212,12 +212,7 @@ function auditWarpId(
     );
   }
   if (warpId < 0) {
-    return warpIssue(
-      warp,
-      "SCRIPT_WARP_ID_INVALID",
-      "error",
-      `warp id ${warpId} é inválido.`,
-    );
+    return warpIssue(warp, "SCRIPT_WARP_ID_INVALID", "error", `warp id ${warpId} é inválido.`);
   }
 
   const events = destination.effectiveEvents;
@@ -378,43 +373,44 @@ function auditScriptWarps(
 
   for (const warp of contracts.scriptWarps) {
     if (warp.destMap === "MAP_DYNAMIC" || warp.destMap === "MAP_UNDEFINED") {
-      issues.push(warpIssue(
-        warp,
-        "SCRIPT_WARP_DYNAMIC_TARGET",
-        "warning",
-        "destino é resolvido por estado runtime/setter anterior; o fluxo completo não é interpretado pelo auditor conservador.",
-      ));
+      issues.push(
+        warpIssue(
+          warp,
+          "SCRIPT_WARP_DYNAMIC_TARGET",
+          "warning",
+          "destino é resolvido por estado runtime/setter anterior; o fluxo completo não é interpretado pelo auditor conservador.",
+        ),
+      );
       continue;
     }
     if (!warp.destMap.startsWith("MAP_")) {
-      issues.push(warpIssue(
-        warp,
-        "SCRIPT_WARP_MAP_SYMBOL_UNVERIFIED",
-        "warning",
-        "destino não é um MAP_* literal e não pode ser certificado sem executar o script.",
-      ));
+      issues.push(
+        warpIssue(
+          warp,
+          "SCRIPT_WARP_MAP_SYMBOL_UNVERIFIED",
+          "warning",
+          "destino não é um MAP_* literal e não pode ser certificado sem executar o script.",
+        ),
+      );
       continue;
     }
 
     const destination = context.warpDestinations[warp.destMap];
     if (!destination) {
-      issues.push(warpIssue(
-        warp,
-        "SCRIPT_WARP_DEST_UNVERIFIED",
-        "warning",
-        context.origin === "bundle"
-          ? "Cidade JSON standalone não embute este mapa externo; abra o Workspace para certificar o destino."
-          : "destino não foi carregado durante a auditoria do Workspace.",
-      ));
+      issues.push(
+        warpIssue(
+          warp,
+          "SCRIPT_WARP_DEST_UNVERIFIED",
+          "warning",
+          context.origin === "bundle"
+            ? "Cidade JSON standalone não embute este mapa externo; abra o Workspace para certificar o destino."
+            : "destino não foi carregado durante a auditoria do Workspace.",
+        ),
+      );
       continue;
     }
     if (destination.error) {
-      issues.push(warpIssue(
-        warp,
-        "SCRIPT_WARP_DEST_LOAD_FAILED",
-        "error",
-        destination.error,
-      ));
+      issues.push(warpIssue(warp, "SCRIPT_WARP_DEST_LOAD_FAILED", "error", destination.error));
       continue;
     }
 
@@ -477,7 +473,8 @@ export function withActiveScriptSpatialAudit(
   const sharedEventsName = text(mapJson.shared_events_map);
   if (sharedEventsName) {
     const workspace = getWorkspaceAuditContext();
-    const workspaceShared = workspace?.maps[sharedEventsContextKey(sharedEventsName)]?.mapJson ?? null;
+    const workspaceShared =
+      workspace?.maps[sharedEventsContextKey(sharedEventsName)]?.mapJson ?? null;
     const bundledShared = importedSharedEventsSnapshot(mapJson, sharedEventsName)?.mapJson ?? null;
     const shared = workspaceShared ?? bundledShared;
     if (!shared) {
@@ -501,14 +498,17 @@ export function withActiveScriptSpatialAudit(
       "accessibility",
       `Contratos espaciais carregados de ${context.sourcePath}${context.scriptMapName !== mapJson.name ? ` (${context.scriptMapName})` : ""}.`,
     ),
-    ...spatial.map((found) => ({
-      code: found.code,
-      severity: found.severity,
-      category: categoryFor(found.code),
-      message: `${found.message}${found.line ? ` [${context.sourcePath}:${found.line}]` : ""}`,
-      ...(found.x !== undefined ? { x: found.x } : {}),
-      ...(found.y !== undefined ? { y: found.y } : {}),
-    } satisfies ImplementabilityIssue)),
+    ...spatial.map(
+      (found) =>
+        ({
+          code: found.code,
+          severity: found.severity,
+          category: categoryFor(found.code),
+          message: `${found.message}${found.line ? ` [${context.sourcePath}:${found.line}]` : ""}`,
+          ...(found.x !== undefined ? { x: found.x } : {}),
+          ...(found.y !== undefined ? { y: found.y } : {}),
+        }) satisfies ImplementabilityIssue,
+    ),
     ...auditScriptWarps(context, mapJson),
   ];
 

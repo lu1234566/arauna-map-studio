@@ -240,15 +240,11 @@ describe("game implementability audit", () => {
   it("verifies a loaded reciprocal destination warp and connection", () => {
     const map = openMap();
     const mapJson = baseJson();
-    mapJson.warp_events = [
-      { x: 2, y: 2, elevation: 3, dest_map: "MAP_B", dest_warp_id: "0" },
-    ];
+    mapJson.warp_events = [{ x: 2, y: 2, elevation: 3, dest_map: "MAP_B", dest_warp_id: "0" }];
     mapJson.connections = [{ map: "MAP_B", offset: 0, direction: "right" }];
 
     const neighbor = baseJson("MAP_B");
-    neighbor.warp_events = [
-      { x: 2, y: 2, elevation: 3, dest_map: "MAP_A", dest_warp_id: "0" },
-    ];
+    neighbor.warp_events = [{ x: 2, y: 2, elevation: 3, dest_map: "MAP_A", dest_warp_id: "0" }];
     neighbor.connections = [{ map: "MAP_A", offset: 0, direction: "left" }];
 
     const report = auditGameImplementability({
@@ -399,8 +395,24 @@ describe("game implementability audit", () => {
   it("accepts multiple coord events on the same tile when their var conditions differ", () => {
     const mapJson = baseJson();
     mapJson.coord_events = [
-      { type: "trigger", x: 2, y: 2, elevation: 3, var: "VAR_TEST", var_value: "0", script: "Test_EventScript_A" },
-      { type: "trigger", x: 2, y: 2, elevation: 3, var: "VAR_TEST", var_value: "1", script: "Test_EventScript_B" },
+      {
+        type: "trigger",
+        x: 2,
+        y: 2,
+        elevation: 3,
+        var: "VAR_TEST",
+        var_value: "0",
+        script: "Test_EventScript_A",
+      },
+      {
+        type: "trigger",
+        x: 2,
+        y: 2,
+        elevation: 3,
+        var: "VAR_TEST",
+        var_value: "1",
+        script: "Test_EventScript_B",
+      },
     ];
     const report = auditGameImplementability({ map: openMap(), mapJson, atlas });
     expect(has(report, "COORD_SHARED_CELL_CONDITIONAL_OK")).toBe(true);
@@ -448,7 +460,11 @@ describe("game implementability audit", () => {
   it("does not reject an isolated decorative component just because a warp lives in another component", () => {
     const map = openMap();
     map.physical.fill(0x3400);
-    for (const [x, y] of [[2, 2], [2, 3], [3, 2]] as const) {
+    for (const [x, y] of [
+      [2, 2],
+      [2, 3],
+      [3, 2],
+    ] as const) {
       map.physical[y * map.width + x] = 0x3000;
     }
     map.physical[0] = 0x3000;
@@ -489,7 +505,9 @@ describe("game implementability audit", () => {
       map,
       mapJson,
       atlas,
-      workspaceContext: { maps: { MAP_B: { map: openMap(), mapJson: neighbor, width: 5, height: 5 } } },
+      workspaceContext: {
+        maps: { MAP_B: { map: openMap(), mapJson: neighbor, width: 5, height: 5 } },
+      },
     });
     expect(has(report, "CONNECTION_DUPLICATE")).toBe(true);
     expect(has(report, "CONNECTION_BORDER_CLOSED")).toBe(true);
@@ -561,7 +579,9 @@ describe("game implementability audit", () => {
 
   it("preserves known weather and warns instead of replacing custom weather", () => {
     const known = baseJson();
-    expect(has(auditGameImplementability({ map: openMap(), mapJson: known, atlas }), "WEATHER_KNOWN")).toBe(true);
+    expect(
+      has(auditGameImplementability({ map: openMap(), mapJson: known, atlas }), "WEATHER_KNOWN"),
+    ).toBe(true);
 
     const custom = baseJson();
     custom.weather = "WEATHER_ARAUNA_SALT_MIST";

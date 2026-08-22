@@ -1,16 +1,9 @@
-import {
-  buildCityBundle,
-  type AraunaCityBundle,
-  type FingerprintAtlas,
-} from "./araunaCityBundle";
+import { buildCityBundle, type AraunaCityBundle, type FingerprintAtlas } from "./araunaCityBundle";
 import {
   importedBundleSemanticBase,
   importedSharedEventsSnapshot,
 } from "./bundleDependencyContext";
-import {
-  withScriptSpatialSnapshot,
-  withSharedEventsSnapshot,
-} from "./cityBundleDependencies";
+import { withScriptSpatialSnapshot, withSharedEventsSnapshot } from "./cityBundleDependencies";
 import type { MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
 import {
@@ -21,10 +14,7 @@ import {
 import { withActiveScriptSpatialAudit } from "./gameImplementabilityWithScripts";
 import { getScriptSpatialContext } from "./scriptSpatialContext";
 import { withWarpEndpointSafetyAudit } from "./warpEndpointSafety";
-import {
-  getWorkspaceAuditContext,
-  sharedEventsContextKey,
-} from "./workspaceAuditContext";
+import { getWorkspaceAuditContext, sharedEventsContextKey } from "./workspaceAuditContext";
 import { withWorkspaceSymbolReferenceAudit } from "./workspaceSymbolAudit";
 
 export interface CompleteGameAuditInput {
@@ -71,9 +61,7 @@ function currentWorkspaceContext(
  * - endpoints de warp conferem a célula de spawn real quando o Workspace a tem;
  * - a camada espacial/cutscenes/warps de script é aplicada por último.
  */
-export function auditCompleteGameState(
-  input: CompleteGameAuditInput,
-): CompleteGameAuditResult {
+export function auditCompleteGameState(input: CompleteGameAuditInput): CompleteGameAuditResult {
   const { map, mapJson, atlas } = input;
   const workspaceContext = currentWorkspaceContext(mapJson);
   let bundle: AraunaCityBundle | null = null;
@@ -110,17 +98,14 @@ export function auditCompleteGameState(
 
       const sharedName = text(mapJson.shared_events_map);
       if (sharedName) {
-        const workspaceShared = workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
+        const workspaceShared =
+          workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
         const importedShared = importedSharedEventsSnapshot(mapJson, sharedName)?.mapJson ?? null;
         const sharedDocument = workspaceShared ?? importedShared;
         if (sharedDocument) {
           bundle = {
             ...bundle,
-            semantics: withSharedEventsSnapshot(
-              bundle.semantics,
-              sharedName,
-              sharedDocument,
-            ),
+            semantics: withSharedEventsSnapshot(bundle.semantics, sharedName, sharedDocument),
           };
         }
       }
@@ -140,12 +125,7 @@ export function auditCompleteGameState(
     workspaceContext,
   });
   const symbolsSafe = withWorkspaceSymbolReferenceAudit(base, mapJson);
-  const endpointSafe = withWarpEndpointSafetyAudit(
-    symbolsSafe,
-    mapJson,
-    workspaceContext,
-    bundle,
-  );
+  const endpointSafe = withWarpEndpointSafetyAudit(symbolsSafe, mapJson, workspaceContext, bundle);
 
   return {
     bundle,

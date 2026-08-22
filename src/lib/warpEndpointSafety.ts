@@ -114,9 +114,8 @@ export function withWarpEndpointSafetyAudit(
     const targetWarps = Array.isArray(destinationEvents?.warp_events)
       ? destinationEvents.warp_events
       : null;
-    const target = targetWarps && destWarpId < targetWarps.length
-      ? record(targetWarps[destWarpId])
-      : null;
+    const target =
+      targetWarps && destWarpId < targetWarps.length ? record(targetWarps[destWarpId]) : null;
     if (!target) return; // WARP_DEST_NOT_FOUND já é erro no auditor-base.
 
     const x = integer(target.x);

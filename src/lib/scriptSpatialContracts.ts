@@ -91,21 +91,21 @@ function movementStep(token: string): MovementStep | null {
     normalized.startsWith("slide_");
   if (!supported) return null;
 
-  const vector = direction === "up"
-    ? { dx: 0, dy: -1 }
-    : direction === "down"
-      ? { dx: 0, dy: 1 }
-      : direction === "left"
-        ? { dx: -1, dy: 0 }
-        : { dx: 1, dy: 0 };
+  const vector =
+    direction === "up"
+      ? { dx: 0, dy: -1 }
+      : direction === "down"
+        ? { dx: 0, dy: 1 }
+        : direction === "left"
+          ? { dx: -1, dy: 0 }
+          : { dx: 1, dy: 0 };
   return { token, dx: vector.dx, dy: vector.dy, distance };
 }
 
 function neutralMovementToken(token: string): boolean {
   const normalized = token.toLowerCase();
   return (
-    normalized.includes("_in_place") ||
-    /^(face|delay|emote|lock|unlock|hide|show)/.test(normalized)
+    normalized.includes("_in_place") || /^(face|delay|emote|lock|unlock|hide|show)/.test(normalized)
   );
 }
 
@@ -148,7 +148,9 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
       return;
     }
 
-    const anchor = line.match(/^(setobjectxyperm|setobjectxy)\s+([^,]+),\s*([^,]+),\s*([^,\s]+)\s*$/i);
+    const anchor = line.match(
+      /^(setobjectxyperm|setobjectxy)\s+([^,]+),\s*([^,]+),\s*([^,\s]+)\s*$/i,
+    );
     if (anchor) {
       const x = parseInteger(anchor[3] ?? "");
       const y = parseInteger(anchor[4] ?? "");
@@ -208,9 +210,7 @@ export function parseScriptSpatialContracts(source: string): ScriptSpatialContra
         steps.push(parsed);
         continue;
       }
-      if (
-        /^(walk|run|jump|slide|step|face|delay|lock|unlock|hide|show|emote)/i.test(token)
-      ) {
+      if (/^(walk|run|jump|slide|step|face|delay|lock|unlock|hide|show|emote)/i.test(token)) {
         sawMovementLikeToken = true;
         // Facing, delays, emotes, visibility e animações in-place não mudam a
         // célula lógica. Qualquer outro token espacial desconhecido rebaixa a

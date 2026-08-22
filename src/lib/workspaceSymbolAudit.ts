@@ -1,8 +1,5 @@
 import { parseEditableMapJson, type EditableMapJson } from "./eventMapJson";
-import type {
-  GameImplementabilityReport,
-  ImplementabilityIssue,
-} from "./gameImplementability";
+import type { GameImplementabilityReport, ImplementabilityIssue } from "./gameImplementability";
 import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
 
 export interface SourceSymbolReference {
@@ -122,8 +119,8 @@ export async function collectMapSourceSymbolReferences(
     }
   });
 
-  return [...refs.values()].sort((a, b) =>
-    a.symbol.localeCompare(b.symbol) || a.field.localeCompare(b.field),
+  return [...refs.values()].sort(
+    (a, b) => a.symbol.localeCompare(b.symbol) || a.field.localeCompare(b.field),
   );
 }
 
@@ -247,12 +244,15 @@ export function withWorkspaceSymbolReferenceAudit(
   if (!document) return base;
   const context = activeContext;
   if (!context || context.sourceDocument !== document) {
-    return appendIssues(base, [{
-      code: "SOURCE_SYMBOLS_UNVERIFIED",
-      severity: "warning",
-      category: "mapJson",
-      message: "Referências de script/flags/vars/gráficos/constants não foram conferidas contra as fontes do Workspace.",
-    }]);
+    return appendIssues(base, [
+      {
+        code: "SOURCE_SYMBOLS_UNVERIFIED",
+        severity: "warning",
+        category: "mapJson",
+        message:
+          "Referências de script/flags/vars/gráficos/constants não foram conferidas contra as fontes do Workspace.",
+      },
+    ]);
   }
 
   const additions: ImplementabilityIssue[] = [];

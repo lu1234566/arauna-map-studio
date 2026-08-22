@@ -84,7 +84,12 @@ function cloneBundle(bundle: AraunaCityBundle): AraunaCityBundle {
 
 describe("arauna-city-v1", () => {
   it("round-trips grid, complete mapJson, unknown fields and event order", () => {
-    const original = buildCityBundle({ map: map(), mapJson: mapJson(), mapName: "Porto teste", createdAt: "2026-08-21T00:00:00.000Z" });
+    const original = buildCityBundle({
+      map: map(),
+      mapJson: mapJson(),
+      mapName: "Porto teste",
+      createdAt: "2026-08-21T00:00:00.000Z",
+    });
     const reparsed = parseCityBundle(serializeCityBundle(original));
     const compiled = compileCityBundle(reparsed);
 
@@ -92,19 +97,19 @@ describe("arauna-city-v1", () => {
     expect(Array.from(compiled.map.metatiles)).toEqual(Array.from(map().metatiles));
     expect(Array.from(compiled.map.physical)).toEqual(Array.from(map().physical));
     expect(compiled.mapJson.custom_arauna_field).toEqual({ nested: [1, "keep", { value: true }] });
-    expect((compiled.mapJson.object_events as Array<Record<string, unknown>>).map((event) => event.local_id)).toEqual([
-      "LOCALID_TEST_B",
-      "LOCALID_TEST_A",
-    ]);
-    expect((compiled.mapJson.warp_events as Array<Record<string, unknown>>).map((event) => event.custom)).toEqual([
-      "first",
-      "second",
-    ]);
+    expect(
+      (compiled.mapJson.object_events as Array<Record<string, unknown>>).map(
+        (event) => event.local_id,
+      ),
+    ).toEqual(["LOCALID_TEST_B", "LOCALID_TEST_A"]);
+    expect(
+      (compiled.mapJson.warp_events as Array<Record<string, unknown>>).map((event) => event.custom),
+    ).toEqual(["first", "second"]);
     expect(serializeCityBundle(original).endsWith("\n")).toBe(true);
   });
 
   it("canonical JSON uses locale-independent key ordering", () => {
-    expect(canonicalJson({ "á": 3, z: 1, a: 2 })).toBe('{"a":2,"z":1,"á":3}');
+    expect(canonicalJson({ á: 3, z: 1, a: 2 })).toBe('{"a":2,"z":1,"á":3}');
     expect(canonicalJson({ b: { d: 1, c: 2 }, a: 0 })).toBe('{"a":0,"b":{"c":2,"d":1}}');
   });
 
@@ -121,7 +126,9 @@ describe("arauna-city-v1", () => {
 
     const derived = cloneBundle(source);
     derived.cells.collision[0] = 2;
-    expect(verifyBundleIntegrity(derived).some((issue) => issue.code === "BUNDLE_PHYSICAL_DERIVATION")).toBe(true);
+    expect(
+      verifyBundleIntegrity(derived).some((issue) => issue.code === "BUNDLE_PHYSICAL_DERIVATION"),
+    ).toBe(true);
   });
 
   it("rejects dimension, identity, mirrored-property and protected-cell corruption", () => {

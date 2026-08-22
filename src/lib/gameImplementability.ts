@@ -1,10 +1,4 @@
-import {
-  METATILE_MASK,
-  PHYSICAL_MASK,
-  exportMapBin,
-  idx,
-  type MapData,
-} from "./emeraldMap";
+import { METATILE_MASK, PHYSICAL_MASK, exportMapBin, idx, type MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
 import {
   atlasFingerprint,
@@ -39,10 +33,7 @@ import {
   type Passability,
 } from "./mapPassability";
 import { getPhysicalLayerValue } from "./physicalMap";
-import {
-  getWorkspaceAuditContext,
-  sharedEventsContextKey,
-} from "./workspaceAuditContext";
+import { getWorkspaceAuditContext, sharedEventsContextKey } from "./workspaceAuditContext";
 
 export type ImplementabilitySeverity = "error" | "warning" | "info";
 export type ImplementabilityCategory =
@@ -184,7 +175,9 @@ function record(value: unknown): Record<string, unknown> | null {
     ? (value as Record<string, unknown>)
     : null;
 }
-function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
+function array(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
 function integer(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
@@ -234,7 +227,9 @@ function arraysEqual(a: Uint16Array, b: Uint16Array): boolean {
   return true;
 }
 
-function resolveWorkspaceContext(input: GameImplementabilityInput): ImplementabilityWorkspaceContext | null {
+function resolveWorkspaceContext(
+  input: GameImplementabilityInput,
+): ImplementabilityWorkspaceContext | null {
   const explicit = input.workspaceContext ?? null;
   if (explicit) return explicit;
   const active = getWorkspaceAuditContext();
@@ -262,42 +257,96 @@ function effectiveEventDocument(
 ): EditableMapJson | null {
   const sharedName = text(mapJson.shared_events_map);
   if (!sharedName) return mapJson;
-  return workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson
-    ?? bundleSharedDocument(mapJson, bundle)
-    ?? null;
+  return (
+    workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ??
+    bundleSharedDocument(mapJson, bundle) ??
+    null
+  );
 }
 
 function auditGrid(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
   const { map } = input;
   const expected = map.width * map.height;
-  if (!Number.isInteger(map.width) || !Number.isInteger(map.height) || map.width <= 0 || map.height <= 0) {
-    issue(issues, "GRID_DIMENSIONS", "error", "grid", `Dimensão inválida: ${map.width}×${map.height}.`);
+  if (
+    !Number.isInteger(map.width) ||
+    !Number.isInteger(map.height) ||
+    map.width <= 0 ||
+    map.height <= 0
+  ) {
+    issue(
+      issues,
+      "GRID_DIMENSIONS",
+      "error",
+      "grid",
+      `Dimensão inválida: ${map.width}×${map.height}.`,
+    );
     return;
   }
   if (map.metatiles.length !== expected) {
-    issue(issues, "GRID_CELL_COUNT", "error", "grid", `${map.metatiles.length} metatiles; esperado ${expected}.`);
+    issue(
+      issues,
+      "GRID_CELL_COUNT",
+      "error",
+      "grid",
+      `${map.metatiles.length} metatiles; esperado ${expected}.`,
+    );
   }
   if (map.physical.length !== expected) {
-    issue(issues, "GRID_PHYSICAL_COUNT", "error", "grid", `${map.physical.length} valores físicos; esperado ${expected}.`);
+    issue(
+      issues,
+      "GRID_PHYSICAL_COUNT",
+      "error",
+      "grid",
+      `${map.physical.length} valores físicos; esperado ${expected}.`,
+    );
   }
   const scan = Math.min(expected, map.metatiles.length, map.physical.length);
   for (let i = 0; i < scan; i++) {
     const metatile = map.metatiles[i] ?? 0;
     const physical = map.physical[i] ?? 0;
     if (!Number.isInteger(metatile) || metatile < 0 || metatile > METATILE_MASK) {
-      issue(issues, "GRID_METATILE_RANGE", "error", "grid", `Metatile ${metatile} fora de 0x000–0x3FF na célula ${i}.`);
+      issue(
+        issues,
+        "GRID_METATILE_RANGE",
+        "error",
+        "grid",
+        `Metatile ${metatile} fora de 0x000–0x3FF na célula ${i}.`,
+      );
       break;
     }
-    if (!Number.isInteger(physical) || physical < 0 || physical > PHYSICAL_MASK || (physical & ~PHYSICAL_MASK) !== 0) {
-      issue(issues, "GRID_PHYSICAL_RANGE", "error", "grid", `Bits físicos 0x${physical.toString(16)} inválidos na célula ${i}.`);
+    if (
+      !Number.isInteger(physical) ||
+      physical < 0 ||
+      physical > PHYSICAL_MASK ||
+      (physical & ~PHYSICAL_MASK) !== 0
+    ) {
+      issue(
+        issues,
+        "GRID_PHYSICAL_RANGE",
+        "error",
+        "grid",
+        `Bits físicos 0x${physical.toString(16)} inválidos na célula ${i}.`,
+      );
       break;
     }
   }
   const bytes = exportMapBin(map);
   if (bytes.byteLength !== expected * 2) {
-    issue(issues, "GRID_BIN_SIZE", "error", "grid", `map.bin exportaria ${bytes.byteLength} bytes; esperado ${expected * 2}.`);
+    issue(
+      issues,
+      "GRID_BIN_SIZE",
+      "error",
+      "grid",
+      `map.bin exportaria ${bytes.byteLength} bytes; esperado ${expected * 2}.`,
+    );
   } else {
-    issue(issues, "GRID_BIN_SIZE_OK", "info", "grid", `${expected} células / ${bytes.byteLength} bytes reproduzíveis.`);
+    issue(
+      issues,
+      "GRID_BIN_SIZE_OK",
+      "info",
+      "grid",
+      `${expected} células / ${bytes.byteLength} bytes reproduzíveis.`,
+    );
   }
 }
 
@@ -308,51 +357,136 @@ function auditTilesets(
 ) {
   const { map, atlas, declaredTilesets } = input;
   if (!atlas) {
-    issue(issues, "ATLAS_NOT_LOADED", "warning", "tilesets", "Atlas GBA real não está carregado; metatiles e behaviors não podem ser certificados.");
+    issue(
+      issues,
+      "ATLAS_NOT_LOADED",
+      "warning",
+      "tilesets",
+      "Atlas GBA real não está carregado; metatiles e behaviors não podem ser certificados.",
+    );
     return;
   }
   const recordIds = new Set(atlas.records.map((entry) => entry.id));
   const missing = new Set<number>();
   for (const metatile of map.metatiles) if (!recordIds.has(metatile)) missing.add(metatile);
   if (missing.size) {
-    issue(issues, "ATLAS_MISSING_METATILES", "error", "tilesets", `${missing.size} metatile(s) usados não existem no atlas ativo: ${[...missing].slice(0, 12).map((id) => `0x${id.toString(16).padStart(3, "0")}`).join(", ")}${missing.size > 12 ? "…" : ""}.`);
+    issue(
+      issues,
+      "ATLAS_MISSING_METATILES",
+      "error",
+      "tilesets",
+      `${missing.size} metatile(s) usados não existem no atlas ativo: ${[...missing]
+        .slice(0, 12)
+        .map((id) => `0x${id.toString(16).padStart(3, "0")}`)
+        .join(", ")}${missing.size > 12 ? "…" : ""}.`,
+    );
   } else {
-    issue(issues, "ATLAS_METATILES_OK", "info", "tilesets", `Todos os metatiles usados existem no atlas ativo (${atlas.records.length} registros).`);
+    issue(
+      issues,
+      "ATLAS_METATILES_OK",
+      "info",
+      "tilesets",
+      `Todos os metatiles usados existem no atlas ativo (${atlas.records.length} registros).`,
+    );
   }
 
   const mapId = text(input.mapJson?.id);
   const expectedAtlas = mapId ? workspaceContext?.maps[mapId]?.atlas : null;
   if (!expectedAtlas) {
     const loadError = mapId ? workspaceContext?.loadErrors?.[mapId] : null;
-    issue(issues, "ATLAS_LAYOUT_UNVERIFIED", "warning", "tilesets", `O par de tilesets do layout real não foi certificado pelo Workspace${loadError ? ` (${loadError})` : ""}; o atlas ativo sozinho não prova que pertence a este layout.`);
+    issue(
+      issues,
+      "ATLAS_LAYOUT_UNVERIFIED",
+      "warning",
+      "tilesets",
+      `O par de tilesets do layout real não foi certificado pelo Workspace${loadError ? ` (${loadError})` : ""}; o atlas ativo sozinho não prova que pertence a este layout.`,
+    );
   } else {
     const expectedFingerprint = atlasFingerprint(expectedAtlas);
     const activeFingerprint = atlasFingerprint(atlas);
-    if (atlas.primary !== expectedAtlas.primary || atlas.secondary !== expectedAtlas.secondary || activeFingerprint !== expectedFingerprint) {
-      issue(issues, "ATLAS_LAYOUT_MISMATCH", "error", "tilesets", `Atlas ativo (${atlas.primary ?? "?"} + ${atlas.secondary ?? "?"}, ${activeFingerprint}) difere do par exigido por layouts.json (${expectedAtlas.primary ?? "?"} + ${expectedAtlas.secondary ?? "?"}, ${expectedFingerprint}).`);
+    if (
+      atlas.primary !== expectedAtlas.primary ||
+      atlas.secondary !== expectedAtlas.secondary ||
+      activeFingerprint !== expectedFingerprint
+    ) {
+      issue(
+        issues,
+        "ATLAS_LAYOUT_MISMATCH",
+        "error",
+        "tilesets",
+        `Atlas ativo (${atlas.primary ?? "?"} + ${atlas.secondary ?? "?"}, ${activeFingerprint}) difere do par exigido por layouts.json (${expectedAtlas.primary ?? "?"} + ${expectedAtlas.secondary ?? "?"}, ${expectedFingerprint}).`,
+      );
     } else {
-      issue(issues, "ATLAS_LAYOUT_OK", "info", "tilesets", `Atlas ativo corresponde ao par real de layouts.json: ${atlas.primary} + ${atlas.secondary} (${activeFingerprint}).`);
+      issue(
+        issues,
+        "ATLAS_LAYOUT_OK",
+        "info",
+        "tilesets",
+        `Atlas ativo corresponde ao par real de layouts.json: ${atlas.primary} + ${atlas.secondary} (${activeFingerprint}).`,
+      );
     }
   }
 
   if (!declaredTilesets) return;
-  if (!declaredTilesets.primary || !declaredTilesets.secondary || !declaredTilesets.atlasFingerprint) {
-    issue(issues, "ATLAS_DECLARATION_INCOMPLETE", "warning", "tilesets", "O bundle não declara primary + secondary + atlasFingerprint completos; pode ser importado para revisão, mas não certificado como Game-ready.");
+  if (
+    !declaredTilesets.primary ||
+    !declaredTilesets.secondary ||
+    !declaredTilesets.atlasFingerprint
+  ) {
+    issue(
+      issues,
+      "ATLAS_DECLARATION_INCOMPLETE",
+      "warning",
+      "tilesets",
+      "O bundle não declara primary + secondary + atlasFingerprint completos; pode ser importado para revisão, mas não certificado como Game-ready.",
+    );
   }
   if (declaredTilesets.primary && atlas.primary && declaredTilesets.primary !== atlas.primary) {
-    issue(issues, "ATLAS_PRIMARY_MISMATCH", "error", "tilesets", `Primary do bundle (${declaredTilesets.primary}) difere do atlas (${atlas.primary}).`);
+    issue(
+      issues,
+      "ATLAS_PRIMARY_MISMATCH",
+      "error",
+      "tilesets",
+      `Primary do bundle (${declaredTilesets.primary}) difere do atlas (${atlas.primary}).`,
+    );
   }
-  if (declaredTilesets.secondary && atlas.secondary && declaredTilesets.secondary !== atlas.secondary) {
-    issue(issues, "ATLAS_SECONDARY_MISMATCH", "error", "tilesets", `Secondary do bundle (${declaredTilesets.secondary}) difere do atlas (${atlas.secondary}).`);
+  if (
+    declaredTilesets.secondary &&
+    atlas.secondary &&
+    declaredTilesets.secondary !== atlas.secondary
+  ) {
+    issue(
+      issues,
+      "ATLAS_SECONDARY_MISMATCH",
+      "error",
+      "tilesets",
+      `Secondary do bundle (${declaredTilesets.secondary}) difere do atlas (${atlas.secondary}).`,
+    );
   }
   if (declaredTilesets.atlasFingerprint) {
     const active = atlasFingerprint(atlas);
     if (active !== declaredTilesets.atlasFingerprint) {
-      issue(issues, "ATLAS_FINGERPRINT_MISMATCH", "error", "tilesets", `Fingerprint do atlas ativo (${active}) difere do bundle (${declaredTilesets.atlasFingerprint}).`);
+      issue(
+        issues,
+        "ATLAS_FINGERPRINT_MISMATCH",
+        "error",
+        "tilesets",
+        `Fingerprint do atlas ativo (${active}) difere do bundle (${declaredTilesets.atlasFingerprint}).`,
+      );
     }
   }
-  if (declaredTilesets.atlasRecordCount !== undefined && declaredTilesets.atlasRecordCount !== null && declaredTilesets.atlasRecordCount !== atlas.records.length) {
-    issue(issues, "ATLAS_RECORD_COUNT_MISMATCH", "error", "tilesets", `Bundle declara ${declaredTilesets.atlasRecordCount} registros de atlas; ativo possui ${atlas.records.length}.`);
+  if (
+    declaredTilesets.atlasRecordCount !== undefined &&
+    declaredTilesets.atlasRecordCount !== null &&
+    declaredTilesets.atlasRecordCount !== atlas.records.length
+  ) {
+    issue(
+      issues,
+      "ATLAS_RECORD_COUNT_MISMATCH",
+      "error",
+      "tilesets",
+      `Bundle declara ${declaredTilesets.atlasRecordCount} registros de atlas; ativo possui ${atlas.records.length}.`,
+    );
   }
 }
 
@@ -363,73 +497,202 @@ function auditMapJson(
 ) {
   const document = input.mapJson;
   if (!document) {
-    issue(issues, "MAPJSON_MISSING", "error", "mapJson", "map.json não carregado; eventos, conexões, clima e propriedades seriam perdidos.");
+    issue(
+      issues,
+      "MAPJSON_MISSING",
+      "error",
+      "mapJson",
+      "map.json não carregado; eventos, conexões, clima e propriedades seriam perdidos.",
+    );
     return;
   }
   for (const key of ["id", "name", "layout"] as const) {
-    if (!text(document[key])) issue(issues, `MAPJSON_${key.toUpperCase()}_MISSING`, "error", "mapJson", `Campo obrigatório ${key} ausente.`);
+    if (!text(document[key]))
+      issue(
+        issues,
+        `MAPJSON_${key.toUpperCase()}_MISSING`,
+        "error",
+        "mapJson",
+        `Campo obrigatório ${key} ausente.`,
+      );
   }
-  for (const key of ["music", "region_map_section", "weather", "map_type", "battle_scene"] as const) {
+  for (const key of [
+    "music",
+    "region_map_section",
+    "weather",
+    "map_type",
+    "battle_scene",
+  ] as const) {
     if (!asmScalar(document[key])) {
-      issue(issues, `MAPJSON_${key.toUpperCase()}_MISSING`, "error", "mapJson", `Campo obrigatório ${key} ausente/vazio; tools/mapjson não consegue gerar o MapHeader.`);
+      issue(
+        issues,
+        `MAPJSON_${key.toUpperCase()}_MISSING`,
+        "error",
+        "mapJson",
+        `Campo obrigatório ${key} ausente/vazio; tools/mapjson não consegue gerar o MapHeader.`,
+      );
     }
   }
-  for (const key of ["requires_flash", "allow_cycling", "allow_escaping", "allow_running", "show_map_name"] as const) {
+  for (const key of [
+    "requires_flash",
+    "allow_cycling",
+    "allow_escaping",
+    "allow_running",
+    "show_map_name",
+  ] as const) {
     if (typeof document[key] !== "boolean") {
-      issue(issues, `MAPJSON_${key.toUpperCase()}_TYPE`, "error", "mapJson", `Campo obrigatório ${key} precisa ser boolean no schema Emerald do projeto.`);
+      issue(
+        issues,
+        `MAPJSON_${key.toUpperCase()}_TYPE`,
+        "error",
+        "mapJson",
+        `Campo obrigatório ${key} precisa ser boolean no schema Emerald do projeto.`,
+      );
     }
   }
-  for (const key of ["warp_events", "object_events", "coord_events", "bg_events", "connections"] as const) {
+  for (const key of [
+    "warp_events",
+    "object_events",
+    "coord_events",
+    "bg_events",
+    "connections",
+  ] as const) {
     const value = document[key];
     if (value !== undefined && value !== null && !Array.isArray(value)) {
-      issue(issues, `MAPJSON_${key.toUpperCase()}_TYPE`, "error", "mapJson", `${key} precisa ser array ou null quando presente.`);
+      issue(
+        issues,
+        `MAPJSON_${key.toUpperCase()}_TYPE`,
+        "error",
+        "mapJson",
+        `${key} precisa ser array ou null quando presente.`,
+      );
     }
   }
 
   if (document.shared_events_map !== undefined) {
     const sharedName = text(document.shared_events_map);
     if (!sharedName) {
-      issue(issues, "SHARED_EVENTS_NAME_INVALID", "error", "mapJson", "shared_events_map precisa ser nome não vazio de um mapa quando presente.");
+      issue(
+        issues,
+        "SHARED_EVENTS_NAME_INVALID",
+        "error",
+        "mapJson",
+        "shared_events_map precisa ser nome não vazio de um mapa quando presente.",
+      );
     } else {
-      const workspaceShared = workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
+      const workspaceShared =
+        workspaceContext?.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null;
       const bundleShared = bundleSharedDocument(document, input.bundle);
       const shared = workspaceShared ?? bundleShared;
       if (!shared) {
         const loadError = workspaceContext?.loadErrors?.[sharedEventsContextKey(sharedName)];
-        issue(issues, "SHARED_EVENTS_UNVERIFIED", "warning", "mapJson", `shared_events_map=${sharedName} não pôde ser carregado${loadError ? ` (${loadError})` : ""}; NPCs/warps/triggers efetivos não podem ser certificados.`);
+        issue(
+          issues,
+          "SHARED_EVENTS_UNVERIFIED",
+          "warning",
+          "mapJson",
+          `shared_events_map=${sharedName} não pôde ser carregado${loadError ? ` (${loadError})` : ""}; NPCs/warps/triggers efetivos não podem ser certificados.`,
+        );
       } else {
-        issue(issues, "SHARED_EVENTS_LOADED", "info", "mapJson", `Eventos efetivos carregados de ${sharedName}, conforme shared_events_map do MapHeader${workspaceShared ? " pelo Workspace" : " pelo snapshot do bundle"}.`);
+        issue(
+          issues,
+          "SHARED_EVENTS_LOADED",
+          "info",
+          "mapJson",
+          `Eventos efetivos carregados de ${sharedName}, conforme shared_events_map do MapHeader${workspaceShared ? " pelo Workspace" : " pelo snapshot do bundle"}.`,
+        );
       }
-      if (workspaceShared && bundleShared && canonicalJson(workspaceShared) !== canonicalJson(bundleShared)) {
-        issue(issues, "SHARED_EVENTS_SNAPSHOT_STALE", "error", "mapJson", `O snapshot de ${sharedName} dentro do bundle difere do map.json atualmente carregado pelo Workspace.`);
+      if (
+        workspaceShared &&
+        bundleShared &&
+        canonicalJson(workspaceShared) !== canonicalJson(bundleShared)
+      ) {
+        issue(
+          issues,
+          "SHARED_EVENTS_SNAPSHOT_STALE",
+          "error",
+          "mapJson",
+          `O snapshot de ${sharedName} dentro do bundle difere do map.json atualmente carregado pelo Workspace.`,
+        );
       }
-      const localCount = ["object_events", "warp_events", "coord_events", "bg_events"].reduce((sum, key) => sum + array(document[key]).length, 0);
+      const localCount = ["object_events", "warp_events", "coord_events", "bg_events"].reduce(
+        (sum, key) => sum + array(document[key]).length,
+        0,
+      );
       if (localCount > 0) {
-        issue(issues, "SHARED_EVENTS_LOCAL_EVENTS_IGNORED", "warning", "mapJson", `${localCount} evento(s) local(is) coexistem com shared_events_map=${sharedName}; tools/mapjson ignora os arrays locais e usa somente ${sharedName}_MapEvents.`);
+        issue(
+          issues,
+          "SHARED_EVENTS_LOCAL_EVENTS_IGNORED",
+          "warning",
+          "mapJson",
+          `${localCount} evento(s) local(is) coexistem com shared_events_map=${sharedName}; tools/mapjson ignora os arrays locais e usa somente ${sharedName}_MapEvents.`,
+        );
       }
-      issue(issues, "SHARED_EVENTS_READ_ONLY_SOURCE", "info", "mapJson", `Os eventos compartilhados são auditados em modo somente leitura; edite o mapa-fonte ${sharedName} para alterar posições/IDs.`);
+      issue(
+        issues,
+        "SHARED_EVENTS_READ_ONLY_SOURCE",
+        "info",
+        "mapJson",
+        `Os eventos compartilhados são auditados em modo somente leitura; edite o mapa-fonte ${sharedName} para alterar posições/IDs.`,
+      );
     }
   }
 
   if (!issues.some((found) => found.category === "mapJson" && found.severity === "error")) {
-    issue(issues, "MAPJSON_COMPILE_CONTRACT_OK", "info", "mapJson", "Campos obrigatórios do MapHeader/event collections são compatíveis com tools/mapjson do Emerald.");
+    issue(
+      issues,
+      "MAPJSON_COMPILE_CONTRACT_OK",
+      "info",
+      "mapJson",
+      "Campos obrigatórios do MapHeader/event collections são compatíveis com tools/mapjson do Emerald.",
+    );
   }
-  issue(issues, "MAPJSON_PRESENT", "info", "mapJson", "Documento map.json completo disponível para round-trip.");
+  issue(
+    issues,
+    "MAPJSON_PRESENT",
+    "info",
+    "mapJson",
+    "Documento map.json completo disponível para round-trip.",
+  );
 }
 
 function auditWeather(document: EditableMapJson | null, issues: ImplementabilityIssue[]) {
   if (!document) return;
   const weather = document.weather;
   if (typeof weather !== "string" || weather.length === 0) {
-    issue(issues, "WEATHER_MISSING", "warning", "weather", "Campo weather ausente/vazio; o Studio não inventa clima automaticamente.");
+    issue(
+      issues,
+      "WEATHER_MISSING",
+      "warning",
+      "weather",
+      "Campo weather ausente/vazio; o Studio não inventa clima automaticamente.",
+    );
     return;
   }
   if (KNOWN_POKEEMERALD_WEATHER.has(weather)) {
-    issue(issues, "WEATHER_KNOWN", "info", "weather", `Clima preservado e reconhecido: ${weather}.`);
+    issue(
+      issues,
+      "WEATHER_KNOWN",
+      "info",
+      "weather",
+      `Clima preservado e reconhecido: ${weather}.`,
+    );
   } else if (weather.startsWith("WEATHER_")) {
-    issue(issues, "WEATHER_CUSTOM_UNVERIFIED", "warning", "weather", `Clima ${weather} foi preservado, mas parece constante customizada e precisa existir no código do jogo.`);
+    issue(
+      issues,
+      "WEATHER_CUSTOM_UNVERIFIED",
+      "warning",
+      "weather",
+      `Clima ${weather} foi preservado, mas parece constante customizada e precisa existir no código do jogo.`,
+    );
   } else {
-    issue(issues, "WEATHER_INVALID_SYMBOL", "warning", "weather", `Clima ${weather} não segue o formato WEATHER_* conhecido.`);
+    issue(
+      issues,
+      "WEATHER_INVALID_SYMBOL",
+      "warning",
+      "weather",
+      `Clima ${weather} não segue o formato WEATHER_* conhecido.`,
+    );
   }
 }
 
@@ -445,16 +708,37 @@ function auditEdgeWarpTransition(
   const direction = connectionEdgeDirection(map.width, map.height, point);
   const loc = { eventSource: "warp" as const, eventIndex, ...point };
   if (!direction || !isConnectionEdgeWarpPosition(mapJson, map.width, map.height, point)) {
-    issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} está fora do layout e não pertence à primeira célula de uma conexão válida.`, loc);
+    issue(
+      issues,
+      "WARP_OUT_OF_BOUNDS",
+      "error",
+      "warps",
+      `Warp ${eventIndex} está fora do layout e não pertence à primeira célula de uma conexão válida.`,
+      loc,
+    );
     return;
   }
   const anchor = edgeInteriorAnchor(map.width, map.height, point);
   if (!anchor) {
-    issue(issues, "WARP_EDGE_ANCHOR_INVALID", "error", "warps", `Warp ${eventIndex} não possui célula interna adjacente válida.`, loc);
+    issue(
+      issues,
+      "WARP_EDGE_ANCHOR_INVALID",
+      "error",
+      "warps",
+      `Warp ${eventIndex} não possui célula interna adjacente válida.`,
+      loc,
+    );
     return;
   }
   if ((collisionAt(map, anchor.x, anchor.y) ?? 1) > 0) {
-    issue(issues, "WARP_EDGE_ANCHOR_BLOCKED", "error", "warps", `Warp ${eventIndex} está na margem ${direction}, mas a célula interna adjacente (${anchor.x},${anchor.y}) é bloqueada.`, loc);
+    issue(
+      issues,
+      "WARP_EDGE_ANCHOR_BLOCKED",
+      "error",
+      "warps",
+      `Warp ${eventIndex} está na margem ${direction}, mas a célula interna adjacente (${anchor.x},${anchor.y}) é bloqueada.`,
+      loc,
+    );
   }
   const candidates = edgeConnections(mapJson, direction);
   for (const connection of candidates) {
@@ -462,41 +746,112 @@ function auditEdgeWarpTransition(
     const neighbor = workspaceContext?.maps[connection.map];
     if (!neighbor) {
       const loadError = workspaceContext?.loadErrors?.[connection.map];
-      issue(issues, "WARP_EDGE_NEIGHBOR_UNVERIFIED", "warning", "warps", `Warp ${eventIndex} usa a margem ${direction}, mas ${connection.map} não está disponível para certificar o tile conectado${loadError ? ` (${loadError})` : ""}.`, loc);
+      issue(
+        issues,
+        "WARP_EDGE_NEIGHBOR_UNVERIFIED",
+        "warning",
+        "warps",
+        `Warp ${eventIndex} usa a margem ${direction}, mas ${connection.map} não está disponível para certificar o tile conectado${loadError ? ` (${loadError})` : ""}.`,
+        loc,
+      );
       return;
     }
     if (!neighbor.width || !neighbor.height) {
-      issue(issues, "WARP_EDGE_GEOMETRY_UNVERIFIED", "warning", "warps", `Warp ${eventIndex}: dimensões de ${connection.map} não estão disponíveis para aplicar offset ${connection.offset}.`, loc);
+      issue(
+        issues,
+        "WARP_EDGE_GEOMETRY_UNVERIFIED",
+        "warning",
+        "warps",
+        `Warp ${eventIndex}: dimensões de ${connection.map} não estão disponíveis para aplicar offset ${connection.offset}.`,
+        loc,
+      );
       return;
     }
-    const targetPoint = translateEdgePointToNeighbor(direction, point, connection.offset, neighbor.width, neighbor.height);
+    const targetPoint = translateEdgePointToNeighbor(
+      direction,
+      point,
+      connection.offset,
+      neighbor.width,
+      neighbor.height,
+    );
     if (!targetPoint) continue;
     if (!neighbor.map || !neighbor.atlas) {
       const loadError = workspaceContext?.loadErrors?.[connection.map];
-      issue(issues, "WARP_EDGE_TILE_UNVERIFIED", "warning", "warps", `Warp ${eventIndex} corresponde a ${connection.map} (${targetPoint.x},${targetPoint.y}), mas map.bin/behavior do vizinho não pôde ser certificado${loadError ? ` (${loadError})` : ""}.`, loc);
+      issue(
+        issues,
+        "WARP_EDGE_TILE_UNVERIFIED",
+        "warning",
+        "warps",
+        `Warp ${eventIndex} corresponde a ${connection.map} (${targetPoint.x},${targetPoint.y}), mas map.bin/behavior do vizinho não pôde ser certificado${loadError ? ` (${loadError})` : ""}.`,
+        loc,
+      );
       return;
     }
     const targetState = cellPassability(neighbor.map, targetPoint.x, targetPoint.y, neighbor.atlas);
     if (targetState.state === "blocked") {
-      issue(issues, "WARP_EDGE_TARGET_BLOCKED", "error", "warps", `Warp ${eventIndex} cai em ${connection.map} (${targetPoint.x},${targetPoint.y}) bloqueado: ${targetState.reason}.`, loc);
+      issue(
+        issues,
+        "WARP_EDGE_TARGET_BLOCKED",
+        "error",
+        "warps",
+        `Warp ${eventIndex} cai em ${connection.map} (${targetPoint.x},${targetPoint.y}) bloqueado: ${targetState.reason}.`,
+        loc,
+      );
     } else if (targetState.state === "unknown") {
-      issue(issues, "WARP_EDGE_TARGET_UNKNOWN", "warning", "warps", `Warp ${eventIndex} cai em ${connection.map} (${targetPoint.x},${targetPoint.y}), mas o behavior não é certificável: ${targetState.reason}.`, loc);
+      issue(
+        issues,
+        "WARP_EDGE_TARGET_UNKNOWN",
+        "warning",
+        "warps",
+        `Warp ${eventIndex} cai em ${connection.map} (${targetPoint.x},${targetPoint.y}), mas o behavior não é certificável: ${targetState.reason}.`,
+        loc,
+      );
     } else {
-      issue(issues, "WARP_EDGE_TARGET_OK", "info", "warps", `Warp ${eventIndex} na margem ${direction} corresponde a ${connection.map} (${targetPoint.x},${targetPoint.y}) com passagem ${targetState.state} reconhecida pelo engine.`, loc);
+      issue(
+        issues,
+        "WARP_EDGE_TARGET_OK",
+        "info",
+        "warps",
+        `Warp ${eventIndex} na margem ${direction} corresponde a ${connection.map} (${targetPoint.x},${targetPoint.y}) com passagem ${targetState.state} reconhecida pelo engine.`,
+        loc,
+      );
     }
     return;
   }
-  issue(issues, "WARP_EDGE_CONNECTION_MISMATCH", "error", "warps", `Warp ${eventIndex} está na margem ${direction}, mas nenhuma conexão dessa borda cobre sua coordenada após aplicar o offset.`, loc);
+  issue(
+    issues,
+    "WARP_EDGE_CONNECTION_MISMATCH",
+    "error",
+    "warps",
+    `Warp ${eventIndex} está na margem ${direction}, mas nenhuma conexão dessa borda cobre sua coordenada após aplicar o offset.`,
+    loc,
+  );
 }
 
 function bgInteractionPoints(entry: Record<string, unknown>, point: MapPoint): MapPoint[] {
-  if (entry.type !== "sign") return [{ x: point.x + 1, y: point.y }, { x: point.x - 1, y: point.y }, { x: point.x, y: point.y + 1 }, { x: point.x, y: point.y - 1 }];
+  if (entry.type !== "sign")
+    return [
+      { x: point.x + 1, y: point.y },
+      { x: point.x - 1, y: point.y },
+      { x: point.x, y: point.y + 1 },
+      { x: point.x, y: point.y - 1 },
+    ];
   switch (entry.player_facing_dir) {
-    case "BG_EVENT_PLAYER_FACING_NORTH": return [{ x: point.x, y: point.y + 1 }];
-    case "BG_EVENT_PLAYER_FACING_SOUTH": return [{ x: point.x, y: point.y - 1 }];
-    case "BG_EVENT_PLAYER_FACING_EAST": return [{ x: point.x - 1, y: point.y }];
-    case "BG_EVENT_PLAYER_FACING_WEST": return [{ x: point.x + 1, y: point.y }];
-    default: return [{ x: point.x + 1, y: point.y }, { x: point.x - 1, y: point.y }, { x: point.x, y: point.y + 1 }, { x: point.x, y: point.y - 1 }];
+    case "BG_EVENT_PLAYER_FACING_NORTH":
+      return [{ x: point.x, y: point.y + 1 }];
+    case "BG_EVENT_PLAYER_FACING_SOUTH":
+      return [{ x: point.x, y: point.y - 1 }];
+    case "BG_EVENT_PLAYER_FACING_EAST":
+      return [{ x: point.x - 1, y: point.y }];
+    case "BG_EVENT_PLAYER_FACING_WEST":
+      return [{ x: point.x + 1, y: point.y }];
+    default:
+      return [
+        { x: point.x + 1, y: point.y },
+        { x: point.x - 1, y: point.y },
+        { x: point.x, y: point.y + 1 },
+        { x: point.x, y: point.y - 1 },
+      ];
   }
 }
 
@@ -516,119 +871,351 @@ function auditEvents(
   warps.forEach((raw, eventIndex) => {
     const entry = record(raw);
     if (!entry) {
-      issue(issues, "WARP_NOT_OBJECT", "error", "warps", `Warp ${eventIndex} não é objeto.`, { eventSource: "warp", eventIndex });
+      issue(issues, "WARP_NOT_OBJECT", "error", "warps", `Warp ${eventIndex} não é objeto.`, {
+        eventSource: "warp",
+        eventIndex,
+      });
       return;
     }
     const point = eventPoint(entry);
     if (!point) {
-      issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} não possui coordenadas inteiras válidas.`, { eventSource: "warp", eventIndex });
+      issue(
+        issues,
+        "WARP_OUT_OF_BOUNDS",
+        "error",
+        "warps",
+        `Warp ${eventIndex} não possui coordenadas inteiras válidas.`,
+        { eventSource: "warp", eventIndex },
+      );
       return;
     }
     const elevation = eventElevation(entry);
-    if (elevation === null) issue(issues, "WARP_ELEVATION_INVALID", "error", "warps", `Warp ${eventIndex} possui elevation inválida (${String(entry.elevation)}); esperado inteiro 0–15.`, { eventSource: "warp", eventIndex, ...point });
+    if (elevation === null)
+      issue(
+        issues,
+        "WARP_ELEVATION_INVALID",
+        "error",
+        "warps",
+        `Warp ${eventIndex} possui elevation inválida (${String(entry.elevation)}); esperado inteiro 0–15.`,
+        { eventSource: "warp", eventIndex, ...point },
+      );
     const inside = inBounds(map, point.x, point.y);
     const edge = !inside && isConnectionEdgeWarpPosition(mapJson, map.width, map.height, point);
     if (!inside && !edge) {
-      issue(issues, "WARP_OUT_OF_BOUNDS", "error", "warps", `Warp ${eventIndex} está fora do mapa.`, { eventSource: "warp", eventIndex, ...point });
+      issue(
+        issues,
+        "WARP_OUT_OF_BOUNDS",
+        "error",
+        "warps",
+        `Warp ${eventIndex} está fora do mapa.`,
+        { eventSource: "warp", eventIndex, ...point },
+      );
       return;
     }
     const loc = { eventSource: "warp" as const, eventIndex, ...point };
     if (inside && (collisionAt(map, point.x, point.y) ?? 0) > 0) {
       const tile = input.atlas ? cellPassability(map, point.x, point.y, input.atlas) : null;
       if (tile?.behavior === MB_ANIMATED_DOOR) {
-        issue(issues, "WARP_ANIMATED_DOOR_COLLISION_OK", "info", "warps", `Warp ${eventIndex} está em porta animada com collision > 0; TryDoorWarp aciona esse warp a partir da célula em frente.`, loc);
+        issue(
+          issues,
+          "WARP_ANIMATED_DOOR_COLLISION_OK",
+          "info",
+          "warps",
+          `Warp ${eventIndex} está em porta animada com collision > 0; TryDoorWarp aciona esse warp a partir da célula em frente.`,
+          loc,
+        );
       } else {
-        issue(issues, "WARP_BLOCKED", "error", "warps", `Warp ${eventIndex} está sobre collision > 0 sem regra de entrada de porta animada reconhecida.`, loc);
+        issue(
+          issues,
+          "WARP_BLOCKED",
+          "error",
+          "warps",
+          `Warp ${eventIndex} está sobre collision > 0 sem regra de entrada de porta animada reconhecida.`,
+          loc,
+        );
       }
     } else if (edge) {
       auditEdgeWarpTransition(input, issues, workspaceContext, eventIndex, point);
     }
     const destMap = text(entry.dest_map);
     const destWarp = integerLike(entry.dest_warp_id);
-    if (!destMap) issue(issues, "WARP_DEST_MAP_INVALID", "error", "warps", `Warp ${eventIndex} não possui dest_map válido.`, loc);
-    if (destWarp === null) issue(issues, "WARP_DEST_ID_INVALID", "error", "warps", `Warp ${eventIndex} possui dest_warp_id inválido (${String(entry.dest_warp_id)}).`, loc);
+    if (!destMap)
+      issue(
+        issues,
+        "WARP_DEST_MAP_INVALID",
+        "error",
+        "warps",
+        `Warp ${eventIndex} não possui dest_map válido.`,
+        loc,
+      );
+    if (destWarp === null)
+      issue(
+        issues,
+        "WARP_DEST_ID_INVALID",
+        "error",
+        "warps",
+        `Warp ${eventIndex} possui dest_warp_id inválido (${String(entry.dest_warp_id)}).`,
+        loc,
+      );
     const key = `${point.x},${point.y}`;
     const current = warpCells.get(key) ?? [];
     current.push({ index: eventIndex, elevation });
     warpCells.set(key, current);
     if (!destMap || destWarp === null) return;
     if (destMap === "MAP_DYNAMIC") {
-      issue(issues, "WARP_DYNAMIC_DEST_OK", "info", "warps", `Warp ${eventIndex} usa MAP_DYNAMIC; o engine resolve o destino pelo dynamicWarp salvo.`, loc);
+      issue(
+        issues,
+        "WARP_DYNAMIC_DEST_OK",
+        "info",
+        "warps",
+        `Warp ${eventIndex} usa MAP_DYNAMIC; o engine resolve o destino pelo dynamicWarp salvo.`,
+        loc,
+      );
       return;
     }
     const target = workspaceContext?.maps[destMap];
     if (!target) {
       const loadError = workspaceContext?.loadErrors?.[destMap];
-      issue(issues, "WARP_DEST_UNVERIFIED", "warning", "warps", `Destino ${destMap} não está disponível no contexto do Workspace${loadError ? ` (${loadError})` : ""}; warp ${eventIndex} não pôde ser verificado de ponta a ponta.`, loc);
+      issue(
+        issues,
+        "WARP_DEST_UNVERIFIED",
+        "warning",
+        "warps",
+        `Destino ${destMap} não está disponível no contexto do Workspace${loadError ? ` (${loadError})` : ""}; warp ${eventIndex} não pôde ser verificado de ponta a ponta.`,
+        loc,
+      );
       return;
     }
     if (destWarp === -1) {
-      issue(issues, "WARP_DEST_COORDINATE_MODE", "info", "warps", `Warp ${eventIndex} usa WARP_ID_NONE/-1 para ${destMap}; modo especial por coordenadas preservado.`, loc);
+      issue(
+        issues,
+        "WARP_DEST_COORDINATE_MODE",
+        "info",
+        "warps",
+        `Warp ${eventIndex} usa WARP_ID_NONE/-1 para ${destMap}; modo especial por coordenadas preservado.`,
+        loc,
+      );
       return;
     }
-    const targetEventsDocument = effectiveEventDocument(target.mapJson, workspaceContext) ?? target.mapJson;
+    const targetEventsDocument =
+      effectiveEventDocument(target.mapJson, workspaceContext) ?? target.mapJson;
     const targetWarps = array(targetEventsDocument.warp_events);
     if (destWarp < 0 || destWarp >= targetWarps.length || !record(targetWarps[destWarp])) {
-      issue(issues, "WARP_DEST_NOT_FOUND", "error", "warps", `Destino ${destMap} warp ${destWarp} não existe nos eventos efetivos do mapa de destino.`, loc);
+      issue(
+        issues,
+        "WARP_DEST_NOT_FOUND",
+        "error",
+        "warps",
+        `Destino ${destMap} warp ${destWarp} não existe nos eventos efetivos do mapa de destino.`,
+        loc,
+      );
       return;
     }
     if (mapId) {
       const back = record(targetWarps[destWarp]);
       const backMap = back ? text(back.dest_map) : null;
       const backWarp = back ? integerLike(back.dest_warp_id) : null;
-      if (backMap === mapId && backWarp === eventIndex) issue(issues, "WARP_RECIPROCAL_OK", "info", "warps", `Warp ${eventIndex} possui retorno recíproco em ${destMap}.`, loc);
-      else issue(issues, "WARP_RETURN_NONRECIPROCAL", "info", "warps", `Warp ${eventIndex} chega a ${destMap}:${destWarp} sem retorno exato; warps unidirecionais/redes de teleporte são aceitos pelo engine.`, loc);
+      if (backMap === mapId && backWarp === eventIndex)
+        issue(
+          issues,
+          "WARP_RECIPROCAL_OK",
+          "info",
+          "warps",
+          `Warp ${eventIndex} possui retorno recíproco em ${destMap}.`,
+          loc,
+        );
+      else
+        issue(
+          issues,
+          "WARP_RETURN_NONRECIPROCAL",
+          "info",
+          "warps",
+          `Warp ${eventIndex} chega a ${destMap}:${destWarp} sem retorno exato; warps unidirecionais/redes de teleporte são aceitos pelo engine.`,
+          loc,
+        );
     }
   });
 
   for (const [cell, entries] of warpCells) {
     if (entries.length < 2) continue;
     const conflicting = new Set<number>();
-    for (let i = 0; i < entries.length; i++) for (let j = i + 1; j < entries.length; j++) {
-      const a = entries[i], b = entries[j];
-      if (!a || !b) continue;
-      if (a.elevation === null || b.elevation === null || a.elevation === 0 || b.elevation === 0 || a.elevation === b.elevation) {
-        conflicting.add(a.index); conflicting.add(b.index);
+    for (let i = 0; i < entries.length; i++)
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i],
+          b = entries[j];
+        if (!a || !b) continue;
+        if (
+          a.elevation === null ||
+          b.elevation === null ||
+          a.elevation === 0 ||
+          b.elevation === 0 ||
+          a.elevation === b.elevation
+        ) {
+          conflicting.add(a.index);
+          conflicting.add(b.index);
+        }
       }
-    }
-    if (conflicting.size > 1) issue(issues, "WARP_DUPLICATE_CELL", "warning", "warps", `Warps ${[...conflicting].join(", ")} compartilham ${cell} com elevations sobrepostas; o primeiro compatível pode sombrear os demais.`);
-    else issue(issues, "WARP_SHARED_COORD_DIFFERENT_ELEVATION", "info", "warps", `Há ${entries.length} warps em ${cell}, mas elevations distintas permitem ao engine diferenciá-los.`);
+    if (conflicting.size > 1)
+      issue(
+        issues,
+        "WARP_DUPLICATE_CELL",
+        "warning",
+        "warps",
+        `Warps ${[...conflicting].join(", ")} compartilham ${cell} com elevations sobrepostas; o primeiro compatível pode sombrear os demais.`,
+      );
+    else
+      issue(
+        issues,
+        "WARP_SHARED_COORD_DIFFERENT_ELEVATION",
+        "info",
+        "warps",
+        `Há ${entries.length} warps em ${cell}, mas elevations distintas permitem ao engine diferenciá-los.`,
+      );
   }
 
   const objects = array(eventMapJson.object_events);
   const objectCells = new Map<string, Array<{ index: number; elevation: number | null }>>();
   objects.forEach((raw, eventIndex) => {
     const entry = record(raw);
-    if (!entry) { issue(issues, "NPC_NOT_OBJECT", "error", "npcs", `Object event ${eventIndex} não é objeto.`, { eventSource: "object", eventIndex }); return; }
+    if (!entry) {
+      issue(issues, "NPC_NOT_OBJECT", "error", "npcs", `Object event ${eventIndex} não é objeto.`, {
+        eventSource: "object",
+        eventIndex,
+      });
+      return;
+    }
     const point = eventPoint(entry);
-    if (!point || !inBounds(map, point.x, point.y)) { issue(issues, "NPC_OUT_OF_BOUNDS", "error", "npcs", `NPC ${eventIndex} está fora do mapa.`, { eventSource: "object", eventIndex, ...(point ?? {}) }); return; }
+    if (!point || !inBounds(map, point.x, point.y)) {
+      issue(issues, "NPC_OUT_OF_BOUNDS", "error", "npcs", `NPC ${eventIndex} está fora do mapa.`, {
+        eventSource: "object",
+        eventIndex,
+        ...(point ?? {}),
+      });
+      return;
+    }
     const loc = { eventSource: "object" as const, eventIndex, ...point };
     const objectType = text(entry.type);
-    if (objectType === "clone") { issue(issues, "NPC_CLONE_UNSUPPORTED_EMERALD", "error", "npcs", `Object event ${eventIndex} usa type=clone; handling é FRLG-only no projeto.`, loc); return; }
-    if (objectType && objectType !== "object") { issue(issues, "NPC_TYPE_INVALID", "error", "npcs", `Object event ${eventIndex} possui type=${objectType}; mapjson aceita object/clone.`, loc); return; }
-    for (const key of ["graphics_id", "movement_type", "trainer_type", "trainer_sight_or_berry_tree_id", "script", "flag"] as const) {
-      if (!asmScalar(entry[key])) issue(issues, "NPC_REQUIRED_FIELD_MISSING", "error", "npcs", `Object event ${eventIndex}: campo obrigatório ${key} ausente/vazio.`, loc);
+    if (objectType === "clone") {
+      issue(
+        issues,
+        "NPC_CLONE_UNSUPPORTED_EMERALD",
+        "error",
+        "npcs",
+        `Object event ${eventIndex} usa type=clone; handling é FRLG-only no projeto.`,
+        loc,
+      );
+      return;
+    }
+    if (objectType && objectType !== "object") {
+      issue(
+        issues,
+        "NPC_TYPE_INVALID",
+        "error",
+        "npcs",
+        `Object event ${eventIndex} possui type=${objectType}; mapjson aceita object/clone.`,
+        loc,
+      );
+      return;
+    }
+    for (const key of [
+      "graphics_id",
+      "movement_type",
+      "trainer_type",
+      "trainer_sight_or_berry_tree_id",
+      "script",
+      "flag",
+    ] as const) {
+      if (!asmScalar(entry[key]))
+        issue(
+          issues,
+          "NPC_REQUIRED_FIELD_MISSING",
+          "error",
+          "npcs",
+          `Object event ${eventIndex}: campo obrigatório ${key} ausente/vazio.`,
+          loc,
+        );
     }
     const elevation = eventElevation(entry);
-    if (elevation === null) issue(issues, "NPC_ELEVATION_INVALID", "error", "npcs", `NPC ${eventIndex} possui elevation inválida (${String(entry.elevation)}).`, loc);
-    if ((collisionAt(map, point.x, point.y) ?? 0) > 0) issue(issues, "NPC_BLOCKED", "error", "npcs", `NPC ${eventIndex} (${String(entry.local_id ?? entry.graphics_id ?? "sem id")}) nasce sobre collision > 0.`, loc);
-    const rangeX = integer(entry.movement_range_x), rangeY = integer(entry.movement_range_y);
-    if (rangeX === null || rangeY === null || rangeX < 0 || rangeY < 0 || rangeX > 15 || rangeY > 15) {
-      issue(issues, "NPC_MOVEMENT_RANGE_INVALID", "error", "npcs", `NPC ${eventIndex} possui movement_range_x/y inválido; campos são 4-bit (0–15).`, loc);
+    if (elevation === null)
+      issue(
+        issues,
+        "NPC_ELEVATION_INVALID",
+        "error",
+        "npcs",
+        `NPC ${eventIndex} possui elevation inválida (${String(entry.elevation)}).`,
+        loc,
+      );
+    if ((collisionAt(map, point.x, point.y) ?? 0) > 0)
+      issue(
+        issues,
+        "NPC_BLOCKED",
+        "error",
+        "npcs",
+        `NPC ${eventIndex} (${String(entry.local_id ?? entry.graphics_id ?? "sem id")}) nasce sobre collision > 0.`,
+        loc,
+      );
+    const rangeX = integer(entry.movement_range_x),
+      rangeY = integer(entry.movement_range_y);
+    if (
+      rangeX === null ||
+      rangeY === null ||
+      rangeX < 0 ||
+      rangeY < 0 ||
+      rangeX > 15 ||
+      rangeY > 15
+    ) {
+      issue(
+        issues,
+        "NPC_MOVEMENT_RANGE_INVALID",
+        "error",
+        "npcs",
+        `NPC ${eventIndex} possui movement_range_x/y inválido; campos são 4-bit (0–15).`,
+        loc,
+      );
     } else {
-      const minX = point.x - rangeX, maxX = point.x + rangeX, minY = point.y - rangeY, maxY = point.y + rangeY;
-      if (minX < 0 || minY < 0 || maxX >= map.width || maxY >= map.height) issue(issues, "NPC_MOVEMENT_RANGE_CLIPPED_BY_ENGINE", "info", "npcs", `Range do NPC ${eventIndex} alcança fora do layout; o engine bloqueia borda/coords inválidas em cada tentativa de passo.`, loc);
+      const minX = point.x - rangeX,
+        maxX = point.x + rangeX,
+        minY = point.y - rangeY,
+        maxY = point.y + rangeY;
+      if (minX < 0 || minY < 0 || maxX >= map.width || maxY >= map.height)
+        issue(
+          issues,
+          "NPC_MOVEMENT_RANGE_CLIPPED_BY_ENGINE",
+          "info",
+          "npcs",
+          `Range do NPC ${eventIndex} alcança fora do layout; o engine bloqueia borda/coords inválidas em cada tentativa de passo.`,
+          loc,
+        );
       if (rangeX > 0 || rangeY > 0) {
         let blocked = 0;
-        for (let y = Math.max(0, minY); y <= Math.min(map.height - 1, maxY); y++) for (let x = Math.max(0, minX); x <= Math.min(map.width - 1, maxX); x++) if ((collisionAt(map, x, y) ?? 0) > 0) blocked++;
-        if (blocked) issue(issues, "NPC_MOVEMENT_RANGE_OBSTACLES_HANDLED", "info", "npcs", `Range do NPC ${eventIndex} contém ${blocked} célula(s) bloqueada(s); isso é normal porque o engine consulta colisão a cada passo.`, loc);
+        for (let y = Math.max(0, minY); y <= Math.min(map.height - 1, maxY); y++)
+          for (let x = Math.max(0, minX); x <= Math.min(map.width - 1, maxX); x++)
+            if ((collisionAt(map, x, y) ?? 0) > 0) blocked++;
+        if (blocked)
+          issue(
+            issues,
+            "NPC_MOVEMENT_RANGE_OBSTACLES_HANDLED",
+            "info",
+            "npcs",
+            `Range do NPC ${eventIndex} contém ${blocked} célula(s) bloqueada(s); isso é normal porque o engine consulta colisão a cada passo.`,
+            loc,
+          );
       }
     }
     const key = `${point.x},${point.y}`;
     const current = objectCells.get(key) ?? [];
-    current.push({ index: eventIndex, elevation }); objectCells.set(key, current);
+    current.push({ index: eventIndex, elevation });
+    objectCells.set(key, current);
   });
-  for (const [cell, entries] of objectCells) if (entries.length > 1) issue(issues, "NPC_SHARED_CELL", "info", "npcs", `NPCs ${entries.map((entry) => entry.index).join(", ")} compartilham ${cell}; flags/elevation podem torná-los mutuamente exclusivos.`);
+  for (const [cell, entries] of objectCells)
+    if (entries.length > 1)
+      issue(
+        issues,
+        "NPC_SHARED_CELL",
+        "info",
+        "npcs",
+        `NPCs ${entries.map((entry) => entry.index).join(", ")} compartilham ${cell}; flags/elevation podem torná-los mutuamente exclusivos.`,
+      );
 
   for (const source of ["coord_events", "bg_events"] as const) {
     const eventSource = source === "coord_events" ? ("coord" as const) : ("bg" as const);
@@ -636,57 +1223,222 @@ function auditEvents(
     const exactConditions = new Map<string, number[]>();
     array(eventMapJson[source]).forEach((raw, eventIndex) => {
       const entry = record(raw);
-      if (!entry) { issue(issues, "TRIGGER_NOT_OBJECT", "error", "triggers", `${source}[${eventIndex}] não é objeto.`, { eventSource, eventIndex }); return; }
+      if (!entry) {
+        issue(
+          issues,
+          "TRIGGER_NOT_OBJECT",
+          "error",
+          "triggers",
+          `${source}[${eventIndex}] não é objeto.`,
+          { eventSource, eventIndex },
+        );
+        return;
+      }
       const point = eventPoint(entry);
-      if (!point || !inBounds(map, point.x, point.y)) { issue(issues, "TRIGGER_OUT_OF_BOUNDS", "error", "triggers", `${source}[${eventIndex}] está fora do mapa.`, { eventSource, eventIndex, ...(point ?? {}) }); return; }
+      if (!point || !inBounds(map, point.x, point.y)) {
+        issue(
+          issues,
+          "TRIGGER_OUT_OF_BOUNDS",
+          "error",
+          "triggers",
+          `${source}[${eventIndex}] está fora do mapa.`,
+          { eventSource, eventIndex, ...(point ?? {}) },
+        );
+        return;
+      }
       const elevation = eventElevation(entry);
-      if (elevation === null) issue(issues, "TRIGGER_ELEVATION_INVALID", "error", "triggers", `${source}[${eventIndex}] possui elevation inválida (${String(entry.elevation)}).`, { eventSource, eventIndex, ...point });
+      if (elevation === null)
+        issue(
+          issues,
+          "TRIGGER_ELEVATION_INVALID",
+          "error",
+          "triggers",
+          `${source}[${eventIndex}] possui elevation inválida (${String(entry.elevation)}).`,
+          { eventSource, eventIndex, ...point },
+        );
       const cellKey = `${point.x},${point.y},e${elevation ?? "?"}`;
-      const current = seenCells.get(cellKey) ?? []; current.push(eventIndex); seenCells.set(cellKey, current);
+      const current = seenCells.get(cellKey) ?? [];
+      current.push(eventIndex);
+      seenCells.set(cellKey, current);
       if (eventSource === "coord") {
         const coordType = text(entry.type);
         let signature: string | null = null;
         if (coordType === "trigger") {
-          const variable = asmScalar(entry.var), value = asmScalar(entry.var_value), script = asmScalar(entry.script);
-          if (!variable || !value || !script) issue(issues, "COORD_TRIGGER_FIELDS_INVALID", "error", "triggers", `coord_events[${eventIndex}] type=trigger exige var, var_value e script.`, { eventSource, eventIndex, ...point });
+          const variable = asmScalar(entry.var),
+            value = asmScalar(entry.var_value),
+            script = asmScalar(entry.script);
+          if (!variable || !value || !script)
+            issue(
+              issues,
+              "COORD_TRIGGER_FIELDS_INVALID",
+              "error",
+              "triggers",
+              `coord_events[${eventIndex}] type=trigger exige var, var_value e script.`,
+              { eventSource, eventIndex, ...point },
+            );
           signature = `${cellKey}|trigger|${variable ?? "?"}|${value ?? "?"}`;
         } else if (coordType === "weather") {
           const weather = asmScalar(entry.weather);
-          if (!weather) issue(issues, "COORD_WEATHER_FIELDS_INVALID", "error", "triggers", `coord_events[${eventIndex}] type=weather exige campo weather.`, { eventSource, eventIndex, ...point });
-          else if (KNOWN_COORD_EVENT_WEATHER.has(weather)) issue(issues, "COORD_WEATHER_KNOWN", "info", "triggers", `coord weather ${eventIndex} preserva constante reconhecida ${weather}.`, { eventSource, eventIndex, ...point });
-          else if (weather.startsWith("COORD_EVENT_WEATHER_")) issue(issues, "COORD_WEATHER_UNVERIFIED", "warning", "triggers", `coord weather ${eventIndex} usa ${weather}; constante customizada precisa existir no jogo.`, { eventSource, eventIndex, ...point });
-          else if (weather.startsWith("WEATHER_")) issue(issues, "COORD_WEATHER_WRONG_CONSTANT_FAMILY", "error", "triggers", `coord weather ${eventIndex} usa ${weather}, mas coord_weather_event exige COORD_EVENT_WEATHER_*.`, { eventSource, eventIndex, ...point });
-          else issue(issues, "COORD_WEATHER_INVALID_SYMBOL", "error", "triggers", `coord weather ${eventIndex} usa símbolo inválido ${weather}.`, { eventSource, eventIndex, ...point });
+          if (!weather)
+            issue(
+              issues,
+              "COORD_WEATHER_FIELDS_INVALID",
+              "error",
+              "triggers",
+              `coord_events[${eventIndex}] type=weather exige campo weather.`,
+              { eventSource, eventIndex, ...point },
+            );
+          else if (KNOWN_COORD_EVENT_WEATHER.has(weather))
+            issue(
+              issues,
+              "COORD_WEATHER_KNOWN",
+              "info",
+              "triggers",
+              `coord weather ${eventIndex} preserva constante reconhecida ${weather}.`,
+              { eventSource, eventIndex, ...point },
+            );
+          else if (weather.startsWith("COORD_EVENT_WEATHER_"))
+            issue(
+              issues,
+              "COORD_WEATHER_UNVERIFIED",
+              "warning",
+              "triggers",
+              `coord weather ${eventIndex} usa ${weather}; constante customizada precisa existir no jogo.`,
+              { eventSource, eventIndex, ...point },
+            );
+          else if (weather.startsWith("WEATHER_"))
+            issue(
+              issues,
+              "COORD_WEATHER_WRONG_CONSTANT_FAMILY",
+              "error",
+              "triggers",
+              `coord weather ${eventIndex} usa ${weather}, mas coord_weather_event exige COORD_EVENT_WEATHER_*.`,
+              { eventSource, eventIndex, ...point },
+            );
+          else
+            issue(
+              issues,
+              "COORD_WEATHER_INVALID_SYMBOL",
+              "error",
+              "triggers",
+              `coord weather ${eventIndex} usa símbolo inválido ${weather}.`,
+              { eventSource, eventIndex, ...point },
+            );
           signature = `${cellKey}|weather|${weather ?? "?"}`;
-        } else issue(issues, "COORD_TYPE_INVALID", "error", "triggers", `coord_events[${eventIndex}] possui type=${String(entry.type)}; mapjson aceita trigger/weather.`, { eventSource, eventIndex, ...point });
-        if (signature) { const same = exactConditions.get(signature) ?? []; same.push(eventIndex); exactConditions.set(signature, same); }
+        } else
+          issue(
+            issues,
+            "COORD_TYPE_INVALID",
+            "error",
+            "triggers",
+            `coord_events[${eventIndex}] possui type=${String(entry.type)}; mapjson aceita trigger/weather.`,
+            { eventSource, eventIndex, ...point },
+          );
+        if (signature) {
+          const same = exactConditions.get(signature) ?? [];
+          same.push(eventIndex);
+          exactConditions.set(signature, same);
+        }
       }
       if (eventSource === "bg") {
         const bgType = text(entry.type);
         if (bgType === "sign") {
-          if (!asmScalar(entry.player_facing_dir) || !asmScalar(entry.script)) issue(issues, "BG_SIGN_FIELDS_INVALID", "error", "triggers", `bg_events[${eventIndex}] type=sign exige player_facing_dir e script.`, { eventSource, eventIndex, ...point });
+          if (!asmScalar(entry.player_facing_dir) || !asmScalar(entry.script))
+            issue(
+              issues,
+              "BG_SIGN_FIELDS_INVALID",
+              "error",
+              "triggers",
+              `bg_events[${eventIndex}] type=sign exige player_facing_dir e script.`,
+              { eventSource, eventIndex, ...point },
+            );
         } else if (bgType === "hidden_item") {
-          if (!asmScalar(entry.item) || !asmScalar(entry.flag)) issue(issues, "BG_HIDDEN_ITEM_FIELDS_INVALID", "error", "triggers", `bg_events[${eventIndex}] type=hidden_item exige item e flag.`, { eventSource, eventIndex, ...point });
+          if (!asmScalar(entry.item) || !asmScalar(entry.flag))
+            issue(
+              issues,
+              "BG_HIDDEN_ITEM_FIELDS_INVALID",
+              "error",
+              "triggers",
+              `bg_events[${eventIndex}] type=hidden_item exige item e flag.`,
+              { eventSource, eventIndex, ...point },
+            );
         } else if (bgType === "secret_base") {
-          if (!asmScalar(entry.secret_base_id)) issue(issues, "BG_SECRET_BASE_FIELDS_INVALID", "error", "triggers", `bg_events[${eventIndex}] type=secret_base exige secret_base_id.`, { eventSource, eventIndex, ...point });
-        } else issue(issues, "BG_TYPE_INVALID", "error", "triggers", `bg_events[${eventIndex}] possui type=${String(entry.type)}; mapjson aceita sign/hidden_item/secret_base.`, { eventSource, eventIndex, ...point });
-        const accessible = bgInteractionPoints(entry, point).some(({ x, y }) => inBounds(map, x, y) && (collisionAt(map, x, y) ?? 1) === 0);
-        if (!accessible) issue(issues, "BG_NO_ADJACENT_ACCESS", "warning", "triggers", `BG event ${eventIndex} não possui posição de interação collision=0 compatível com seu facing/tipo.`, { eventSource, eventIndex, ...point });
+          if (!asmScalar(entry.secret_base_id))
+            issue(
+              issues,
+              "BG_SECRET_BASE_FIELDS_INVALID",
+              "error",
+              "triggers",
+              `bg_events[${eventIndex}] type=secret_base exige secret_base_id.`,
+              { eventSource, eventIndex, ...point },
+            );
+        } else
+          issue(
+            issues,
+            "BG_TYPE_INVALID",
+            "error",
+            "triggers",
+            `bg_events[${eventIndex}] possui type=${String(entry.type)}; mapjson aceita sign/hidden_item/secret_base.`,
+            { eventSource, eventIndex, ...point },
+          );
+        const accessible = bgInteractionPoints(entry, point).some(
+          ({ x, y }) => inBounds(map, x, y) && (collisionAt(map, x, y) ?? 1) === 0,
+        );
+        if (!accessible)
+          issue(
+            issues,
+            "BG_NO_ADJACENT_ACCESS",
+            "warning",
+            "triggers",
+            `BG event ${eventIndex} não possui posição de interação collision=0 compatível com seu facing/tipo.`,
+            { eventSource, eventIndex, ...point },
+          );
       }
     });
     if (eventSource === "coord") {
-      for (const [signature, indexes] of exactConditions) if (indexes.length > 1) issue(issues, "COORD_DUPLICATE_CONDITION", "warning", "triggers", `coord_events ${indexes.join(", ")} repetem a mesma posição/elevation/tipo/condição (${signature}).`);
-      for (const [cell, indexes] of seenCells) if (indexes.length > 1) issue(issues, "COORD_SHARED_CELL_CONDITIONAL_OK", "info", "triggers", `coord_events ${indexes.join(", ")} compartilham ${cell}; múltiplas condições/weather events são representáveis.`);
+      for (const [signature, indexes] of exactConditions)
+        if (indexes.length > 1)
+          issue(
+            issues,
+            "COORD_DUPLICATE_CONDITION",
+            "warning",
+            "triggers",
+            `coord_events ${indexes.join(", ")} repetem a mesma posição/elevation/tipo/condição (${signature}).`,
+          );
+      for (const [cell, indexes] of seenCells)
+        if (indexes.length > 1)
+          issue(
+            issues,
+            "COORD_SHARED_CELL_CONDITIONAL_OK",
+            "info",
+            "triggers",
+            `coord_events ${indexes.join(", ")} compartilham ${cell}; múltiplas condições/weather events são representáveis.`,
+          );
     } else {
-      for (const [cell, indexes] of seenCells) if (indexes.length > 1) issue(issues, "BG_DUPLICATE_POSITION", "warning", "triggers", `bg_events ${indexes.join(", ")} compartilham ${cell}; eventos posteriores podem ficar sombreados.`);
+      for (const [cell, indexes] of seenCells)
+        if (indexes.length > 1)
+          issue(
+            issues,
+            "BG_DUPLICATE_POSITION",
+            "warning",
+            "triggers",
+            `bg_events ${indexes.join(", ")} compartilham ${cell}; eventos posteriores podem ficar sombreados.`,
+          );
     }
   }
 }
 
-function connectionOverlapBorder(map: MapData, direction: string, offset: number, neighbor: WorkspaceAuditMap): { cells: MapPoint[]; dimensionKnown: boolean } {
+function connectionOverlapBorder(
+  map: MapData,
+  direction: string,
+  offset: number,
+  neighbor: WorkspaceAuditMap,
+): { cells: MapPoint[]; dimensionKnown: boolean } {
   const border = borderCells(map.width, map.height, direction);
-  const destinationAxisSize = direction === "up" || direction === "down" ? neighbor.width : neighbor.height;
-  if (!destinationAxisSize || destinationAxisSize <= 0) return { cells: border, dimensionKnown: false };
+  const destinationAxisSize =
+    direction === "up" || direction === "down" ? neighbor.width : neighbor.height;
+  if (!destinationAxisSize || destinationAxisSize <= 0)
+    return { cells: border, dimensionKnown: false };
   return {
     cells: border.filter((point) => {
       const coordinate = direction === "up" || direction === "down" ? point.x : point.y;
@@ -697,7 +1449,11 @@ function connectionOverlapBorder(map: MapData, direction: string, offset: number
   };
 }
 
-function auditConnections(input: GameImplementabilityInput, issues: ImplementabilityIssue[], workspaceContext: ImplementabilityWorkspaceContext | null) {
+function auditConnections(
+  input: GameImplementabilityInput,
+  issues: ImplementabilityIssue[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+) {
   const { map, mapJson, atlas } = input;
   if (!mapJson) return;
   const currentMapId = text(mapJson.id);
@@ -706,111 +1462,394 @@ function auditConnections(input: GameImplementabilityInput, issues: Implementabi
   const seen = new Set<string>();
   connections.forEach((raw, index) => {
     const entry = record(raw);
-    if (!entry) { issue(issues, "CONNECTION_NOT_OBJECT", "error", "connections", `Conexão ${index} não é objeto.`); return; }
-    const direction = text(entry.direction), destMap = text(entry.map), offset = integer(entry.offset);
-    if (!direction || !VALID_CONNECTION_DIRECTIONS.has(direction)) { issue(issues, "CONNECTION_DIRECTION_INVALID", "error", "connections", `Conexão ${index}: direção inválida (${String(entry.direction)}).`); return; }
-    if (!destMap || !destMap.startsWith("MAP_")) issue(issues, "CONNECTION_MAP_INVALID", "error", "connections", `Conexão ${index}: destino inválido (${String(entry.map)}).`);
-    if (offset === null) issue(issues, "CONNECTION_OFFSET_INVALID", "error", "connections", `Conexão ${index}: offset precisa ser inteiro.`);
+    if (!entry) {
+      issue(
+        issues,
+        "CONNECTION_NOT_OBJECT",
+        "error",
+        "connections",
+        `Conexão ${index} não é objeto.`,
+      );
+      return;
+    }
+    const direction = text(entry.direction),
+      destMap = text(entry.map),
+      offset = integer(entry.offset);
+    if (!direction || !VALID_CONNECTION_DIRECTIONS.has(direction)) {
+      issue(
+        issues,
+        "CONNECTION_DIRECTION_INVALID",
+        "error",
+        "connections",
+        `Conexão ${index}: direção inválida (${String(entry.direction)}).`,
+      );
+      return;
+    }
+    if (!destMap || !destMap.startsWith("MAP_"))
+      issue(
+        issues,
+        "CONNECTION_MAP_INVALID",
+        "error",
+        "connections",
+        `Conexão ${index}: destino inválido (${String(entry.map)}).`,
+      );
+    if (offset === null)
+      issue(
+        issues,
+        "CONNECTION_OFFSET_INVALID",
+        "error",
+        "connections",
+        `Conexão ${index}: offset precisa ser inteiro.`,
+      );
     const signature = `${direction}|${destMap}|${offset}`;
-    if (seen.has(signature)) issue(issues, "CONNECTION_DUPLICATE", "warning", "connections", `Conexão ${index} duplica direção/destino/offset.`); seen.add(signature);
+    if (seen.has(signature))
+      issue(
+        issues,
+        "CONNECTION_DUPLICATE",
+        "warning",
+        "connections",
+        `Conexão ${index} duplica direção/destino/offset.`,
+      );
+    seen.add(signature);
     const neighbor = destMap ? workspaceContext?.maps[destMap] : undefined;
     if (BORDER_CONNECTION_DIRECTIONS.has(direction)) {
       let relevantBorder = borderCells(map.width, map.height, direction);
       if (offset !== null && neighbor) {
-        const overlap = connectionOverlapBorder(map, direction, offset, neighbor); relevantBorder = overlap.cells;
-        if (!overlap.dimensionKnown) issue(issues, "CONNECTION_GEOMETRY_UNVERIFIED", "warning", "connections", `Conexão ${index} (${direction}) sem dimensão do vizinho para certificar offset.`);
-        else if (!relevantBorder.length) issue(issues, "CONNECTION_GEOMETRY_NO_OVERLAP", "error", "connections", `Conexão ${index} (${direction}, offset ${offset}) não sobrepõe a borda de ${destMap}.`);
-      } else if (!neighbor) issue(issues, "CONNECTION_GEOMETRY_UNVERIFIED", "warning", "connections", `Conexão ${index} (${direction}) sem mapa vizinho para certificar offset.`);
+        const overlap = connectionOverlapBorder(map, direction, offset, neighbor);
+        relevantBorder = overlap.cells;
+        if (!overlap.dimensionKnown)
+          issue(
+            issues,
+            "CONNECTION_GEOMETRY_UNVERIFIED",
+            "warning",
+            "connections",
+            `Conexão ${index} (${direction}) sem dimensão do vizinho para certificar offset.`,
+          );
+        else if (!relevantBorder.length)
+          issue(
+            issues,
+            "CONNECTION_GEOMETRY_NO_OVERLAP",
+            "error",
+            "connections",
+            `Conexão ${index} (${direction}, offset ${offset}) não sobrepõe a borda de ${destMap}.`,
+          );
+      } else if (!neighbor)
+        issue(
+          issues,
+          "CONNECTION_GEOMETRY_UNVERIFIED",
+          "warning",
+          "connections",
+          `Conexão ${index} (${direction}) sem mapa vizinho para certificar offset.`,
+        );
       if (relevantBorder.length) {
         const states = relevantBorder.map((point) => grid.at(point.x, point.y));
-        const nonBlocked = states.filter((state) => state !== "blocked").length, strict = states.filter((state) => state === "passable").length, conditional = states.filter((state) => state === "conditional").length;
-        if (!nonBlocked) issue(issues, "CONNECTION_BORDER_CLOSED", "error", "connections", `Conexão ${direction} não possui célula não-bloqueada no intervalo do offset.`);
-        else if (!strict && conditional > 0) issue(issues, "CONNECTION_BORDER_CONDITIONAL_OK", "info", "connections", `Conexão ${direction} depende de ${conditional} abertura(s) condicional(is) reconhecidas pelo engine.`);
-        else if (!strict) issue(issues, "CONNECTION_BORDER_UNKNOWN", "warning", "connections", `Conexão ${direction} possui abertura(s), mas todas dependem de behavior desconhecido.`);
+        const nonBlocked = states.filter((state) => state !== "blocked").length,
+          strict = states.filter((state) => state === "passable").length,
+          conditional = states.filter((state) => state === "conditional").length;
+        if (!nonBlocked)
+          issue(
+            issues,
+            "CONNECTION_BORDER_CLOSED",
+            "error",
+            "connections",
+            `Conexão ${direction} não possui célula não-bloqueada no intervalo do offset.`,
+          );
+        else if (!strict && conditional > 0)
+          issue(
+            issues,
+            "CONNECTION_BORDER_CONDITIONAL_OK",
+            "info",
+            "connections",
+            `Conexão ${direction} depende de ${conditional} abertura(s) condicional(is) reconhecidas pelo engine.`,
+          );
+        else if (!strict)
+          issue(
+            issues,
+            "CONNECTION_BORDER_UNKNOWN",
+            "warning",
+            "connections",
+            `Conexão ${direction} possui abertura(s), mas todas dependem de behavior desconhecido.`,
+          );
       }
-    } else issue(issues, "CONNECTION_SPECIAL_VERTICAL", "info", "connections", `Conexão ${direction} é Dive/Emerge; não possui borda 2D convencional.`);
+    } else
+      issue(
+        issues,
+        "CONNECTION_SPECIAL_VERTICAL",
+        "info",
+        "connections",
+        `Conexão ${direction} é Dive/Emerge; não possui borda 2D convencional.`,
+      );
     if (!destMap || !currentMapId) return;
-    if (!neighbor) { const loadError = workspaceContext?.loadErrors?.[destMap]; issue(issues, "CONNECTION_NEIGHBOR_UNVERIFIED", "warning", "connections", `Mapa vizinho ${destMap} não está disponível${loadError ? ` (${loadError})` : ""}.`); return; }
+    if (!neighbor) {
+      const loadError = workspaceContext?.loadErrors?.[destMap];
+      issue(
+        issues,
+        "CONNECTION_NEIGHBOR_UNVERIFIED",
+        "warning",
+        "connections",
+        `Mapa vizinho ${destMap} não está disponível${loadError ? ` (${loadError})` : ""}.`,
+      );
+      return;
+    }
     const reciprocalCandidates = array(neighbor.mapJson.connections).flatMap((candidate) => {
       const connection = record(candidate);
-      return connection && text(connection.map) === currentMapId && text(connection.direction) === OPPOSITE_DIRECTION[direction] ? [connection] : [];
+      return connection &&
+        text(connection.map) === currentMapId &&
+        text(connection.direction) === OPPOSITE_DIRECTION[direction]
+        ? [connection]
+        : [];
     });
-    if (!reciprocalCandidates.length) { issue(issues, "CONNECTION_RECIPROCAL_MISSING", "info", "connections", `${destMap} não possui conexão ${OPPOSITE_DIRECTION[direction]} de volta; conexão unidirecional é aceita pelo engine.`); return; }
+    if (!reciprocalCandidates.length) {
+      issue(
+        issues,
+        "CONNECTION_RECIPROCAL_MISSING",
+        "info",
+        "connections",
+        `${destMap} não possui conexão ${OPPOSITE_DIRECTION[direction]} de volta; conexão unidirecional é aceita pelo engine.`,
+      );
+      return;
+    }
     if (offset === null) return;
     if (BORDER_CONNECTION_DIRECTIONS.has(direction)) {
-      const reciprocalOffsets = reciprocalCandidates.map((connection) => integer(connection.offset)).filter((value): value is number => value !== null);
-      if (!reciprocalOffsets.includes(-offset)) issue(issues, "CONNECTION_RECIPROCAL_OFFSET_MISMATCH", "warning", "connections", `${destMap} retorna, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}.`);
-      else issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} offset ${offset} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} offset ${-offset} verificados.`);
-    } else issue(issues, "CONNECTION_RECIPROCAL_OK", "info", "connections", `${direction} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} verificados.`);
+      const reciprocalOffsets = reciprocalCandidates
+        .map((connection) => integer(connection.offset))
+        .filter((value): value is number => value !== null);
+      if (!reciprocalOffsets.includes(-offset))
+        issue(
+          issues,
+          "CONNECTION_RECIPROCAL_OFFSET_MISMATCH",
+          "warning",
+          "connections",
+          `${destMap} retorna, mas nenhum offset recíproco é ${-offset}; encontrados: ${reciprocalOffsets.length ? reciprocalOffsets.join(", ") : "inválidos"}.`,
+        );
+      else
+        issue(
+          issues,
+          "CONNECTION_RECIPROCAL_OK",
+          "info",
+          "connections",
+          `${direction} offset ${offset} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} offset ${-offset} verificados.`,
+        );
+    } else
+      issue(
+        issues,
+        "CONNECTION_RECIPROCAL_OK",
+        "info",
+        "connections",
+        `${direction} ↔ ${destMap} ${OPPOSITE_DIRECTION[direction]} verificados.`,
+      );
   });
 }
 
-function connectionOpeningIndexes(map: MapData, entry: Record<string, unknown>, states: Passability[], workspaceContext: ImplementabilityWorkspaceContext | null): number[] {
+function connectionOpeningIndexes(
+  map: MapData,
+  entry: Record<string, unknown>,
+  states: Passability[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+): number[] {
   const direction = text(entry.direction);
   if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return [];
-  const destMap = text(entry.map), offset = integer(entry.offset), neighbor = destMap ? workspaceContext?.maps[destMap] : undefined;
-  const cells = offset !== null && neighbor ? connectionOverlapBorder(map, direction, offset, neighbor).cells : borderCells(map.width, map.height, direction);
-  return cells.map((point) => idx(point.x, point.y, map.width)).filter((i) => states[i] !== "blocked");
+  const destMap = text(entry.map),
+    offset = integer(entry.offset),
+    neighbor = destMap ? workspaceContext?.maps[destMap] : undefined;
+  const cells =
+    offset !== null && neighbor
+      ? connectionOverlapBorder(map, direction, offset, neighbor).cells
+      : borderCells(map.width, map.height, direction);
+  return cells
+    .map((point) => idx(point.x, point.y, map.width))
+    .filter((i) => states[i] !== "blocked");
 }
 function warpAccessPoint(map: MapData, mapJson: EditableMapJson, point: MapPoint): MapPoint | null {
   if (inBounds(map, point.x, point.y)) return point;
   if (!isConnectionEdgeWarpPosition(mapJson, map.width, map.height, point)) return null;
   return edgeInteriorAnchor(map.width, map.height, point);
 }
-function auditAccessibility(input: GameImplementabilityInput, issues: ImplementabilityIssue[], workspaceContext: ImplementabilityWorkspaceContext | null) {
+function auditAccessibility(
+  input: GameImplementabilityInput,
+  issues: ImplementabilityIssue[],
+  workspaceContext: ImplementabilityWorkspaceContext | null,
+) {
   const { map, mapJson, atlas } = input;
-  if (!mapJson || map.metatiles.length !== map.width * map.height || map.physical.length !== map.width * map.height) return;
+  if (
+    !mapJson ||
+    map.metatiles.length !== map.width * map.height ||
+    map.physical.length !== map.width * map.height
+  )
+    return;
   const eventMapJson = effectiveEventDocument(mapJson, workspaceContext, input.bundle);
   if (!eventMapJson) return;
-  const grid = buildPassabilityGrid(map, atlas ?? null), lenient = connectedComponents(grid, LENIENT_PASSABLE), verified = connectedComponents(grid, VERIFIED_PASSABLE), criticalComponents = new Set<number>();
+  const grid = buildPassabilityGrid(map, atlas ?? null),
+    lenient = connectedComponents(grid, LENIENT_PASSABLE),
+    verified = connectedComponents(grid, VERIFIED_PASSABLE),
+    criticalComponents = new Set<number>();
   array(eventMapJson.warp_events).forEach((raw, eventIndex) => {
-    const entry = record(raw), point = entry ? eventPoint(entry) : null, accessPoint = point ? warpAccessPoint(map, mapJson, point) : null;
+    const entry = record(raw),
+      point = entry ? eventPoint(entry) : null,
+      accessPoint = point ? warpAccessPoint(map, mapJson, point) : null;
     if (!point || !accessPoint) return;
-    const cell = idx(accessPoint.x, accessPoint.y, map.width), state = grid.states[cell] ?? "unknown";
+    const cell = idx(accessPoint.x, accessPoint.y, map.width),
+      state = grid.states[cell] ?? "unknown";
     if (state === "blocked") return;
     const lenientLabel = lenient[cell] ?? -1;
-    if (lenientLabel < 0) { issue(issues, "ACCESS_WARP_NOT_NAVIGABLE", "error", "accessibility", `Warp ${eventIndex} não pertence a nenhuma componente navegável.`, { eventSource: "warp", eventIndex, ...point }); return; }
+    if (lenientLabel < 0) {
+      issue(
+        issues,
+        "ACCESS_WARP_NOT_NAVIGABLE",
+        "error",
+        "accessibility",
+        `Warp ${eventIndex} não pertence a nenhuma componente navegável.`,
+        { eventSource: "warp", eventIndex, ...point },
+      );
+      return;
+    }
     criticalComponents.add(lenientLabel);
     if (atlas) {
       const verifiedLabel = verified[cell] ?? -1;
-      if (verifiedLabel < 0) issue(issues, "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR", "warning", "accessibility", `Acesso ao warp ${eventIndex} depende de behavior unknown.`, { eventSource: "warp", eventIndex, ...point });
-      else if (state === "conditional") { const result = cellPassability(map, accessPoint.x, accessPoint.y, atlas); if (isKnownWarpBehavior(result.behavior)) issue(issues, "ACCESS_WARP_ENGINE_BEHAVIOR_OK", "info", "accessibility", `Warp ${eventIndex} usa behavior especial reconhecido pelo engine.`, { eventSource: "warp", eventIndex, ...point }); }
+      if (verifiedLabel < 0)
+        issue(
+          issues,
+          "ACCESS_REQUIRES_UNKNOWN_BEHAVIOR",
+          "warning",
+          "accessibility",
+          `Acesso ao warp ${eventIndex} depende de behavior unknown.`,
+          { eventSource: "warp", eventIndex, ...point },
+        );
+      else if (state === "conditional") {
+        const result = cellPassability(map, accessPoint.x, accessPoint.y, atlas);
+        if (isKnownWarpBehavior(result.behavior))
+          issue(
+            issues,
+            "ACCESS_WARP_ENGINE_BEHAVIOR_OK",
+            "info",
+            "accessibility",
+            `Warp ${eventIndex} usa behavior especial reconhecido pelo engine.`,
+            { eventSource: "warp", eventIndex, ...point },
+          );
+      }
     }
   });
   array(mapJson.connections).forEach((raw, connectionIndex) => {
-    const entry = record(raw); if (!entry) return;
-    const direction = text(entry.direction); if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
-    const openings = connectionOpeningIndexes(map, entry, grid.states, workspaceContext); if (!openings.length) return;
+    const entry = record(raw);
+    if (!entry) return;
+    const direction = text(entry.direction);
+    if (!direction || !BORDER_CONNECTION_DIRECTIONS.has(direction)) return;
+    const openings = connectionOpeningIndexes(map, entry, grid.states, workspaceContext);
+    if (!openings.length) return;
     const lenientOpenings = openings.filter((cell) => (lenient[cell] ?? -1) >= 0);
-    if (!lenientOpenings.length) { issue(issues, "ACCESS_CONNECTION_NOT_NAVIGABLE", "error", "accessibility", `Abertura da conexão ${connectionIndex} (${direction}) não pertence a componente navegável.`); return; }
+    if (!lenientOpenings.length) {
+      issue(
+        issues,
+        "ACCESS_CONNECTION_NOT_NAVIGABLE",
+        "error",
+        "accessibility",
+        `Abertura da conexão ${connectionIndex} (${direction}) não pertence a componente navegável.`,
+      );
+      return;
+    }
     for (const cell of lenientOpenings) criticalComponents.add(lenient[cell] ?? -1);
-    if (atlas && !openings.some((cell) => (verified[cell] ?? -1) >= 0)) issue(issues, "ACCESS_CONNECTION_REQUIRES_UNKNOWN", "warning", "accessibility", `Conexão ${connectionIndex} (${direction}) depende de behavior unknown.`);
+    if (atlas && !openings.some((cell) => (verified[cell] ?? -1) >= 0))
+      issue(
+        issues,
+        "ACCESS_CONNECTION_REQUIRES_UNKNOWN",
+        "warning",
+        "accessibility",
+        `Conexão ${connectionIndex} (${direction}) depende de behavior unknown.`,
+      );
   });
-  if (criticalComponents.size > 1) issue(issues, "ACCESS_MULTIPLE_COMPONENTS_OK", "info", "accessibility", `Warps/saídas críticas ocupam ${criticalComponents.size} componentes distintas; layouts segmentados são aceitos.`);
-  const hasCritical = array(eventMapJson.warp_events).length > 0 || array(mapJson.connections).length > 0;
-  if (!atlas && hasCritical) issue(issues, "ACCESS_ATLAS_PARTIAL", "warning", "accessibility", "Pathfinding sem behavior real: somente bloqueios físicos são conclusivos.");
+  if (criticalComponents.size > 1)
+    issue(
+      issues,
+      "ACCESS_MULTIPLE_COMPONENTS_OK",
+      "info",
+      "accessibility",
+      `Warps/saídas críticas ocupam ${criticalComponents.size} componentes distintas; layouts segmentados são aceitos.`,
+    );
+  const hasCritical =
+    array(eventMapJson.warp_events).length > 0 || array(mapJson.connections).length > 0;
+  if (!atlas && hasCritical)
+    issue(
+      issues,
+      "ACCESS_ATLAS_PARTIAL",
+      "warning",
+      "accessibility",
+      "Pathfinding sem behavior real: somente bloqueios físicos são conclusivos.",
+    );
 }
 
 function auditRoundTrip(input: GameImplementabilityInput, issues: ImplementabilityIssue[]) {
   const bundle = input.bundle;
-  if (!bundle) { issue(issues, "ROUNDTRIP_BUNDLE_NOT_PROVIDED", "warning", "roundtrip", "Nenhum Arauna City bundle foi fornecido; round-trip completo não foi comprovado."); return; }
-  for (const found of verifyBundleIntegrity(bundle)) issue(issues, found.code, "error", "roundtrip", found.message);
-  for (const found of validateBundleDependencies(bundle)) issue(issues, found.code, "error", "roundtrip", found.message);
+  if (!bundle) {
+    issue(
+      issues,
+      "ROUNDTRIP_BUNDLE_NOT_PROVIDED",
+      "warning",
+      "roundtrip",
+      "Nenhum Arauna City bundle foi fornecido; round-trip completo não foi comprovado.",
+    );
+    return;
+  }
+  for (const found of verifyBundleIntegrity(bundle))
+    issue(issues, found.code, "error", "roundtrip", found.message);
+  for (const found of validateBundleDependencies(bundle))
+    issue(issues, found.code, "error", "roundtrip", found.message);
   if (issues.some((found) => found.category === "roundtrip" && found.severity === "error")) return;
   try {
     const first = compileCityBundle(bundle);
-    if (first.map.width !== input.map.width || first.map.height !== input.map.height || !arraysEqual(first.map.metatiles, input.map.metatiles) || !arraysEqual(first.map.physical, input.map.physical) || canonicalJson(first.mapJson) !== canonicalJson(input.mapJson)) {
-      issue(issues, "ROUNDTRIP_INPUT_MISMATCH", "error", "roundtrip", "O bundle íntegro não corresponde ao mapa/map.json atualmente auditado."); return;
+    if (
+      first.map.width !== input.map.width ||
+      first.map.height !== input.map.height ||
+      !arraysEqual(first.map.metatiles, input.map.metatiles) ||
+      !arraysEqual(first.map.physical, input.map.physical) ||
+      canonicalJson(first.mapJson) !== canonicalJson(input.mapJson)
+    ) {
+      issue(
+        issues,
+        "ROUNDTRIP_INPUT_MISMATCH",
+        "error",
+        "roundtrip",
+        "O bundle íntegro não corresponde ao mapa/map.json atualmente auditado.",
+      );
+      return;
     }
-    const reparsed = parseCityBundle(serializeCityBundle(bundle)), second = compileCityBundle(reparsed);
-    if (first.map.width !== second.map.width || first.map.height !== second.map.height || !arraysEqual(first.map.metatiles, second.map.metatiles) || !arraysEqual(first.map.physical, second.map.physical) || canonicalJson(first.mapJson) !== canonicalJson(second.mapJson)) issue(issues, "ROUNDTRIP_SEMANTIC_MISMATCH", "error", "roundtrip", "Serialize → parse → compile alterou mapa ou map.json.");
-    else issue(issues, "ROUNDTRIP_OK", "info", "roundtrip", "Arauna City JSON recompila para o mesmo grid e map.json semântico.");
+    const reparsed = parseCityBundle(serializeCityBundle(bundle)),
+      second = compileCityBundle(reparsed);
+    if (
+      first.map.width !== second.map.width ||
+      first.map.height !== second.map.height ||
+      !arraysEqual(first.map.metatiles, second.map.metatiles) ||
+      !arraysEqual(first.map.physical, second.map.physical) ||
+      canonicalJson(first.mapJson) !== canonicalJson(second.mapJson)
+    )
+      issue(
+        issues,
+        "ROUNDTRIP_SEMANTIC_MISMATCH",
+        "error",
+        "roundtrip",
+        "Serialize → parse → compile alterou mapa ou map.json.",
+      );
+    else
+      issue(
+        issues,
+        "ROUNDTRIP_OK",
+        "info",
+        "roundtrip",
+        "Arauna City JSON recompila para o mesmo grid e map.json semântico.",
+      );
   } catch (error) {
-    issue(issues, "ROUNDTRIP_EXCEPTION", "error", "roundtrip", `Falha no round-trip: ${error instanceof Error ? error.message : String(error)}`);
+    issue(
+      issues,
+      "ROUNDTRIP_EXCEPTION",
+      "error",
+      "roundtrip",
+      `Falha no round-trip: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
-export function auditGameImplementability(input: GameImplementabilityInput): GameImplementabilityReport {
+export function auditGameImplementability(
+  input: GameImplementabilityInput,
+): GameImplementabilityReport {
   const issues: ImplementabilityIssue[] = [];
   const workspaceContext = resolveWorkspaceContext(input);
   auditGrid(input, issues);
@@ -821,15 +1860,35 @@ export function auditGameImplementability(input: GameImplementabilityInput): Gam
   auditConnections(input, issues, workspaceContext);
   auditAccessibility(input, issues, workspaceContext);
   auditRoundTrip(input, issues);
-  const categories = Object.fromEntries(CATEGORIES.map((category) => [category, { errors: 0, warnings: 0, info: 0 }])) as Record<ImplementabilityCategory, ImplementabilityCategorySummary>;
+  const categories = Object.fromEntries(
+    CATEGORIES.map((category) => [category, { errors: 0, warnings: 0, info: 0 }]),
+  ) as Record<ImplementabilityCategory, ImplementabilityCategorySummary>;
   const counts = { errors: 0, warnings: 0, info: 0 };
   for (const found of issues) {
-    if (found.severity === "error") { counts.errors++; categories[found.category].errors++; }
-    else if (found.severity === "warning") { counts.warnings++; categories[found.category].warnings++; }
-    else { counts.info++; categories[found.category].info++; }
+    if (found.severity === "error") {
+      counts.errors++;
+      categories[found.category].errors++;
+    } else if (found.severity === "warning") {
+      counts.warnings++;
+      categories[found.category].warnings++;
+    } else {
+      counts.info++;
+      categories[found.category].info++;
+    }
   }
   const pass = counts.errors === 0;
-  const roundTripOk = issues.some((found) => found.code === "ROUNDTRIP_OK" && found.severity === "info");
-  const fullyVerified = Boolean(input.atlas && input.bundle && roundTripOk) && pass && counts.warnings === 0;
-  return { pass, implementable: fullyVerified, confidence: fullyVerified ? "full" : "partial", fullyVerified, issues, categories, counts };
+  const roundTripOk = issues.some(
+    (found) => found.code === "ROUNDTRIP_OK" && found.severity === "info",
+  );
+  const fullyVerified =
+    Boolean(input.atlas && input.bundle && roundTripOk) && pass && counts.warnings === 0;
+  return {
+    pass,
+    implementable: fullyVerified,
+    confidence: fullyVerified ? "full" : "partial",
+    fullyVerified,
+    issues,
+    categories,
+    counts,
+  };
 }

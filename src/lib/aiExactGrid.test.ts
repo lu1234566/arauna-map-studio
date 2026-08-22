@@ -51,11 +51,9 @@ const contextHouse: MapPattern = {
   height: 5,
   kind: "raw",
   values: [
-    0x1009, 0x3008, 0x3008, 0x3008, 0x3008,
-    0x1009, 0x3008, 0x0407, 0x3008, 0x3008,
-    0x1009, 0x3008, 0x0407, 0x3008, 0x3008,
-    0x1009, 0x3008, 0x3008, 0x3008, 0x3008,
-    0x1009, 0x3008, 0x3008, 0x3008, 0x3008,
+    0x1009, 0x3008, 0x3008, 0x3008, 0x3008, 0x1009, 0x3008, 0x0407, 0x3008, 0x3008, 0x1009, 0x3008,
+    0x0407, 0x3008, 0x3008, 0x1009, 0x3008, 0x3008, 0x3008, 0x3008, 0x1009, 0x3008, 0x3008, 0x3008,
+    0x3008,
   ],
   ports: [{ id: "entrada", name: "Entrada", kind: "entrance", x: 2, y: 4 }],
   createdAt: "2026-08-20T00:00:00.000Z",
@@ -91,7 +89,15 @@ function compiledPlan(pattern: MapPattern = house) {
     width: 12,
     height: 10,
     structures: [{ id: pattern.id, label: pattern.name, pattern: pattern.id, x: 2, y: 2 }],
-    routes: [{ smartPath: "urban-road", points: [{ x: 5, y: 0 }, { x: 5, y: 9 }] }],
+    routes: [
+      {
+        smartPath: "urban-road",
+        points: [
+          { x: 5, y: 0 },
+          { x: 5, y: 9 },
+        ],
+      },
+    ],
     warps: [],
     connections: [],
   };

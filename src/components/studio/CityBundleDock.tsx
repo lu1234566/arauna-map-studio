@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, Download, FileJson2, ShieldCheck, Upload } from "lucide-react";
-import {
-  canonicalJson,
-  parseCityBundle,
-  serializeCityBundle,
-} from "@/lib/araunaCityBundle";
+import { canonicalJson, parseCityBundle, serializeCityBundle } from "@/lib/araunaCityBundle";
 import { installBundleDependencyContextFromImport } from "@/lib/bundleDependencyContext";
 import {
   scriptSpatialSnapshotFromBundle,
@@ -22,10 +18,7 @@ import {
   refreshScriptSpatialContext,
 } from "@/lib/scriptSpatialContext";
 import { referencedScriptWarpMapIds } from "@/lib/scriptSpatialContracts";
-import {
-  buildWorkspaceAuditContext,
-  sharedEventsContextKey,
-} from "@/lib/workspaceAuditContext";
+import { buildWorkspaceAuditContext, sharedEventsContextKey } from "@/lib/workspaceAuditContext";
 import { refreshWorkspaceAuditContextWithScriptMaps } from "@/lib/workspaceScriptDependencies";
 import { useWorkspaceSession } from "@/lib/workspaceSession";
 import { cn } from "@/lib/utils";
@@ -59,14 +52,15 @@ export function CityBundleDock() {
   const inputRef = useRef<HTMLInputElement>(null);
   const previousAtlasRef = useRef<string | null | undefined>(undefined);
   const audit = useMemo(
-    () => state.gameAudit
-      ? auditCompleteGameState({
-          map: state.map,
-          mapJson: state.mapJsonDocument,
-          mapName: state.mapName,
-          atlas,
-        }).report
-      : null,
+    () =>
+      state.gameAudit
+        ? auditCompleteGameState({
+            map: state.map,
+            mapJson: state.mapJsonDocument,
+            mapName: state.mapName,
+            atlas,
+          }).report
+        : null,
     [state.gameAudit, state.map, state.mapJsonDocument, state.mapName, atlas],
   );
 
@@ -79,7 +73,9 @@ export function CityBundleDock() {
     if (previousAtlasRef.current !== key) {
       previousAtlasRef.current = key;
       editorStore.clearValidation();
-      editorStore.setMessage("Atlas alterado. Rode Validar novamente antes de considerar o mapa implementável.");
+      editorStore.setMessage(
+        "Atlas alterado. Rode Validar novamente antes de considerar o mapa implementável.",
+      );
     }
   }, [atlas?.createdAt]);
 
@@ -108,12 +104,13 @@ export function CityBundleDock() {
           buildScriptSpatialContext(session.workspace, parsed.mapJson),
         ]);
 
-        const sharedName = typeof parsed.mapJson.shared_events_map === "string"
-          ? parsed.mapJson.shared_events_map.trim()
-          : "";
+        const sharedName =
+          typeof parsed.mapJson.shared_events_map === "string"
+            ? parsed.mapJson.shared_events_map.trim()
+            : "";
         const bundledShared = sharedEventsSnapshotFromBundle(parsed);
         const liveShared = sharedName
-          ? workspacePreview.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null
+          ? (workspacePreview.maps[sharedEventsContextKey(sharedName)]?.mapJson ?? null)
           : null;
         if (
           bundledShared &&
@@ -182,7 +179,9 @@ export function CityBundleDock() {
     // snapshots acima. Nunca exibimos esse selo como atual: o usuário roda
     // Validar e recebe a auditoria completa unificada.
     editorStore.clearValidation();
-    editorStore.setMessage("Cidade JSON importada com dependências preservadas. Rode Validar para calcular o selo Game-ready atual.");
+    editorStore.setMessage(
+      "Cidade JSON importada com dependências preservadas. Rode Validar para calcular o selo Game-ready atual.",
+    );
     requestMapCameraFit();
   };
 
@@ -213,18 +212,21 @@ export function CityBundleDock() {
       atlas,
     });
     if (!complete.bundle) {
-      window.alert("Não foi possível montar a Cidade JSON completa. Rode Validar e corrija os erros do mapa.json/grid.");
+      window.alert(
+        "Não foi possível montar a Cidade JSON completa. Rode Validar e corrija os erros do mapa.json/grid.",
+      );
       return;
     }
 
     if (!scriptSpatialSnapshotFromBundle(complete.bundle)) {
-      window.alert("Exportação bloqueada: o snapshot íntegro das fontes de script não pôde ser embutido no bundle.");
+      window.alert(
+        "Exportação bloqueada: o snapshot íntegro das fontes de script não pôde ser embutido no bundle.",
+      );
       return;
     }
 
-    const sharedName = typeof document.shared_events_map === "string"
-      ? document.shared_events_map.trim()
-      : "";
+    const sharedName =
+      typeof document.shared_events_map === "string" ? document.shared_events_map.trim() : "";
     if (sharedName && !sharedEventsSnapshotFromBundle(complete.bundle)) {
       window.alert(
         `Exportação bloqueada por segurança.\n\n` +
@@ -289,7 +291,13 @@ export function CityBundleDock() {
         ) : (
           <AlertTriangle className="size-3.5" />
         )}
-        {audit?.implementable ? "Game-ready" : audit ? (audit.pass ? "Parcial" : "Bloqueado") : "Não auditado"}
+        {audit?.implementable
+          ? "Game-ready"
+          : audit
+            ? audit.pass
+              ? "Parcial"
+              : "Bloqueado"
+            : "Não auditado"}
       </div>
       <input
         ref={inputRef}

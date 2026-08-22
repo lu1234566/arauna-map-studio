@@ -3,10 +3,7 @@ import {
   scriptSpatialSnapshotFromBundle,
   validateBundleDependencies,
 } from "./cityBundleDependencies";
-import {
-  parseEditableMapJson,
-  type EditableMapJson,
-} from "./eventMapJson";
+import { parseEditableMapJson, type EditableMapJson } from "./eventMapJson";
 import type { AraunaWorkspace, WorkspaceMap } from "./repoWorkspace";
 import {
   parseScriptSpatialContracts,
@@ -83,35 +80,40 @@ async function loadWarpDestinations(
   const destinations: Record<string, ScriptWarpDestinationContext | undefined> = {};
   const currentId = text(currentDocument.id);
 
-  await Promise.all(referencedScriptWarpMapIds(contracts).map(async (mapId) => {
-    const descriptor = mapById(workspace, mapId);
-    if (!descriptor) {
-      destinations[mapId] = { error: `mapa ${mapId} referenciado por script não encontrado no Workspace` };
-      return;
-    }
-    if (descriptor.error) {
-      destinations[mapId] = { error: descriptor.error };
-      return;
-    }
+  await Promise.all(
+    referencedScriptWarpMapIds(contracts).map(async (mapId) => {
+      const descriptor = mapById(workspace, mapId);
+      if (!descriptor) {
+        destinations[mapId] = {
+          error: `mapa ${mapId} referenciado por script não encontrado no Workspace`,
+        };
+        return;
+      }
+      if (descriptor.error) {
+        destinations[mapId] = { error: descriptor.error };
+        return;
+      }
 
-    try {
-      const mapJson = mapId === currentId
-        ? currentDocument
-        : await documentForMap(workspace, descriptor);
-      const layout = descriptor.layout ?? workspace.layouts.get(descriptor.layoutId);
-      const effectiveEvents = await effectiveEventsForDocument(workspace, mapJson);
-      destinations[mapId] = {
-        mapJson,
-        effectiveEvents,
-        ...(layout ? { width: layout.width, height: layout.height } : {}),
-        ...(!layout ? { error: `layout ${descriptor.layoutId || "(vazio)"} não encontrado` } : {}),
-      };
-    } catch (error) {
-      destinations[mapId] = {
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }));
+      try {
+        const mapJson =
+          mapId === currentId ? currentDocument : await documentForMap(workspace, descriptor);
+        const layout = descriptor.layout ?? workspace.layouts.get(descriptor.layoutId);
+        const effectiveEvents = await effectiveEventsForDocument(workspace, mapJson);
+        destinations[mapId] = {
+          mapJson,
+          effectiveEvents,
+          ...(layout ? { width: layout.width, height: layout.height } : {}),
+          ...(!layout
+            ? { error: `layout ${descriptor.layoutId || "(vazio)"} não encontrado` }
+            : {}),
+        };
+      } catch (error) {
+        destinations[mapId] = {
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
+  );
 
   return destinations;
 }
@@ -168,7 +170,13 @@ export async function buildScriptSpatialContext(
 ): Promise<ScriptSpatialContext> {
   const sourceMapId = text(document.id);
   if (!sourceMapId) {
-    return failedContext(document, null, "(desconhecido)", "", "map.json atual não possui id válido");
+    return failedContext(
+      document,
+      null,
+      "(desconhecido)",
+      "",
+      "map.json atual não possui id válido",
+    );
   }
 
   const current = mapById(workspace, sourceMapId);
