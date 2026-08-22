@@ -50,13 +50,12 @@ export function installBundleDependencyContextFromImport(
     return null;
   }
   const shared = sharedEventsSnapshotFromBundle(bundle);
+  const semanticBase = semanticBaseFromBundle(bundle);
 
   activeContext = {
     sourceDocument: document,
     sharedEvents: shared,
-    ...(semanticBaseFromBundle(bundle)
-      ? { semanticBase: semanticBaseFromBundle(bundle) }
-      : {}),
+    ...(semanticBase ? { semanticBase } : {}),
   };
   return activeContext;
 }
