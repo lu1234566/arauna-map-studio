@@ -1,3 +1,4 @@
+import { importedSharedEventsSnapshot } from "./bundleDependencyContext";
 import type { MapData } from "./emeraldMap";
 import type { EditableMapJson } from "./eventMapJson";
 import type {
@@ -125,14 +126,16 @@ export function withActiveScriptSpatialAudit(
   const sharedEventsName = text(mapJson.shared_events_map);
   if (sharedEventsName) {
     const workspace = getWorkspaceAuditContext();
-    const shared = workspace?.maps[sharedEventsContextKey(sharedEventsName)]?.mapJson ?? null;
+    const workspaceShared = workspace?.maps[sharedEventsContextKey(sharedEventsName)]?.mapJson ?? null;
+    const bundledShared = importedSharedEventsSnapshot(mapJson, sharedEventsName)?.mapJson ?? null;
+    const shared = workspaceShared ?? bundledShared;
     if (!shared) {
       return appendIssues(base, [
         diagnostic(
           "SCRIPT_SPATIAL_EFFECTIVE_EVENTS_UNVERIFIED",
           "warning",
           "npcs",
-          `scripts.inc foi carregado, mas shared_events_map=${sharedEventsName} não está disponível; LOCALID e posições runtime não podem ser cruzados com os object_events efetivos.`,
+          `scripts.inc foi carregado, mas shared_events_map=${sharedEventsName} não está disponível no Workspace nem no bundle importado; LOCALID e posições runtime não podem ser cruzados com os object_events efetivos.`,
         ),
       ]);
     }
