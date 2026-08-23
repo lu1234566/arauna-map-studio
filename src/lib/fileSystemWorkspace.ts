@@ -120,7 +120,7 @@ async function scanDirectory(
 /**
  * Fontes fora de data/ entram somente como leitura para auditoria. Não
  * registramos FileHandle em WritableWorkspaceAccess, então Salvar continua
- * tecnicamente incapaz de escrever em include/src/asm/tools por acidente.
+ * tecnicamente incapaz de escrever em include/src por acidente.
  */
 async function scanReadOnlySourceDirectory(
   directory: DirectoryHandleLike,
@@ -142,14 +142,26 @@ async function scanReadOnlySourceDirectory(
 async function scanOptionalAuditSources(root: DirectoryHandleLike, files: File[]) {
   if (root.name.toLowerCase() === "data") return;
 
-  // Hoje a prova de símbolos usa include/**/*.h + data/**/*.{inc,s}. Manter
-  // somente include/ aqui evita varrer todo o source tree sem necessidade.
+  // Constantes tradicionais continuam em include/**/*.h.
   try {
     const includeRoot = await root.getDirectoryHandle("include");
     await scanReadOnlySourceDirectory(includeRoot, "include", files);
   } catch {
     // Repositórios incompletos/data-only continuam abrindo; o auditor marca a
     // ausência de headers como prova parcial em vez de bloquear o Workspace.
+  }
+
+  // Neste fork, MAPSEC_* é fonte-de-verdade em
+  // src/data/region_map/region_map_sections.json. Carregamos apenas essa pasta
+  // pequena, como read-only, em vez de varrer src/ inteiro.
+  try {
+    const srcRoot = await root.getDirectoryHandle("src");
+    const srcDataRoot = await srcRoot.getDirectoryHandle("data");
+    const regionMapRoot = await srcDataRoot.getDirectoryHandle("region_map");
+    await scanReadOnlySourceDirectory(regionMapRoot, "src/data/region_map", files);
+  } catch {
+    // pokeemeralds sem essa fonte gerada continuam válidos; nesses casos os
+    // MAPSEC_* podem vir de headers tradicionais e serão encontrados acima.
   }
 }
 
