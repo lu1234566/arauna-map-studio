@@ -117,6 +117,42 @@ async function scanDirectory(
   }
 }
 
+/**
+ * Fontes fora de data/ entram somente como leitura para auditoria. Não
+ * registramos FileHandle em WritableWorkspaceAccess, então Salvar continua
+ * tecnicamente incapaz de escrever em include/src/asm/tools por acidente.
+ */
+async function scanReadOnlySourceDirectory(
+  directory: DirectoryHandleLike,
+  relativeDir: string,
+  files: File[],
+) {
+  for await (const [name, handle] of directory.entries()) {
+    const relativePath = relativeDir ? `${relativeDir}/${name}` : name;
+    if (handle.kind === "directory") {
+      await scanReadOnlySourceDirectory(handle, relativePath, files);
+      continue;
+    }
+    const normalized = normalizeWorkspacePath(relativePath);
+    const file = await handle.getFile();
+    files.push(fileWithRelativePath(file, normalized));
+  }
+}
+
+async function scanOptionalAuditSources(root: DirectoryHandleLike, files: File[]) {
+  if (root.name.toLowerCase() === "data") return;
+
+  // Hoje a prova de símbolos usa include/**/*.h + data/**/*.{inc,s}. Manter
+  // somente include/ aqui evita varrer todo o source tree sem necessidade.
+  try {
+    const includeRoot = await root.getDirectoryHandle("include");
+    await scanReadOnlySourceDirectory(includeRoot, "include", files);
+  } catch {
+    // Repositórios incompletos/data-only continuam abrindo; o auditor marca a
+    // ausência de headers como prova parcial em vez de bloquear o Workspace.
+  }
+}
+
 export async function pickWritableAraunaWorkspace(): Promise<WritableWorkspaceSelection> {
   if (!writableDirectoryPickerSupported()) {
     throw new WritableWorkspaceError(
@@ -132,6 +168,7 @@ export async function pickWritableAraunaWorkspace(): Promise<WritableWorkspaceSe
   const fileHandles = new Map<string, FileHandleLike>();
   const fileHandlesLower = new Map<string, FileHandleLike>();
   await scanDirectory(dataRoot, "", files, fileHandles, fileHandlesLower);
+  await scanOptionalAuditSources(root, files);
 
   return {
     files,

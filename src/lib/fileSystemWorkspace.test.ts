@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { editorStore } from "./editorStore";
 import {
+  pickWritableAraunaWorkspace,
   saveEditorToWritableWorkspace,
   type DirectoryHandleLike,
   type FileHandleLike,
@@ -28,7 +29,7 @@ function writableHandle(name: string, onWrite: (value: unknown) => void): FileHa
     kind: "file",
     name,
     async getFile() {
-      return { name } as File;
+      return new File([""], name);
     },
     async createWritable() {
       const stream: WritableFileStreamLike = {
@@ -41,6 +42,83 @@ function writableHandle(name: string, onWrite: (value: unknown) => void): FileHa
     },
   };
 }
+
+function readonlyHandle(name: string, source: string): FileHandleLike {
+  return {
+    kind: "file",
+    name,
+    async getFile() {
+      return new File([source], name, { type: "text/plain" });
+    },
+    async createWritable() {
+      throw new Error("read-only fixture");
+    },
+  };
+}
+
+function treeDirectory(
+  name: string,
+  children: Record<string, FileHandleLike | DirectoryHandleLike>,
+): DirectoryHandleLike {
+  return {
+    kind: "directory",
+    name,
+    async *entries() {
+      for (const entry of Object.entries(children)) yield entry;
+    },
+    async getDirectoryHandle(childName: string) {
+      const child = children[childName];
+      if (!child || child.kind !== "directory") throw new Error(`missing ${childName}`);
+      return child;
+    },
+    async queryPermission() {
+      return "granted";
+    },
+  };
+}
+
+describe("writable workspace source coverage", () => {
+  it("loads include headers for audit without granting them write handles", async () => {
+    const dataRoot = treeDirectory("data", {
+      maps: treeDirectory("maps", {
+        Test: treeDirectory("Test", {
+          "map.json": readonlyHandle("map.json", '{"id":"MAP_TEST"}'),
+        }),
+      }),
+    });
+    const includeRoot = treeDirectory("include", {
+      constants: treeDirectory("constants", {
+        "flags.h": readonlyHandle("flags.h", "#define FLAG_TEST 1\n"),
+      }),
+    });
+    const root = treeDirectory("pokemon-juramento-de-arauna", {
+      data: dataRoot,
+      include: includeRoot,
+    });
+
+    const previousWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { showDirectoryPicker: async () => root },
+    });
+
+    try {
+      const selection = await pickWritableAraunaWorkspace();
+      const paths = selection.files.map(
+        (file) => (file as File & { webkitRelativePath?: string }).webkitRelativePath,
+      );
+      expect(paths).toContain("data/maps/Test/map.json");
+      expect(paths).toContain("include/constants/flags.h");
+      expect(selection.access.fileHandles.has("data/maps/Test/map.json")).toBe(true);
+      expect(selection.access.fileHandles.has("include/constants/flags.h")).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: previousWindow,
+      });
+    }
+  });
+});
 
 describe("direct writable workspace save", () => {
   it("writes dirty BIN and JSON to their original workspace paths", async () => {
@@ -70,8 +148,12 @@ describe("direct writable workspace save", () => {
 
     let binWritten: unknown;
     let jsonWritten: unknown;
-    const binHandle = writableHandle("map.bin", (value) => { binWritten = value; });
-    const jsonHandle = writableHandle("map.json", (value) => { jsonWritten = value; });
+    const binHandle = writableHandle("map.bin", (value) => {
+      binWritten = value;
+    });
+    const jsonHandle = writableHandle("map.json", (value) => {
+      jsonWritten = value;
+    });
     const root = directory("repo");
     const dataRoot = directory("data");
     const access: WritableWorkspaceAccess = {
