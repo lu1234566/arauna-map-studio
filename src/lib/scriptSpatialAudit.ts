@@ -28,6 +28,8 @@ export interface ScriptDoorSpawnProof {
   addObjectLine: number;
 }
 
+type Point = { x: number; y: number };
+
 /** IDs reservados pelo engine e que não precisam de object_event no map.json. */
 const ENGINE_LOCAL_IDS = new Set([
   "LOCALID_NONE",
@@ -53,19 +55,25 @@ function integer(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
 function collisionAt(map: MapData, x: number, y: number): number | null {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return null;
   return getPhysicalLayerValue(map.physical[idx(x, y, map.width)] ?? 0, "collision");
 }
 
-function addStart(
-  starts: Map<string, Array<{ x: number; y: number }>>,
-  key: string,
-  point: { x: number; y: number },
-) {
+function addStart(starts: Map<string, Point[]>, key: string, point: Point) {
   const values = starts.get(key) ?? [];
   if (!values.some((value) => value.x === point.x && value.y === point.y)) values.push(point);
   starts.set(key, values);
+}
+
+function uniquePoints(points: Point[]): Point[] {
+  return points.filter(
+    (candidate, index, all) => all.findIndex((other) => samePoint(candidate, other)) === index,
+  );
 }
 
 /**
@@ -74,7 +82,7 @@ function addStart(
  * chave numérica e, quando existir, também o alias LOCALID_* explícito.
  */
 function objectStarts(document: EditableMapJson) {
-  const starts = new Map<string, Array<{ x: number; y: number }>>();
+  const starts = new Map<string, Point[]>();
   if (!Array.isArray(document.object_events)) return starts;
   document.object_events.forEach((raw, index) => {
     if (!isRecord(raw)) return;
@@ -83,9 +91,52 @@ function objectStarts(document: EditableMapJson) {
     if (x === null || y === null) return;
     const point = { x, y };
     addStart(starts, String(index + 1), point);
-    const localId = typeof raw.local_id === "string" ? raw.local_id.trim() : "";
+    const localId = text(raw.local_id);
     if (localId) addStart(starts, localId, point);
   });
+  return starts;
+}
+
+/**
+ * Posições do player que são demonstráveis sem interpretar o runtime inteiro:
+ * - coord_event: o script dispara quando o player está exatamente em x/y;
+ * - object_event: ao iniciar o script do NPC, o player está em uma célula
+ *   cardinal adjacente e transitável ao objeto.
+ *
+ * Isso é genérico e evita hardcode de cenas como Scott/Stern.
+ */
+function playerStartsByScript(document: EditableMapJson, map: MapData) {
+  const starts = new Map<string, Point[]>();
+
+  if (Array.isArray(document.coord_events)) {
+    for (const raw of document.coord_events) {
+      if (!isRecord(raw)) continue;
+      const script = text(raw.script);
+      const x = integer(raw.x);
+      const y = integer(raw.y);
+      if (!script || x === null || y === null) continue;
+      if (collisionAt(map, x, y) === 0) addStart(starts, script, { x, y });
+    }
+  }
+
+  if (Array.isArray(document.object_events)) {
+    for (const raw of document.object_events) {
+      if (!isRecord(raw)) continue;
+      const script = text(raw.script);
+      const x = integer(raw.x);
+      const y = integer(raw.y);
+      if (!script || x === null || y === null) continue;
+      for (const point of [
+        { x: x - 1, y },
+        { x: x + 1, y },
+        { x, y: y - 1 },
+        { x, y: y + 1 },
+      ]) {
+        if (collisionAt(map, point.x, point.y) === 0) addStart(starts, script, point);
+      }
+    }
+  }
+
   return starts;
 }
 
@@ -104,7 +155,7 @@ function needsObjectTemplate(localId: string): boolean {
 
 function simulate(
   map: MapData,
-  start: { x: number; y: number },
+  start: Point,
   movement: ScriptMovementDefinition,
 ): { ok: boolean; reason: string; x: number; y: number } {
   let x = start.x;
@@ -125,8 +176,12 @@ function simulate(
   return { ok: true, reason: `termina em (${x},${y})`, x, y };
 }
 
-function samePoint(a: { x: number; y: number }, b: { x: number; y: number }) {
+function samePoint(a: Point, b: Point) {
   return a.x === b.x && a.y === b.y;
+}
+
+function runtimeKey(scriptLabel: string | null, localId: string): string | null {
+  return scriptLabel ? `${scriptLabel}\u0000${localId}` : null;
 }
 
 /**
@@ -175,7 +230,9 @@ export function auditScriptSpatialContracts(
 ): ScriptSpatialIssue[] {
   const issues: ScriptSpatialIssue[] = [];
   const starts = objectStarts(effectiveEvents);
+  const playerScriptStarts = playerStartsByScript(effectiveEvents, map);
   const anchorsByObject = new Map<string, ScriptObjectAnchor[]>();
+  const runtimeStarts = new Map<string, Point[]>();
   const missingLocalIds = new Set<string>();
 
   const reportMissingLocalId = (
@@ -183,7 +240,7 @@ export function auditScriptSpatialContracts(
     localId: string,
     line: number,
     message: string,
-    point?: { x: number; y: number },
+    point?: Point,
   ) => {
     if (missingLocalIds.has(localId)) return;
     missingLocalIds.add(localId);
@@ -303,16 +360,28 @@ export function auditScriptSpatialContracts(
       continue;
     }
 
-    const candidates = [
-      ...(starts.get(use.localId) ?? []),
-      ...(anchorsByObject.get(use.localId) ?? []).map((anchor) => ({ x: anchor.x, y: anchor.y })),
-    ].filter(
-      (candidate, index, all) => all.findIndex((other) => samePoint(candidate, other)) === index,
+    const key = runtimeKey(use.scriptLabel, use.localId);
+    const hasRuntime = key ? runtimeStarts.has(key) : false;
+    const candidates = uniquePoints(
+      hasRuntime && key
+        ? (runtimeStarts.get(key) ?? [])
+        : [
+            ...(use.localId === "LOCALID_PLAYER" && use.scriptLabel
+              ? (playerScriptStarts.get(use.scriptLabel) ?? [])
+              : []),
+            ...(starts.get(use.localId) ?? []),
+            ...(anchorsByObject.get(use.localId) ?? []).map((anchor) => ({
+              x: anchor.x,
+              y: anchor.y,
+            })),
+          ],
     );
 
     if (!movement.steps.length) {
       // Facing/delay/emote/in-place: geometricamente neutro, logo não depende de
-      // conhecermos a posição runtime do player/camera.
+      // conhecermos a posição runtime do player/camera. Quando conhecemos, a
+      // posição é propagada para o próximo applymovement do mesmo script.
+      if (key && !hasRuntime && candidates.length) runtimeStarts.set(key, candidates);
       issues.push({
         code: "SCRIPT_MOVEMENT_GEOMETRY_NEUTRAL",
         severity: "info",
@@ -324,10 +393,11 @@ export function auditScriptSpatialContracts(
     }
 
     if (!candidates.length) {
+      if (key) runtimeStarts.set(key, []);
       issues.push({
         code: "SCRIPT_MOVEMENT_START_UNVERIFIED",
         severity: "warning",
-        message: `${use.movementLabel} move ${use.localId}, mas nenhuma posição inicial verificável está disponível no map.json/âncoras.`,
+        message: `${use.movementLabel} move ${use.localId}, mas nenhuma posição inicial verificável está disponível no map.json/âncoras/trigger de origem.`,
         localId: use.localId,
         line: use.line,
       });
@@ -340,6 +410,7 @@ export function auditScriptSpatialContracts(
     }));
     const valid = simulations.filter((entry) => entry.result.ok);
     if (!valid.length) {
+      if (key) runtimeStarts.set(key, []);
       issues.push({
         code: "SCRIPT_MOVEMENT_NO_KNOWN_SAFE_PATH",
         severity: "warning",
@@ -348,6 +419,12 @@ export function auditScriptSpatialContracts(
         line: use.line,
       });
     } else {
+      if (key) {
+        runtimeStarts.set(
+          key,
+          uniquePoints(valid.map((entry) => ({ x: entry.result.x, y: entry.result.y }))),
+        );
+      }
       issues.push({
         code: "SCRIPT_MOVEMENT_HAS_SAFE_PATH",
         severity: "info",

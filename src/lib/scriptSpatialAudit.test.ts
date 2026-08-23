@@ -203,6 +203,113 @@ A_CameraMovement:
     ).toHaveLength(2);
   });
 
+  it("chains the end of one applymovement into the next use in the same script", () => {
+    const chainedMap = map();
+    chainedMap.physical[12 * chainedMap.width + 11] = 0x3400;
+    const issues = codes(
+      `
+A::
+  applymovement LOCALID_SLATEPORT_SCOTT, A_First
+  waitmovement 0
+  applymovement LOCALID_SLATEPORT_SCOTT, A_Second
+  waitmovement 0
+  end
+A_First:
+  walk_down
+  walk_left
+  step_end
+A_Second:
+  walk_right
+  step_end
+`,
+      chainedMap,
+    );
+    expect(
+      issues.filter((issue) => issue.code === "SCRIPT_MOVEMENT_HAS_SAFE_PATH"),
+    ).toHaveLength(2);
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_NO_KNOWN_SAFE_PATH")).toBe(
+      false,
+    );
+  });
+
+  it("uses a coord-event trigger cell as an exact player start", () => {
+    const triggerEvents: EditableMapJson = {
+      id: "MAP_A",
+      name: "A",
+      layout: "LAYOUT_A",
+      coord_events: [
+        {
+          type: "trigger",
+          x: 10,
+          y: 13,
+          elevation: 3,
+          var: "VAR_A",
+          var_value: "1",
+          script: "A_EventScript",
+        },
+      ],
+    };
+    const issues = codes(
+      `
+A_EventScript::
+  applymovement LOCALID_PLAYER, A_FaceUp
+  waitmovement 0
+  applymovement LOCALID_PLAYER, A_PushDown
+  waitmovement 0
+  end
+A_FaceUp:
+  walk_in_place_faster_up
+  step_end
+A_PushDown:
+  walk_down
+  step_end
+`,
+      map(),
+      triggerEvents,
+    );
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_START_UNVERIFIED")).toBe(false);
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_HAS_SAFE_PATH")).toBe(true);
+  });
+
+  it("uses passable cells adjacent to an object-event script as player interaction starts", () => {
+    const interactionEvents: EditableMapJson = {
+      id: "MAP_A",
+      name: "A",
+      layout: "LAYOUT_A",
+      object_events: [
+        {
+          local_id: "LOCALID_GUIDE",
+          graphics_id: "OBJ_EVENT_GFX_MAN_1",
+          x: 10,
+          y: 10,
+          elevation: 3,
+          movement_type: "MOVEMENT_TYPE_FACE_DOWN",
+          movement_range_x: 0,
+          movement_range_y: 0,
+          trainer_type: "TRAINER_TYPE_NONE",
+          trainer_sight_or_berry_tree_id: "0",
+          script: "A_EventScript",
+          flag: "0",
+        },
+      ],
+    };
+    const issues = codes(
+      `
+A_EventScript::
+  applymovement LOCALID_PLAYER, A_PlayerMove
+  waitmovement 0
+  end
+A_PlayerMove:
+  walk_up
+  step_end
+`,
+      map(),
+      interactionEvents,
+    );
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_START_UNVERIFIED")).toBe(false);
+    expect(issues.some((issue) => issue.code === "SCRIPT_MOVEMENT_HAS_SAFE_PATH")).toBe(true);
+  });
+
   it("downgrades unresolved external movement definitions instead of silently accepting them", () => {
     const issues = codes(`
 A::

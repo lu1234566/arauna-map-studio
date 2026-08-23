@@ -92,9 +92,11 @@ function appendIssues(
 
 function firstMarginDestinationIssue(
   eventIndex: number,
+  sourceMapId: string | null,
   destMap: string,
   destWarpId: number,
   destination: NonNullable<ImplementabilityWorkspaceContext["maps"][string]>,
+  target: Record<string, unknown>,
   x: number,
   y: number,
 ): ImplementabilityIssue | null {
@@ -113,6 +115,27 @@ function firstMarginDestinationIssue(
     point,
   );
 
+  const exactReciprocal =
+    !!sourceMapId &&
+    text(target.dest_map) === sourceMapId &&
+    integerLike(target.dest_warp_id) === eventIndex;
+
+  if (!declaredConnection && exactReciprocal) {
+    return {
+      code: "WARP_DEST_SPAWN_EDGE_RECIPROCAL_OK",
+      severity: "info",
+      category: "warps",
+      message:
+        `Warp ${eventIndex} chega a ${destMap}:${destWarpId} na primeira margem ${direction} em (${x},${y}) e ` +
+        `o warp_event destino retorna explicitamente para ${sourceMapId}:${eventIndex}. ` +
+        `Par de borda recíproco certificado sem exigir conexão de mapa nessa borda.`,
+      eventSource: "warp",
+      eventIndex,
+      x,
+      y,
+    };
+  }
+
   if (!declaredConnection) {
     return {
       code: "WARP_DEST_SPAWN_EDGE_UNVERIFIED",
@@ -120,7 +143,7 @@ function firstMarginDestinationIssue(
       category: "warps",
       message:
         `Warp ${eventIndex} chega a ${destMap}:${destWarpId} na primeira margem ${direction} em (${x},${y}). ` +
-        `Esse padrão existe em mapas vanilla (ex.: Harbor), mas o destino não declara conexão nessa borda; ` +
+        `Esse padrão existe em mapas vanilla (ex.: Harbor), mas o destino não declara conexão nessa borda nem retorno recíproco exato; ` +
         `âncora interna (${anchor.x},${anchor.y}) está ${passability.state}.`,
       eventSource: "warp",
       eventIndex,
@@ -184,6 +207,7 @@ export function withWarpEndpointSafetyAudit(
   const sourceEvents = effectiveEvents(mapJson, workspace, bundle);
   if (!sourceEvents || !Array.isArray(sourceEvents.warp_events)) return base;
   const additions: ImplementabilityIssue[] = [];
+  const sourceMapId = text(mapJson.id);
 
   sourceEvents.warp_events.forEach((raw, eventIndex) => {
     const sourceWarp = record(raw);
@@ -231,9 +255,11 @@ export function withWarpEndpointSafetyAudit(
     if (x < 0 || y < 0 || x >= destination.map.width || y >= destination.map.height) {
       const edgeIssue = firstMarginDestinationIssue(
         eventIndex,
+        sourceMapId,
         destMap,
         destWarpId,
         destination,
+        target,
         x,
         y,
       );
