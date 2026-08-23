@@ -117,4 +117,36 @@ describe("warpEndpointSafety", () => {
     expect(report.implementable).toBe(false);
     expect(has(report, "WARP_DEST_SPAWN_UNVERIFIED")).toBe(true);
   });
+
+  it("certifies a first-margin destination when the destination warp returns exactly to source", () => {
+    const mapJson = source();
+    const targetMap = map();
+    // A âncora interior pode ser bloqueada em padrões de borda vanilla; o que
+    // certifica este caso é o warp_event recíproco explícito na primeira margem.
+    targetMap.physical[4 * 5 + 2] = 0x3400;
+    const edgeDestination: EditableMapJson = {
+      id: "MAP_B",
+      name: "B",
+      layout: "LAYOUT_B",
+      warp_events: [{ x: 2, y: 5, elevation: 0, dest_map: "MAP_A", dest_warp_id: "0" }],
+    };
+    const context: ImplementabilityWorkspaceContext = {
+      sourceMapId: "MAP_A",
+      maps: {
+        MAP_A: { mapJson },
+        MAP_B: {
+          mapJson: edgeDestination,
+          width: 5,
+          height: 5,
+          map: targetMap,
+          atlas,
+        },
+      },
+    };
+
+    const report = withWarpEndpointSafetyAudit(baseReport(), mapJson, context);
+    expect(report.implementable).toBe(true);
+    expect(has(report, "WARP_DEST_SPAWN_EDGE_RECIPROCAL_OK")).toBe(true);
+    expect(has(report, "WARP_DEST_SPAWN_EDGE_UNVERIFIED")).toBe(false);
+  });
 });
