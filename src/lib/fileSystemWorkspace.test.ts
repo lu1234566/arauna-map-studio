@@ -78,7 +78,7 @@ function treeDirectory(
 }
 
 describe("writable workspace source coverage", () => {
-  it("loads include headers for audit without granting them write handles", async () => {
+  it("loads include and generated region-map sources for audit without granting write handles", async () => {
     const dataRoot = treeDirectory("data", {
       maps: treeDirectory("maps", {
         Test: treeDirectory("Test", {
@@ -91,9 +91,19 @@ describe("writable workspace source coverage", () => {
         "flags.h": readonlyHandle("flags.h", "#define FLAG_TEST 1\n"),
       }),
     });
+    const regionMapRoot = treeDirectory("region_map", {
+      "region_map_sections.json": readonlyHandle(
+        "region_map_sections.json",
+        '{"map_sections":[{"id":"MAPSEC_TEST","name":"TEST"}]}',
+      ),
+    });
+    const srcRoot = treeDirectory("src", {
+      data: treeDirectory("data", { region_map: regionMapRoot }),
+    });
     const root = treeDirectory("pokemon-juramento-de-arauna", {
       data: dataRoot,
       include: includeRoot,
+      src: srcRoot,
     });
 
     const previousWindow = globalThis.window;
@@ -109,8 +119,12 @@ describe("writable workspace source coverage", () => {
       );
       expect(paths).toContain("data/maps/Test/map.json");
       expect(paths).toContain("include/constants/flags.h");
+      expect(paths).toContain("src/data/region_map/region_map_sections.json");
       expect(selection.access.fileHandles.has("data/maps/Test/map.json")).toBe(true);
       expect(selection.access.fileHandles.has("include/constants/flags.h")).toBe(false);
+      expect(selection.access.fileHandles.has("src/data/region_map/region_map_sections.json")).toBe(
+        false,
+      );
     } finally {
       Object.defineProperty(globalThis, "window", {
         configurable: true,
