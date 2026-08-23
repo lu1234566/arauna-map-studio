@@ -243,7 +243,7 @@ export async function saveEditorToWritableWorkspace(
     }
     const source = editorStore.exportMapJsonSource();
     if (!source) throw new WritableWorkspaceError("Não há documento map.json editável carregado.");
-    const path = normalizeWorkspacePath(this.state?.mapJsonSource ?? state.mapJsonSource);
+    const path = normalizeWorkspacePath(state.mapJsonSource);
     const handle = findWritableHandle(access, path);
     if (!handle) throw new WritableWorkspaceError(`Não encontrei permissão de escrita para ${path}.`);
     pending.push({ kind: "json", path, data: source });
