@@ -42,14 +42,19 @@ function fakeFile(source: string): File {
 function workspace(header: string, script: string): AraunaWorkspace {
   const headerFile = fakeFile(header);
   const scriptFile = fakeFile(script);
+  const regionMapFile = fakeFile(
+    JSON.stringify({ map_sections: [{ id: "MAPSEC_A", name: "A", x: 0, y: 0, width: 1, height: 1 }] }),
+  );
   return {
     files: new Map([
       ["include/constants/arauna_symbol_test.h", headerFile],
       ["data/maps/A/scripts.inc", scriptFile],
+      ["src/data/region_map/region_map_sections.json", regionMapFile],
     ]),
     filesLower: new Map([
       ["include/constants/arauna_symbol_test.h", headerFile],
       ["data/maps/a/scripts.inc", scriptFile],
+      ["src/data/region_map/region_map_sections.json", regionMapFile],
     ]),
     layouts: new Map(),
     maps: [],
@@ -88,7 +93,6 @@ function document(flag = "FLAG_A"): EditableMapJson {
 
 const HEADER = `
 #define MUS_A 1
-#define MAPSEC_A 1
 #define WEATHER_NONE 0
 #define MAP_TYPE_INDOOR 1
 #define MAP_BATTLE_SCENE_NORMAL 0
@@ -110,7 +114,7 @@ function has(report: GameImplementabilityReport, code: string) {
 afterEach(() => clearWorkspaceSymbolAuditContext());
 
 describe("workspaceSymbolAudit", () => {
-  it("certifies every symbolic map/event reference against Workspace sources", async () => {
+  it("certifies headers, script labels and MAPSEC JSON against Workspace sources", async () => {
     const mapJson = document();
     await refreshWorkspaceSymbolAuditContext(workspace(HEADER, SCRIPT), mapJson);
 
