@@ -21,6 +21,8 @@ export interface WorkspaceSymbolAuditContext {
 
 let activeContext: WorkspaceSymbolAuditContext | null = null;
 
+const REGION_MAP_SECTIONS_PATH = "src/data/region_map/region_map_sections.json";
+
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -132,9 +134,24 @@ function regexEscape(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function definesRegionMapSection(source: string, symbol: string): boolean {
+  try {
+    const parsed = JSON.parse(source) as unknown;
+    if (!isRecord(parsed) || !Array.isArray(parsed.map_sections)) return false;
+    return parsed.map_sections.some((entry) => isRecord(entry) && entry.id === symbol);
+  } catch {
+    return false;
+  }
+}
+
 function definesSymbol(source: string, symbol: string, path: string): boolean {
+  const normalizedPath = normalizeWorkspacePath(path).toLowerCase();
+  if (normalizedPath === REGION_MAP_SECTIONS_PATH) {
+    return definesRegionMapSection(source, symbol);
+  }
+
   const escaped = regexEscape(symbol);
-  if (path.endsWith(".h")) {
+  if (normalizedPath.endsWith(".h")) {
     return (
       new RegExp(`^\\s*#define\\s+${escaped}(?:\\s|$)`, "m").test(source) ||
       new RegExp(`^\\s*${escaped}\\s*(?:=|,)`, "m").test(source)
@@ -150,6 +167,7 @@ function candidateSourcePaths(workspace: AraunaWorkspace): string[] {
     const lower = normalizeWorkspacePath(path).toLowerCase();
     if (lower.startsWith("include/") && lower.endsWith(".h")) return true;
     if (lower.startsWith("data/") && (lower.endsWith(".inc") || lower.endsWith(".s"))) return true;
+    if (lower === REGION_MAP_SECTIONS_PATH) return true;
     return false;
   });
 }
@@ -269,7 +287,9 @@ export function withWorkspaceSymbolReferenceAudit(
         code: "SOURCE_SYMBOL_NOT_FOUND",
         severity: "error",
         category: "mapJson",
-        message: `${ref.location} referencia ${ref.symbol}, mas nenhuma definição foi encontrada em include/**/*.h ou data/**/*.{inc,s}.`,
+        message:
+          `${ref.location} referencia ${ref.symbol}, mas nenhuma definição foi encontrada em ` +
+          `include/**/*.h, data/**/*.{inc,s} ou ${REGION_MAP_SECTIONS_PATH}.`,
       });
     }
   }
