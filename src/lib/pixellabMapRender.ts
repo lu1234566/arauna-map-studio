@@ -18,6 +18,23 @@ export function resolvePixelLabRegion(map: Pick<MapData, "width" | "height">, se
   return { ok: true, bounds, pixelWidth, pixelHeight, source: selection ? "selection" : "map" };
 }
 
+export function pixelLabRegionDiversity(map: MapData, bounds: PixelLabRegion) {
+  const counts = new Map<number, number>();
+  const total = bounds.w * bounds.h;
+  for (let y = 0; y < bounds.h; y++) {
+    for (let x = 0; x < bounds.w; x++) {
+      const id = map.metatiles[idx(bounds.x + x, bounds.y + y, map.width)] ?? 0;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  const dominantCount = Math.max(0, ...counts.values());
+  return {
+    uniqueMetatiles: counts.size,
+    dominantRatio: total > 0 ? dominantCount / total : 1,
+    meaningful: counts.size >= 2 && dominantCount / Math.max(total, 1) < 0.98,
+  };
+}
+
 export function dominantPaletteFromPixels(rgba: Uint8ClampedArray, maxColors = 24): string[] {
   const counts = new Map<number, number>();
   for (let i = 0; i + 3 < rgba.length; i += 4) {
@@ -39,6 +56,12 @@ function paletteCanvas(colors: string[]): HTMLCanvasElement | null {
 
 export function renderPixelLabRegion(map: MapData, bounds: PixelLabRegion): PixelLabRenderedRegion {
   if (typeof document === "undefined") throw new Error("Renderização PixelLab só está disponível no navegador.");
+  const diversity = pixelLabRegionDiversity(map, bounds);
+  if (!diversity.meaningful) {
+    throw new Error(
+      "A região está vazia ou quase uniforme e não serve como Init Image/paleta. Desmarque ‘Usar mapa/seleção como Init Image’ e ‘Usar paleta atual’ para gerar somente pelo prompt, ou desenhe um rascunho com pelo menos dois tipos de metatile.",
+    );
+  }
   const atlas = realAtlasStore.ensureHydrated(); const source = realAtlasStore.getCanvas(atlas);
   if (!atlas || !source) throw new Error("Carregue um atlas/tileset real antes de gerar um Init Image PixelLab.");
   const canvas = document.createElement("canvas"); canvas.width = bounds.w * INIT_TILE_PX; canvas.height = bounds.h * INIT_TILE_PX;
