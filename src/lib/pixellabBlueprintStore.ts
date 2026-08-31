@@ -28,8 +28,6 @@ export const PIXELLAB_BLUEPRINT_ZONES: PixelLabBlueprintZoneMeta[] = [
   { id: "none", label: "Apagar", color: "#222725", promptLabel: "unassigned" },
 ];
 
-const ZONE_META = new Map(PIXELLAB_BLUEPRINT_ZONES.map((zone) => [zone.id, zone] as const));
-
 type Listener = () => void;
 export interface PixelLabBlueprintState {
   width: number;
@@ -119,19 +117,59 @@ function stripDataUrl(dataUrl: string) {
 
 function localZone(snapshot: PixelLabBlueprintState, bounds: PixelLabRegion, x: number, y: number): PixelLabBlueprintZone {
   if (x < 0 || y < 0 || x >= bounds.w || y >= bounds.h) return "none";
-  const mapX = bounds.x + x;
-  const mapY = bounds.y + y;
-  return snapshot.cells[mapY * snapshot.width + mapX] ?? "none";
+  return snapshot.cells[(bounds.y + y) * snapshot.width + bounds.x + x] ?? "none";
+}
+
+function center(x: number, y: number) {
+  return { x: x * INIT_TILE_PX + INIT_TILE_PX / 2, y: y * INIT_TILE_PX + INIT_TILE_PX / 2 };
 }
 
 function isRoadLike(zone: PixelLabBlueprintZone) {
   return zone === "path" || zone === "entrance";
 }
 
+function drawConnectedNetwork(
+  ctx: CanvasRenderingContext2D,
+  bounds: PixelLabRegion,
+  snapshot: PixelLabBlueprintState,
+  zone: "path" | "water",
+  color: string,
+  lineWidth: number,
+) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  for (let y = 0; y < bounds.h; y++) {
+    for (let x = 0; x < bounds.w; x++) {
+      if (localZone(snapshot, bounds, x, y) !== zone) continue;
+      const from = center(x, y);
+      ctx.beginPath();
+      ctx.arc(from.x, from.y, lineWidth / 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+        const neighbor = localZone(snapshot, bounds, x + dx, y + dy);
+        const connected = zone === "path" ? isRoadLike(neighbor) : neighbor === "water";
+        if (!connected) continue;
+        const to = center(x + dx, y + dy);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+}
+
 /**
- * Renderiza o Blueprint como DIAGRAMA SEMÂNTICO, não como blocos sólidos.
- * Isso reduz a tendência do Pixflux de copiar as cores/retângulos literalmente,
- * preservando apenas a informação espacial que queremos condicionar.
+ * Exporta uma referência SEMÂNTICA leve para o Pixflux.
+ * O editor continua colorido para o usuário, mas a IA recebe somente sinais
+ * espaciais contínuos — sem grade, sem blocos por tile e sem aparência de mapa pronto.
  */
 export function renderPixelLabBlueprint(bounds: PixelLabRegion, snapshot: PixelLabBlueprintState = state): PixelLabBlueprintRender {
   if (typeof document === "undefined") throw new Error("Blueprint só pode ser renderizado no navegador.");
@@ -143,105 +181,75 @@ export function renderPixelLabBlueprint(bounds: PixelLabRegion, snapshot: PixelL
   canvas.height = bounds.h * INIT_TILE_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D indisponível para o Blueprint PixelLab.");
-  ctx.imageSmoothingEnabled = false;
-  const used = new Set<PixelLabBlueprintZone>();
-  const t = INIT_TILE_PX;
-
-  // Fundo neutro. Evita ensinar ao modelo uma cor de terreno específica.
-  ctx.fillStyle = "#A9ADA7";
+  ctx.imageSmoothingEnabled = true;
+  ctx.fillStyle = "#D7D8D2";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Grade técnica muito sutil apenas para registrar a lógica 16x16.
-  ctx.strokeStyle = "rgba(55,60,57,0.10)";
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= bounds.w; x++) {
-    ctx.beginPath(); ctx.moveTo(x * t + 0.5, 0); ctx.lineTo(x * t + 0.5, canvas.height); ctx.stroke();
-  }
-  for (let y = 0; y <= bounds.h; y++) {
-    ctx.beginPath(); ctx.moveTo(0, y * t + 0.5); ctx.lineTo(canvas.width, y * t + 0.5); ctx.stroke();
-  }
+  const used = new Set<PixelLabBlueprintZone>();
 
   for (let y = 0; y < bounds.h; y++) {
     for (let x = 0; x < bounds.w; x++) {
       const zone = localZone(snapshot, bounds, x, y);
-      if (zone === "none") continue;
-      used.add(zone);
-      const px = x * t;
-      const py = y * t;
-      const cx = px + t / 2;
-      const cy = py + t / 2;
-
-      if (zone === "path" || zone === "entrance") {
-        // Caminhos viram um grafo de linhas conectadas, não retângulos marrons.
-        ctx.strokeStyle = zone === "entrance" ? "#C19736" : "#715A49";
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.lineWidth = 5;
-        ctx.lineCap = "square";
-        ctx.beginPath();
-        ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-        const neighbors = [
-          [0, -1, cx, py],
-          [1, 0, px + t, cy],
-          [0, 1, cx, py + t],
-          [-1, 0, px, cy],
-        ] as const;
-        for (const [dx, dy, ex, ey] of neighbors) {
-          if (!isRoadLike(localZone(snapshot, bounds, x + dx, y + dy))) continue;
-          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
-        }
-        if (zone === "entrance") {
-          ctx.strokeStyle = "#E6C54B";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
-        }
-        continue;
-      }
+      if (zone !== "none") used.add(zone);
+      const px = x * INIT_TILE_PX;
+      const py = y * INIT_TILE_PX;
+      const c = center(x, y);
 
       if (zone === "building") {
-        // Construção = footprint/contorno, sem massa vermelha preenchida.
-        ctx.strokeStyle = "#944A4A";
+        ctx.save();
+        ctx.strokeStyle = "rgba(137,83,83,0.62)";
         ctx.lineWidth = 2;
-        ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
-        ctx.beginPath();
-        ctx.moveTo(px + 5, py + 5); ctx.lineTo(px + t - 5, py + t - 5);
-        ctx.moveTo(px + t - 5, py + 5); ctx.lineTo(px + 5, py + t - 5);
-        ctx.stroke();
-        continue;
-      }
-
-      if (zone === "water") {
-        // Água = linhas onduladas, não bloco azul sólido.
-        ctx.strokeStyle = "#4D7594";
-        ctx.lineWidth = 1.5;
-        for (const oy of [5, 10]) {
+        ctx.strokeRect(px + 4, py + 4, INIT_TILE_PX - 8, INIT_TILE_PX - 8);
+        ctx.restore();
+      } else if (zone === "vegetation") {
+        ctx.save();
+        ctx.fillStyle = "rgba(75,104,78,0.48)";
+        for (const [ox, oy, radius] of [[-3, 2, 1.8], [2, -2, 1.6], [3, 3, 1.4]] as const) {
           ctx.beginPath();
-          ctx.moveTo(px + 2, py + oy);
-          ctx.lineTo(px + 6, py + oy - 2);
-          ctx.lineTo(px + 10, py + oy + 1);
-          ctx.lineTo(px + 14, py + oy - 1);
-          ctx.stroke();
+          ctx.arc(c.x + ox, c.y + oy, radius, 0, Math.PI * 2);
+          ctx.fill();
         }
-        continue;
+        ctx.restore();
+      } else if (zone === "free") {
+        ctx.save();
+        ctx.fillStyle = "rgba(255,255,248,0.34)";
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
+    }
+  }
 
-      if (zone === "vegetation") {
-        // Vegetação = pontos/cruzes esparsos para marcar área bloqueada.
-        ctx.fillStyle = "#4F7357";
-        for (const [ox, oy] of [[4, 4], [11, 5], [7, 11], [13, 12]] as const) {
-          ctx.fillRect(px + ox, py + oy, 2, 2);
-        }
-        ctx.strokeStyle = "rgba(63,94,70,0.55)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(px + 2.5, py + 2.5, t - 5, t - 5);
-        continue;
-      }
+  // Redes contínuas, desenhadas depois das zonas para evitar o efeito "escada".
+  drawConnectedNetwork(ctx, bounds, snapshot, "path", "rgba(111,88,72,0.66)", 5);
+  drawConnectedNetwork(ctx, bounds, snapshot, "water", "rgba(72,108,136,0.58)", 7);
 
-      if (zone === "free") {
-        // Área livre recebe só um marcador discreto; visual final fica livre para a IA.
-        ctx.strokeStyle = "rgba(235,235,225,0.78)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.stroke();
+  // Entrada/saída é só um nó de ligação discreto; não vira bloco amarelo.
+  for (let y = 0; y < bounds.h; y++) {
+    for (let x = 0; x < bounds.w; x++) {
+      if (localZone(snapshot, bounds, x, y) !== "entrance") continue;
+      const c = center(x, y);
+      ctx.save();
+      ctx.strokeStyle = "rgba(142,119,58,0.74)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        if (localZone(snapshot, bounds, x + dx, y + dy) !== "path") continue;
+        const to = center(x + dx, y + dy);
+        ctx.save();
+        ctx.strokeStyle = "rgba(111,88,72,0.66)";
+        ctx.lineWidth = 5;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(c.x, c.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.restore();
+        break;
       }
     }
   }
@@ -258,13 +266,11 @@ export function renderPixelLabBlueprint(bounds: PixelLabRegion, snapshot: PixelL
 }
 
 export const PIXELLAB_BLUEPRINT_PROMPT_APPENDIX = [
-  "The init image is a schematic spatial diagram only, never finished artwork.",
-  "Do not reproduce the blueprint colors, lines, hatching, grid, symbols, markers, flat fills or diagram appearance in the final image.",
-  "Translate every schematic annotation into fully rendered natural pixel-art terrain, architecture and vegetation.",
-  "Preserve the road graph topology, connectivity and mandatory entrance/exit positions shown by the diagram, while allowing natural visual variation inside each 16x16 tile cell.",
-  "Keep building footprints inside their marked regions and preserve their access relationship to roads; redesign the actual buildings freely according to the text prompt.",
-  "Vegetation annotations indicate blocked/vegetated space, not green paint. Render real trees, bushes and terrain there.",
-  "Water annotations indicate water topology, not blue paint. Render natural pixel-art water while preserving its occupied area and crossings.",
-  "Open/free annotations must remain visually open and walkable unless the text prompt explicitly says otherwise.",
-  "The final output must look like a finished top-down GBA-era RPG map, not a blueprint, diagram, wireframe or colored planning image.",
+  "The init image is only a loose semantic planning guide, never artwork and never a tile-grid image.",
+  "Do not reproduce the guide itself: no grid, boxes, rails, ladders, schematic lines, guide dots, flat guide colors or planning symbols in the final image.",
+  "Translate every guide mark into finished natural pixel-art terrain, architecture and vegetation according to the written description.",
+  "Keep the connectivity of the main road network and mandatory entrance/exit nodes, but make road widths, curves, landscaping and silhouettes organic rather than diagram-like.",
+  "Building outlines indicate approximate placement only; create real buildings with readable doors connected to the road network.",
+  "Vegetation marks indicate blocked green areas, water lines indicate water corridors, and faint free-area marks reserve breathing room.",
+  "The final output must be a fully rendered top-down GBA-era RPG map with natural terrain transitions and readable 16x16-tile logic, not a blueprint or wireframe.",
 ].join(" ");
