@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { useEditor } from "@/lib/editorStore";
 import {
-  DETAIL_OPTIONS, OUTLINE_OPTIONS, PIXELLAB_PRESETS, PIXELLAB_SECRET_NAME, SHADING_OPTIONS,
+  DETAIL_OPTIONS, OUTLINE_OPTIONS, PIXELLAB_PRESETS, SHADING_OPTIONS,
   type PixelLabDetail, type PixelLabOutline, type PixelLabShading, type SanitizedUsage,
 } from "@/lib/pixellab";
-import { getPixelLabJob, getPixelLabStatus, startPixelLabMapGeneration } from "@/lib/pixellab.functions";
 import { renderPixelLabRegion, resolvePixelLabRegion, type PixelLabRegion } from "@/lib/pixellabMapRender";
 import { pixelLabOverlayStore, usePixelLabOverlay } from "@/lib/pixellabOverlayStore";
+import {
+  DEFAULT_PIXELLAB_PROXY_URL,
+  getPixelLabProxyJob,
+  getPixelLabProxyStatus,
+  loadPixelLabProxyUrl,
+  loadPixelLabSessionKey,
+  savePixelLabProxyUrl,
+  savePixelLabSessionKey,
+  startPixelLabProxyGeneration,
+} from "@/lib/pixellabProxyClient";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import { cn } from "@/lib/utils";
 
-type ConnectionState = "idle" | "testing" | "connected" | "not-configured" | "error";
+type ConnectionState = "idle" | "testing" | "connected" | "error";
 interface GenerationMeta { prompt: string; seed: number | null; width: number; height: number; bounds: PixelLabRegion | null }
 interface GenerationResult extends GenerationMeta { imageDataUrl: string; usage?: SanitizedUsage }
 const INPUT = "h-7 rounded border border-border bg-canvas px-2 text-[9px] outline-none focus:border-primary/60";
@@ -30,13 +38,12 @@ export function PixelLabDock() {
   const editor = useEditor();
   const atlas = useRealAtlas();
   const overlay = usePixelLabOverlay();
-  const checkConnection = useServerFn(getPixelLabStatus);
-  const startGeneration = useServerFn(startPixelLabMapGeneration);
-  const pollJob = useServerFn(getPixelLabJob);
 
   const [open, setOpen] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>("idle");
-  const [connectionMessage, setConnectionMessage] = useState(`Secret esperado: ${PIXELLAB_SECRET_NAME}`);
+  const [connectionMessage, setConnectionMessage] = useState("Cole sua chave PixelLab abaixo. Ela fica somente nesta aba do navegador.");
+  const [apiKey, setApiKey] = useState("");
+  const [proxyUrl, setProxyUrl] = useState(DEFAULT_PIXELLAB_PROXY_URL);
   const [prompt, setPrompt] = useState("");
   const [presetId, setPresetId] = useState("parana-mata-atlantica");
   const [width, setWidth] = useState(320);
@@ -57,6 +64,11 @@ export function PixelLabDock() {
   const [result, setResult] = useState<GenerationResult | null>(null);
   const pollLock = useRef(false);
 
+  useEffect(() => {
+    setApiKey(loadPixelLabSessionKey());
+    setProxyUrl(loadPixelLabProxyUrl());
+  }, []);
+
   const preset = useMemo(() => PIXELLAB_PRESETS.find((item) => item.id === presetId) ?? PIXELLAB_PRESETS[0]!, [presetId]);
   const region = useMemo(
     () => resolvePixelLabRegion(editor.map, editor.selection),
@@ -65,14 +77,33 @@ export function PixelLabDock() {
   const mapReferenceAvailable = Boolean(atlas && region.ok);
   const outputWidth = useInit && region.ok ? region.pixelWidth : width;
   const outputHeight = useInit && region.ok ? region.pixelHeight : height;
+  const keyReady = apiKey.trim().length >= 12;
+
+  const updateApiKey = (value: string) => {
+    setApiKey(value);
+    savePixelLabSessionKey(value);
+    setConnection("idle");
+    setConnectionMessage(value.trim() ? "Chave carregada nesta sessão. Clique em Testar conexão." : "Cole sua chave PixelLab. Ela não será salva permanentemente.");
+  };
+
+  const updateProxyUrl = (value: string) => {
+    setProxyUrl(value);
+    if (value.trim().startsWith("https://")) savePixelLabProxyUrl(value);
+    setConnection("idle");
+  };
 
   const testConnection = async () => {
+    if (!keyReady) {
+      setConnection("error");
+      setConnectionMessage("Cole uma chave PixelLab válida antes de testar.");
+      return;
+    }
     setConnection("testing");
-    setConnectionMessage("Testando conexão segura com a PixelLab…");
+    setConnectionMessage("Testando PixelLab pelo proxy Vercel…");
     try {
-      const response = await checkConnection();
-      if (response.ok) { setConnection("connected"); setConnectionMessage(response.message); }
-      else { setConnection(response.configured ? "error" : "not-configured"); setConnectionMessage(response.message); }
+      const response = await getPixelLabProxyStatus(apiKey, proxyUrl);
+      setConnection("connected");
+      setConnectionMessage(response.message);
     } catch (error) {
       setConnection("error");
       setConnectionMessage(`Falha ao testar: ${error instanceof Error ? error.message : String(error)}`);
@@ -85,6 +116,7 @@ export function PixelLabDock() {
   ].filter(Boolean).join(". ");
 
   const generate = async (variation = false) => {
+    if (!keyReady) { setJobMessage("Cole sua chave PixelLab e teste a conexão antes de gerar."); return; }
     if (!prompt.trim()) { setJobMessage("Descreva o mapa antes de gerar."); return; }
     if (busy || tracking) return;
     if (useInit && !region.ok) { setJobMessage(region.message); return; }
@@ -102,35 +134,31 @@ export function PixelLabDock() {
       const generationWidth = useInit && rendered ? rendered.pixelWidth : Math.round(width);
       const generationHeight = useInit && rendered ? rendered.pixelHeight : Math.round(height);
       const finalPrompt = description();
-      const response = await startGeneration({ data: {
+      const response = await startPixelLabProxyGeneration(apiKey, proxyUrl, {
         description: finalPrompt, width: generationWidth, height: generationHeight, seed: parsedSeed,
-        textGuidanceScale: guidance, outline, shading, detail,
+        textGuidanceScale: guidance, outline, shading, detail, view: "high top-down",
         initImageBase64: useInit ? rendered?.imageBase64 ?? null : null,
         initImageStrength: initStrength,
         colorImageBase64: paletteEnabled ? rendered?.paletteBase64 ?? null : null,
-      } });
-      if (!response.ok) {
-        setConnection(response.configured ? "error" : "not-configured"); setJobMessage(response.message); return;
-      }
+      });
       setJobMeta({ prompt: finalPrompt, seed: parsedSeed, width: generationWidth, height: generationHeight, bounds: useInit && rendered ? rendered.bounds : null });
-      setJobId(response.jobId); setTracking(true); setConnection("connected"); setConnectionMessage("Conectado à PixelLab.");
+      setJobId(response.jobId); setTracking(true); setConnection("connected"); setConnectionMessage("Conectado à PixelLab pelo proxy Vercel.");
       setJobMessage(`Job ${response.jobId.slice(0, 8)}… enviado. Acompanhando a cada 5 s.`);
     } catch (error) {
+      setConnection("error");
       setJobMessage(`Não foi possível iniciar: ${error instanceof Error ? error.message : String(error)}`);
     } finally { setBusy(false); }
   };
 
   useEffect(() => {
-    if (!jobId || !tracking) return;
+    if (!jobId || !tracking || !keyReady) return;
     let active = true;
     const poll = async () => {
       if (!active || pollLock.current) return;
       pollLock.current = true;
       try {
-        const response = await pollJob({ data: { jobId } });
+        const job = await getPixelLabProxyJob(apiKey, proxyUrl, jobId);
         if (!active) return;
-        if (!response.ok) { setTracking(false); setJobMessage(response.message); return; }
-        const job = response.job;
         if (job.phase === "completed" && job.imageDataUrl) {
           setTracking(false);
           setResult({ imageDataUrl: job.imageDataUrl, usage: job.usage, ...(jobMeta ?? { prompt: "", seed: null, width, height, bounds: null }) });
@@ -138,13 +166,13 @@ export function PixelLabDock() {
         } else if (job.phase === "failed") { setTracking(false); setJobMessage(job.errorMessage ?? "A geração PixelLab falhou."); }
         else setJobMessage(`PixelLab: ${job.phase === "in_progress" ? "processando" : job.phase}…`);
       } catch (error) {
-        if (active) setJobMessage(`Falha no acompanhamento: ${error instanceof Error ? error.message : String(error)}`);
+        if (active) { setTracking(false); setJobMessage(`Falha no acompanhamento: ${error instanceof Error ? error.message : String(error)}`); }
       } finally { pollLock.current = false; }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 5000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [jobId, tracking, jobMeta]);
+  }, [jobId, tracking, jobMeta, apiKey, proxyUrl, keyReady]);
 
   const showOverlay = () => {
     if (!result?.bounds) { setJobMessage("Sem Init Image não há alinhamento espacial confiável para overlay."); return; }
@@ -164,9 +192,11 @@ export function PixelLabDock() {
       </div>
       {open && <div className="max-h-[calc(100dvh-110px)] w-[390px] max-w-[calc(100vw-360px)] overflow-y-auto border-t border-border p-2.5"><div className="space-y-2.5">
         <div className="rounded border border-border bg-canvas p-2 text-[9px] leading-relaxed">
-          <div className="flex items-center justify-between gap-2"><span className={cn("font-semibold", connection === "connected" ? "text-success" : connection === "error" ? "text-destructive" : "text-muted-foreground")}>{connection === "connected" ? "● Conectado" : connection === "testing" ? "● Testando…" : connection === "not-configured" ? "● Não configurado" : connection === "error" ? "● Erro" : "● PixelLab"}</span><button type="button" onClick={() => void testConnection()} disabled={connection === "testing"} className="rounded border border-border bg-toolbar px-2 py-1 text-[8px] hover:bg-surface disabled:opacity-40">Testar conexão</button></div>
+          <div className="flex items-center justify-between gap-2"><span className={cn("font-semibold", connection === "connected" ? "text-success" : connection === "error" ? "text-destructive" : "text-muted-foreground")}>{connection === "connected" ? "● Conectado" : connection === "testing" ? "● Testando…" : connection === "error" ? "● Erro" : "● PixelLab"}</span><button type="button" onClick={() => void testConnection()} disabled={connection === "testing" || !keyReady} className="rounded border border-border bg-toolbar px-2 py-1 text-[8px] hover:bg-surface disabled:opacity-40">Testar conexão</button></div>
           <p className="mt-1 text-muted-foreground">{connectionMessage}</p>
-          {connection === "not-configured" && <p className="mt-1 text-warning">Lovable → Project Settings → Secrets → Add secret → <b>{PIXELLAB_SECRET_NAME}</b></p>}
+          <label className="mt-2 block space-y-1"><span className={LABEL}>Chave API PixelLab</span><input type="password" value={apiKey} onChange={(event) => updateApiKey(event.target.value)} autoComplete="off" spellCheck={false} placeholder="Cole sua chave aqui" className={cn(INPUT, "w-full font-mono")} /></label>
+          <p className="mt-1 text-[8px] text-muted-foreground">Guardada apenas em sessionStorage desta aba. Ao fechar a aba, a chave é descartada. Não vai para GitHub nem Lovable Secrets.</p>
+          <details className="mt-2"><summary className="cursor-pointer text-[8px] text-muted-foreground">Proxy Vercel</summary><label className="mt-1 block space-y-1"><span className={LABEL}>URL do proxy</span><input value={proxyUrl} onChange={(event) => updateProxyUrl(event.target.value)} spellCheck={false} className={cn(INPUT, "w-full font-mono")} /></label></details>
         </div>
 
         <div><div className={LABEL}>Descrição do mapa</div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} className="mt-1 h-24 w-full resize-y rounded border border-border bg-canvas p-2 text-[9px] leading-relaxed outline-none focus:border-primary/60" placeholder="Ex.: pequena vila do interior do Paraná, praça irregular, riacho ao leste…" /></div>
@@ -197,7 +227,7 @@ export function PixelLabDock() {
           </div>
         </div></details>
 
-        <button type="button" disabled={busy || tracking || !prompt.trim() || (useInit && (!mapReferenceAvailable || !region.ok))} onClick={() => void generate(false)} className="w-full rounded border border-primary/50 bg-primary/15 px-3 py-2 text-[10px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-35">{busy ? "Preparando…" : tracking ? "PixelLab processando…" : "✦ Gerar concept"}</button>
+        <button type="button" disabled={busy || tracking || !keyReady || !prompt.trim() || (useInit && (!mapReferenceAvailable || !region.ok))} onClick={() => void generate(false)} className="w-full rounded border border-primary/50 bg-primary/15 px-3 py-2 text-[10px] font-semibold text-primary hover:bg-primary/25 disabled:opacity-35">{busy ? "Preparando…" : tracking ? "PixelLab processando…" : "✦ Gerar concept"}</button>
         {tracking && <button type="button" onClick={() => setTracking(false)} className="w-full rounded border border-border bg-toolbar px-2 py-1.5 text-[9px] text-muted-foreground hover:bg-surface">Parar acompanhamento local</button>}
         <div className="rounded border border-border bg-canvas px-2 py-1.5 text-[8px] leading-relaxed text-muted-foreground">{jobMessage}</div>
 
@@ -213,7 +243,7 @@ export function PixelLabDock() {
           {!result.bounds && <p className="text-[8px] text-warning">Sem Init Image: o resultado fica somente como referência; não há alinhamento espacial confiável.</p>}
         </div>}
 
-        <p className="text-[8px] leading-relaxed text-muted-foreground">A geração nunca altera map.bin, map.json, colisão, elevação, eventos ou Undo. A chave da API nunca é digitada neste painel.</p>
+        <p className="text-[8px] leading-relaxed text-muted-foreground">A geração nunca altera map.bin, map.json, colisão, elevação, eventos ou Undo. A chave fica apenas na sessão da aba e é enviada por HTTPS ao proxy Vercel, que a encaminha e descarta.</p>
       </div></div>}
     </section>
   );
