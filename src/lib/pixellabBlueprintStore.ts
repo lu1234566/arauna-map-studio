@@ -29,7 +29,6 @@ export const PIXELLAB_BLUEPRINT_ZONES: PixelLabBlueprintZoneMeta[] = [
 ];
 
 const ZONE_META = new Map(PIXELLAB_BLUEPRINT_ZONES.map((zone) => [zone.id, zone] as const));
-const EMPTY_COLOR = "#272C29";
 
 type Listener = () => void;
 export interface PixelLabBlueprintState {
@@ -118,6 +117,22 @@ function stripDataUrl(dataUrl: string) {
   return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
 }
 
+function localZone(snapshot: PixelLabBlueprintState, bounds: PixelLabRegion, x: number, y: number): PixelLabBlueprintZone {
+  if (x < 0 || y < 0 || x >= bounds.w || y >= bounds.h) return "none";
+  const mapX = bounds.x + x;
+  const mapY = bounds.y + y;
+  return snapshot.cells[mapY * snapshot.width + mapX] ?? "none";
+}
+
+function isRoadLike(zone: PixelLabBlueprintZone) {
+  return zone === "path" || zone === "entrance";
+}
+
+/**
+ * Renderiza o Blueprint como DIAGRAMA SEMÂNTICO, não como blocos sólidos.
+ * Isso reduz a tendência do Pixflux de copiar as cores/retângulos literalmente,
+ * preservando apenas a informação espacial que queremos condicionar.
+ */
 export function renderPixelLabBlueprint(bounds: PixelLabRegion, snapshot: PixelLabBlueprintState = state): PixelLabBlueprintRender {
   if (typeof document === "undefined") throw new Error("Blueprint só pode ser renderizado no navegador.");
   if (snapshot.width <= 0 || snapshot.height <= 0 || snapshot.cells.length !== snapshot.width * snapshot.height) throw new Error("Blueprint ainda não está inicializado para este mapa.");
@@ -130,15 +145,104 @@ export function renderPixelLabBlueprint(bounds: PixelLabRegion, snapshot: PixelL
   if (!ctx) throw new Error("Canvas 2D indisponível para o Blueprint PixelLab.");
   ctx.imageSmoothingEnabled = false;
   const used = new Set<PixelLabBlueprintZone>();
+  const t = INIT_TILE_PX;
+
+  // Fundo neutro. Evita ensinar ao modelo uma cor de terreno específica.
+  ctx.fillStyle = "#A9ADA7";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Grade técnica muito sutil apenas para registrar a lógica 16x16.
+  ctx.strokeStyle = "rgba(55,60,57,0.10)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= bounds.w; x++) {
+    ctx.beginPath(); ctx.moveTo(x * t + 0.5, 0); ctx.lineTo(x * t + 0.5, canvas.height); ctx.stroke();
+  }
+  for (let y = 0; y <= bounds.h; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y * t + 0.5); ctx.lineTo(canvas.width, y * t + 0.5); ctx.stroke();
+  }
 
   for (let y = 0; y < bounds.h; y++) {
     for (let x = 0; x < bounds.w; x++) {
-      const mapX = bounds.x + x;
-      const mapY = bounds.y + y;
-      const zone = snapshot.cells[mapY * snapshot.width + mapX] ?? "none";
-      if (zone !== "none") used.add(zone);
-      ctx.fillStyle = zone === "none" ? EMPTY_COLOR : (ZONE_META.get(zone)?.color ?? EMPTY_COLOR);
-      ctx.fillRect(x * INIT_TILE_PX, y * INIT_TILE_PX, INIT_TILE_PX, INIT_TILE_PX);
+      const zone = localZone(snapshot, bounds, x, y);
+      if (zone === "none") continue;
+      used.add(zone);
+      const px = x * t;
+      const py = y * t;
+      const cx = px + t / 2;
+      const cy = py + t / 2;
+
+      if (zone === "path" || zone === "entrance") {
+        // Caminhos viram um grafo de linhas conectadas, não retângulos marrons.
+        ctx.strokeStyle = zone === "entrance" ? "#C19736" : "#715A49";
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.lineWidth = 5;
+        ctx.lineCap = "square";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        const neighbors = [
+          [0, -1, cx, py],
+          [1, 0, px + t, cy],
+          [0, 1, cx, py + t],
+          [-1, 0, px, cy],
+        ] as const;
+        for (const [dx, dy, ex, ey] of neighbors) {
+          if (!isRoadLike(localZone(snapshot, bounds, x + dx, y + dy))) continue;
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+        }
+        if (zone === "entrance") {
+          ctx.strokeStyle = "#E6C54B";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
+        }
+        continue;
+      }
+
+      if (zone === "building") {
+        // Construção = footprint/contorno, sem massa vermelha preenchida.
+        ctx.strokeStyle = "#944A4A";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px + 3, py + 3, t - 6, t - 6);
+        ctx.beginPath();
+        ctx.moveTo(px + 5, py + 5); ctx.lineTo(px + t - 5, py + t - 5);
+        ctx.moveTo(px + t - 5, py + 5); ctx.lineTo(px + 5, py + t - 5);
+        ctx.stroke();
+        continue;
+      }
+
+      if (zone === "water") {
+        // Água = linhas onduladas, não bloco azul sólido.
+        ctx.strokeStyle = "#4D7594";
+        ctx.lineWidth = 1.5;
+        for (const oy of [5, 10]) {
+          ctx.beginPath();
+          ctx.moveTo(px + 2, py + oy);
+          ctx.lineTo(px + 6, py + oy - 2);
+          ctx.lineTo(px + 10, py + oy + 1);
+          ctx.lineTo(px + 14, py + oy - 1);
+          ctx.stroke();
+        }
+        continue;
+      }
+
+      if (zone === "vegetation") {
+        // Vegetação = pontos/cruzes esparsos para marcar área bloqueada.
+        ctx.fillStyle = "#4F7357";
+        for (const [ox, oy] of [[4, 4], [11, 5], [7, 11], [13, 12]] as const) {
+          ctx.fillRect(px + ox, py + oy, 2, 2);
+        }
+        ctx.strokeStyle = "rgba(63,94,70,0.55)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px + 2.5, py + 2.5, t - 5, t - 5);
+        continue;
+      }
+
+      if (zone === "free") {
+        // Área livre recebe só um marcador discreto; visual final fica livre para a IA.
+        ctx.strokeStyle = "rgba(235,235,225,0.78)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.stroke();
+      }
     }
   }
 
@@ -154,11 +258,13 @@ export function renderPixelLabBlueprint(bounds: PixelLabRegion, snapshot: PixelL
 }
 
 export const PIXELLAB_BLUEPRINT_PROMPT_APPENDIX = [
-  "The init image is a structural color blueprint, not finished art.",
-  "Preserve the exact road topology, connectivity and mandatory entrance/exit cells shown by the blueprint.",
-  "Keep building zones in their marked regions; building visuals may change but their placement zones and access connections must remain.",
-  "Vegetation zones must remain outside walkable road areas and should read as blocked terrain.",
-  "Water zones must remain water and must not cut mandatory connections unless the blueprint explicitly does so.",
-  "Respect open/free zones and keep the result fully top-down with readable 16x16-tile RPG logic.",
-  "Blueprint color legend: brown = roads/paths; red = building zones; blue = water; green = vegetation/blocked; light gray = open/free; yellow = mandatory entrances/exits; dark gray = unassigned.",
+  "The init image is a schematic spatial diagram only, never finished artwork.",
+  "Do not reproduce the blueprint colors, lines, hatching, grid, symbols, markers, flat fills or diagram appearance in the final image.",
+  "Translate every schematic annotation into fully rendered natural pixel-art terrain, architecture and vegetation.",
+  "Preserve the road graph topology, connectivity and mandatory entrance/exit positions shown by the diagram, while allowing natural visual variation inside each 16x16 tile cell.",
+  "Keep building footprints inside their marked regions and preserve their access relationship to roads; redesign the actual buildings freely according to the text prompt.",
+  "Vegetation annotations indicate blocked/vegetated space, not green paint. Render real trees, bushes and terrain there.",
+  "Water annotations indicate water topology, not blue paint. Render natural pixel-art water while preserving its occupied area and crossings.",
+  "Open/free annotations must remain visually open and walkable unless the text prompt explicitly says otherwise.",
+  "The final output must look like a finished top-down GBA-era RPG map, not a blueprint, diagram, wireframe or colored planning image.",
 ].join(" ");
