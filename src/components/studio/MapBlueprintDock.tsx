@@ -57,7 +57,7 @@ export function MapBlueprintDock() {
           className="rounded border border-border bg-toolbar px-2.5 py-1.5 text-[10px] font-semibold text-foreground hover:bg-surface"
           title="Compilar um blueprint JSON em Template Arauna"
         >
-          Blueprint IA
+          Blueprint JSON
         </button>
         <span className="text-[9px] text-muted-foreground">JSON → Template GBA</span>
       </div>
@@ -65,7 +65,7 @@ export function MapBlueprintDock() {
       {open && (
         <div className="w-[460px] max-w-[calc(100vw-320px)] border-t border-border p-2.5">
           <div className="mb-2 rounded border border-primary/25 bg-primary/5 p-2 text-[9px] leading-relaxed text-muted-foreground">
-            Esta camada não converte imagens em mapa e não inventa metatiles. Ela aceita um plano estrutural que referencia apenas <b className="text-foreground">Padrões</b> e <b className="text-foreground">Smart Paths</b> já cadastrados, e compila o resultado para um Template editável.
+            Este é o compilador estrutural <b className="text-foreground">JSON → Template</b>. Ele é separado do novo Blueprint visual usado como Init Image no PixelLab. Aqui nenhum pixel é convertido em mapa e nenhum metatile é inventado.
           </div>
 
           <textarea
