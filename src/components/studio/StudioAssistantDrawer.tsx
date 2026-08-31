@@ -11,6 +11,8 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
+import { pixelLabBlueprintStore } from "@/lib/pixellabBlueprintStore";
+import { cn } from "@/lib/utils";
 import { CityBundleDock } from "./CityBundleDock";
 import { ClipboardDock } from "./ClipboardDock";
 import { Gen3LibraryLauncher } from "./Gen3LibraryLauncher";
@@ -20,7 +22,6 @@ import { PatternLibraryDock } from "./PatternLibraryDock";
 import { PixelLabDock } from "./PixelLabDock";
 import { ProceduralGeneratorLauncher } from "./ProceduralGeneratorLauncher";
 import { SmartPathDock } from "./SmartPathDock";
-import { cn } from "@/lib/utils";
 
 type AssistantId = "pixellab" | "paths" | "patterns" | "templates" | "blueprint-json" | "clipboard" | "procedural" | "gen3" | "city";
 
@@ -51,6 +52,11 @@ function AssistantContent({ id }: { id: AssistantId }) {
 export function StudioAssistantDrawer() {
   const [active, setActive] = useState<AssistantId | null>(null);
 
+  const changeActive = (next: AssistantId | null) => {
+    pixelLabBlueprintStore.setEnabled(false);
+    setActive(next);
+  };
+
   return (
     <div className="pointer-events-none absolute inset-y-2 right-2 z-50 flex max-w-[calc(100%-16px)] items-start gap-1">
       {active && (
@@ -59,7 +65,7 @@ export function StudioAssistantDrawer() {
             <span className="text-[10px] font-semibold">Assistentes · {ITEMS.find((item) => item.id === active)?.label}</span>
             <button
               type="button"
-              onClick={() => setActive(null)}
+              onClick={() => changeActive(null)}
               className="ml-auto grid size-6 place-items-center rounded text-muted-foreground hover:bg-surface hover:text-foreground"
               title="Fechar assistente"
             >
@@ -77,7 +83,7 @@ export function StudioAssistantDrawer() {
           <button
             key={item.id}
             type="button"
-            onClick={() => setActive((current) => current === item.id ? null : item.id)}
+            onClick={() => changeActive(active === item.id ? null : item.id)}
             className={cn(
               "group relative grid size-8 shrink-0 place-items-center rounded border text-muted-foreground transition-colors",
               active === item.id
