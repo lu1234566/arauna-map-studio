@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TILE_PX } from "@/lib/demoAtlas";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import {
@@ -19,10 +19,19 @@ export function PixelLabBlueprintOverlay() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const [resizeTick, setResizeTick] = useState(0);
 
   useEffect(() => {
     pixelLabBlueprintStore.ensureDimensions(editor.map.width, editor.map.height);
   }, [editor.map.width, editor.map.height]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setResizeTick((value) => value + 1));
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [blueprint.enabled]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,17 +73,7 @@ export function PixelLabBlueprintOverlay() {
       }
     }
     ctx.restore();
-  }, [blueprint, editor.zoom, editor.pan.x, editor.pan.y, editor.map.width, editor.map.height]);
-
-  useEffect(() => {
-    const onResize = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      pixelLabBlueprintStore.setEnabled(pixelLabBlueprintStore.getSnapshot().enabled);
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [blueprint, editor.zoom, editor.pan.x, editor.pan.y, editor.map.width, editor.map.height, resizeTick]);
 
   if (!blueprint.enabled) return null;
 
