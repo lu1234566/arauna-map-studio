@@ -14,6 +14,8 @@ import { MapTemplateScopeGuard } from "@/components/studio/MapTemplateScopeGuard
 import { PatternLibraryDock } from "@/components/studio/PatternLibraryDock";
 import { PatternOverlay } from "@/components/studio/PatternOverlay";
 import { PatternScopeGuard } from "@/components/studio/PatternScopeGuard";
+import { PixelLabDock } from "@/components/studio/PixelLabDock";
+import { PixelLabOverlay } from "@/components/studio/PixelLabOverlay";
 import { ProceduralGeneratorLauncher } from "@/components/studio/ProceduralGeneratorLauncher";
 import { SmartPathDock } from "@/components/studio/SmartPathDock";
 import { SmartPathOverlay } from "@/components/studio/SmartPathOverlay";
@@ -51,14 +53,10 @@ export const Route = createFileRoute("/")({ component: Index });
 function Index() {
   const state = useEditor();
   const session = useWorkspaceSession();
-  const [completeGameAudit, setCompleteGameAudit] = useState<GameImplementabilityReport | null>(
-    null,
-  );
+  const [completeGameAudit, setCompleteGameAudit] = useState<GameImplementabilityReport | null>(null);
   const renderedGameAudit = state.gameAudit ? completeGameAudit : null;
 
   useEffect(() => {
-    // A prévia vazia do Lovable/Chrome deve mostrar o Emerald real, nunca
-    // quadrados procedurais. Workspaces locais continuam tendo prioridade.
     if (realAtlasStore.ensureHydrated()) return;
     void ensureAuthenticEmeraldPreviewAtlas()
       .then((atlas) => {
@@ -78,22 +76,15 @@ function Index() {
   }, [state.gameAudit, completeGameAudit]);
 
   useEffect(() => {
-    if (state.tool !== "pencil" && smartPathStore.getState().enabled)
-      smartPathStore.setEnabled(false);
-    if (state.tool !== "pencil" && patternLibraryStore.getState().enabled)
-      patternLibraryStore.setEnabled(false);
-    if (state.tool !== "pencil" && mapTemplateStore.getState().enabled)
-      mapTemplateStore.setEnabled(false);
+    if (state.tool !== "pencil" && smartPathStore.getState().enabled) smartPathStore.setEnabled(false);
+    if (state.tool !== "pencil" && patternLibraryStore.getState().enabled) patternLibraryStore.setEnabled(false);
+    if (state.tool !== "pencil" && mapTemplateStore.getState().enabled) mapTemplateStore.setEnabled(false);
   }, [state.tool]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const typing =
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.tagName === "SELECT" ||
-        target?.isContentEditable;
+      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable;
       if (typing) return;
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
@@ -200,35 +191,23 @@ function Index() {
       const document = editorStore.getState().mapJsonDocument;
       try {
         if (session?.workspace) {
-          // Scripts primeiro: eles podem introduzir MAP_* que não aparecem em
-          // warp_events/connections. Depois carregamos destinos e símbolos reais.
           const scriptContext = await refreshScriptSpatialContext(session.workspace, document);
-          const scriptMapIds = scriptContext?.contracts
-            ? referencedScriptWarpMapIds(scriptContext.contracts)
-            : [];
+          const scriptMapIds = scriptContext?.contracts ? referencedScriptWarpMapIds(scriptContext.contracts) : [];
           await Promise.all([
             refreshWorkspaceAuditContextWithScriptMaps(session.workspace, document, scriptMapIds),
             refreshWorkspaceSymbolAuditContext(session.workspace, document),
           ]);
         } else {
-          // Sem Workspace, o contexto de scripts pode ter vindo de um bundle
-          // autocontido. Provas de símbolos/fontes do jogo não são inventadas.
           clearWorkspaceAuditContext();
           clearWorkspaceSymbolAuditContext();
           const scriptContext = getScriptSpatialContext();
-          if (!document || scriptContext?.sourceDocument !== document) {
-            clearScriptSpatialContext();
-          }
+          if (!document || scriptContext?.sourceDocument !== document) clearScriptSpatialContext();
         }
       } catch (error) {
         clearWorkspaceAuditContext();
         clearWorkspaceSymbolAuditContext();
-        // Não apague à cegas um snapshot íntegro vindo de bundle. O guard de
-        // identidade na auditoria completa já impede contexto stale.
         const scriptContext = getScriptSpatialContext();
-        if (!document || scriptContext?.sourceDocument !== document) {
-          clearScriptSpatialContext();
-        }
+        if (!document || scriptContext?.sourceDocument !== document) clearScriptSpatialContext();
         editorStore.setMessage(
           `Não foi possível carregar dependências/fontes do Workspace para a auditoria: ${error instanceof Error ? error.message : String(error)}. A validação seguirá como parcial.`,
         );
@@ -263,8 +242,10 @@ function Index() {
         <TilePalette />
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <MapCanvas />
+          <PixelLabOverlay />
           <MapMinimap />
           <CityBundleDock />
+          <PixelLabDock />
           <StampOverlay />
           <SmartPathOverlay />
           <PatternOverlay />
