@@ -1,27 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { CityBundleDock } from "@/components/studio/CityBundleDock";
-import { ClipboardDock } from "@/components/studio/ClipboardDock";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ExclusivePaintModeGuard } from "@/components/studio/ExclusivePaintModeGuard";
-import { Gen3LibraryLauncher } from "@/components/studio/Gen3LibraryLauncher";
 import { Inspector } from "@/components/studio/Inspector";
-import { MapBlueprintDock } from "@/components/studio/MapBlueprintDock";
 import { MapCanvas } from "@/components/studio/MapCanvas";
 import { MapMinimap } from "@/components/studio/MapMinimap";
-import { MapTemplateDock } from "@/components/studio/MapTemplateDock";
 import { MapTemplateOverlay } from "@/components/studio/MapTemplateOverlay";
 import { MapTemplateScopeGuard } from "@/components/studio/MapTemplateScopeGuard";
-import { PatternLibraryDock } from "@/components/studio/PatternLibraryDock";
 import { PatternOverlay } from "@/components/studio/PatternOverlay";
 import { PatternScopeGuard } from "@/components/studio/PatternScopeGuard";
-import { PixelLabDock } from "@/components/studio/PixelLabDock";
+import { PixelLabBlueprintOverlay } from "@/components/studio/PixelLabBlueprintOverlay";
 import { PixelLabOverlay } from "@/components/studio/PixelLabOverlay";
-import { ProceduralGeneratorLauncher } from "@/components/studio/ProceduralGeneratorLauncher";
-import { SmartPathDock } from "@/components/studio/SmartPathDock";
 import { SmartPathOverlay } from "@/components/studio/SmartPathOverlay";
 import { SmartPathScopeGuard } from "@/components/studio/SmartPathScopeGuard";
 import { StampOverlay } from "@/components/studio/StampOverlay";
 import { StatusBar } from "@/components/studio/StatusBar";
+import { StudioAssistantDrawer } from "@/components/studio/StudioAssistantDrawer";
 import { TilePalette } from "@/components/studio/TilePalette";
 import { TopToolbar } from "@/components/studio/TopToolbar";
 import { ValidationPanel } from "@/components/studio/ValidationPanel";
@@ -54,6 +48,8 @@ function Index() {
   const state = useEditor();
   const session = useWorkspaceSession();
   const [completeGameAudit, setCompleteGameAudit] = useState<GameImplementabilityReport | null>(null);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const renderedGameAudit = state.gameAudit ? completeGameAudit : null;
 
   useEffect(() => {
@@ -239,13 +235,35 @@ function Index() {
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <TopToolbar onValidate={validateForGame} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <TilePalette />
+        {leftSidebarOpen ? (
+          <div className="relative flex shrink-0 border-r border-border">
+            <TilePalette />
+            <button
+              type="button"
+              onClick={() => setLeftSidebarOpen(false)}
+              className="absolute right-1 top-1 z-50 grid size-6 place-items-center rounded border border-border bg-toolbar/95 text-muted-foreground shadow hover:bg-surface hover:text-foreground"
+              title="Recolher Metatiles"
+            >
+              <ChevronLeft className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex w-8 shrink-0 items-start justify-center border-r border-border bg-panel pt-2">
+            <button
+              type="button"
+              onClick={() => setLeftSidebarOpen(true)}
+              className="grid size-6 place-items-center rounded border border-border bg-toolbar text-muted-foreground hover:bg-surface hover:text-foreground"
+              title="Abrir Metatiles"
+            >
+              <ChevronRight className="size-3.5" />
+            </button>
+          </div>
+        )}
+
         <main className="relative min-w-0 flex-1 overflow-hidden bg-canvas">
           <MapCanvas />
           <PixelLabOverlay />
-          <MapMinimap />
-          <CityBundleDock />
-          <PixelLabDock />
+          <PixelLabBlueprintOverlay />
           <StampOverlay />
           <SmartPathOverlay />
           <PatternOverlay />
@@ -254,15 +272,35 @@ function Index() {
           <SmartPathScopeGuard />
           <PatternScopeGuard />
           <MapTemplateScopeGuard />
-          <SmartPathDock />
-          <PatternLibraryDock />
-          <MapTemplateDock />
-          <MapBlueprintDock />
-          <ClipboardDock />
-          <ProceduralGeneratorLauncher />
-          <Gen3LibraryLauncher />
+          <MapMinimap />
+          <StudioAssistantDrawer />
         </main>
-        <Inspector />
+
+        {rightSidebarOpen ? (
+          <div className="relative flex shrink-0 border-l border-border">
+            <button
+              type="button"
+              onClick={() => setRightSidebarOpen(false)}
+              className="absolute left-1 top-1 z-50 grid size-6 place-items-center rounded border border-border bg-toolbar/95 text-muted-foreground shadow hover:bg-surface hover:text-foreground"
+              title="Recolher Propriedades"
+            >
+              <ChevronRight className="size-3.5" />
+            </button>
+            <Inspector />
+          </div>
+        ) : (
+          <div className="flex w-8 shrink-0 items-start justify-center border-l border-border bg-panel pt-2">
+            <button
+              type="button"
+              onClick={() => setRightSidebarOpen(true)}
+              className="grid size-6 place-items-center rounded border border-border bg-toolbar text-muted-foreground hover:bg-surface hover:text-foreground"
+              title="Abrir Propriedades"
+            >
+              <ChevronLeft className="size-3.5" />
+            </button>
+          </div>
+        )}
+
         {state.validation && (
           <ValidationPanel
             report={state.validation}
