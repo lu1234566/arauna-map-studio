@@ -4,6 +4,11 @@ import {
   normalizeImageDataUrl, sanitizeBalanceResponse, sanitizeJobResponse,
 } from "./pixellab";
 import { dominantPaletteFromPixels, resolvePixelLabRegion } from "./pixellabMapRender";
+import {
+  PIXELLAB_BLUEPRINT_PROMPT_APPENDIX,
+  blueprintHasContent,
+  pixelLabBlueprintStore,
+} from "./pixellabBlueprintStore";
 
 const ONE_PX_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZzC8AAAAASUVORK5CYII=";
 
@@ -56,5 +61,35 @@ describe("PixelLab map reference", () => {
   it("extrai paleta determinística", () => {
     const rgba = new Uint8ClampedArray([255,0,0,255, 255,0,0,255, 0,255,0,255, 0,0,255,0]);
     expect(dominantPaletteFromPixels(rgba, 2)).toEqual(["#FF0000", "#00FF00"]);
+  });
+});
+
+describe("PixelLab visual blueprint", () => {
+  it("mantém blueprint em store separado e reinicia ao mudar dimensões", () => {
+    pixelLabBlueprintStore.ensureDimensions(20, 20);
+    pixelLabBlueprintStore.clear();
+    pixelLabBlueprintStore.paintCell(5, 5, "path", 1);
+    expect(blueprintHasContent(pixelLabBlueprintStore.getSnapshot())).toBe(true);
+    expect(pixelLabBlueprintStore.getSnapshot().cells[5 * 20 + 5]).toBe("path");
+
+    pixelLabBlueprintStore.ensureDimensions(10, 8);
+    const resized = pixelLabBlueprintStore.getSnapshot();
+    expect([resized.width, resized.height, resized.cells.length]).toEqual([10, 8, 80]);
+    expect(blueprintHasContent(resized)).toBe(false);
+  });
+
+  it("pincel 3x3 pinta somente a grade do blueprint", () => {
+    pixelLabBlueprintStore.ensureDimensions(5, 5);
+    pixelLabBlueprintStore.clear();
+    pixelLabBlueprintStore.paintCell(2, 2, "building", 3);
+    const snapshot = pixelLabBlueprintStore.getSnapshot();
+    expect(snapshot.cells.filter((zone) => zone === "building")).toHaveLength(9);
+    expect(snapshot.cells[2 * 5 + 2]).toBe("building");
+  });
+
+  it("prompt estrutural explicita topologia e entradas obrigatórias", () => {
+    expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/exact road topology/i);
+    expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/mandatory entrance\/exit/i);
+    expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/16x16-tile/i);
   });
 });
