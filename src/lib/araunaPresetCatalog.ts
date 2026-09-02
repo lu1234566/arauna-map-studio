@@ -24,6 +24,20 @@ import {
   galeriasSerraGuardFromAtlas,
 } from "./galeriasSerraPreset";
 import {
+  GRUTA_DAS_VOZES_1F_PRESET_ID,
+  GRUTA_DAS_VOZES_1F_PROMPT,
+  GRUTA_DAS_VOZES_B1F_PRESET_ID,
+  GRUTA_DAS_VOZES_B1F_PROMPT,
+  GRUTA_DAS_VOZES_B2F_PRESET_ID,
+  GRUTA_DAS_VOZES_B2F_PROMPT,
+  GRUTA_DAS_VOZES_BENTO_PRESET_ID,
+  GRUTA_DAS_VOZES_BENTO_PROMPT,
+  grutaDasVozes1FGuardFromAtlas,
+  grutaDasVozesB1FGuardFromAtlas,
+  grutaDasVozesB2FGuardFromAtlas,
+  grutaDasVozesBentoGuardFromAtlas,
+} from "./grutaDasVozesPresets";
+import {
   MATA_DO_MEIO_PRESET_ID,
   MATA_DO_MEIO_PROMPT,
   mataDoMeioGuardFromAtlas,
@@ -143,5 +157,29 @@ export const ARAUNA_ADDITIONAL_PRESETS: readonly AraunaPresetCatalogEntry[] = [
     label: "Galerias Serra",
     prompt: GALERIAS_SERRA_PROMPT,
     guardFromAtlas: galeriasSerraGuardFromAtlas,
+  },
+  {
+    id: GRUTA_DAS_VOZES_1F_PRESET_ID,
+    label: "Gruta das Vozes · 1F",
+    prompt: GRUTA_DAS_VOZES_1F_PROMPT,
+    guardFromAtlas: grutaDasVozes1FGuardFromAtlas,
+  },
+  {
+    id: GRUTA_DAS_VOZES_B1F_PRESET_ID,
+    label: "Gruta das Vozes · B1F",
+    prompt: GRUTA_DAS_VOZES_B1F_PROMPT,
+    guardFromAtlas: grutaDasVozesB1FGuardFromAtlas,
+  },
+  {
+    id: GRUTA_DAS_VOZES_B2F_PRESET_ID,
+    label: "Gruta das Vozes · B2F",
+    prompt: GRUTA_DAS_VOZES_B2F_PROMPT,
+    guardFromAtlas: grutaDasVozesB2FGuardFromAtlas,
+  },
+  {
+    id: GRUTA_DAS_VOZES_BENTO_PRESET_ID,
+    label: "Gruta das Vozes · Seu Bento",
+    prompt: GRUTA_DAS_VOZES_BENTO_PROMPT,
+    guardFromAtlas: grutaDasVozesBentoGuardFromAtlas,
   },
 ] as const;
