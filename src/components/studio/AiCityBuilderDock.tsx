@@ -23,6 +23,7 @@ import { usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import { useSmartPath } from "@/lib/smartPathStore";
 import { cn } from "@/lib/utils";
+import { VILA_AMANHECER_PROMPT, vilaAmanhecerGuardFromAtlas } from "@/lib/vilaAmanhecerPreset";
 
 const EXAMPLE = `Mapa 20x20; nome="Vila Amanhecer IA"
 estrutura "Casa do jogador" usar "casa do jogador" em (2,4)
