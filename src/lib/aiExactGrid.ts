@@ -15,6 +15,7 @@ import {
 import type { AiMapCompileResult } from "./aiMapPlan";
 import type { AiMapReconstructionPlan } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
+import { protectExactGridElevationLanes } from "./exactGridElevationSafety";
 import {
   applyExactGridDeterministicDetails,
   normalizeExactGridSelectivePreserve,
@@ -182,6 +183,10 @@ export function compileAiExactGrid({
     return inactive;
   }
 
+  // Antes de qualquer normalização física, restaura e reserva corredores cuja
+  // elevação caminhável difere do piso-base dominante (ex.: passarelas de Fortree).
+  // Assim nenhuma etapa posterior pode achatá-los para o physical canônico do chão.
+  protectExactGridElevationLanes({ sourceMap, layered, atlas });
   normalizeExactGridSelectivePreserve(layered, reconstruction);
 
   const errors = [...layered.errors];
