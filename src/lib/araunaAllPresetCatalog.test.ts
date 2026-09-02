@@ -5,6 +5,7 @@ import { CAVERNAS_MBOI_CATALOG_ENTRIES } from "./cavernasMboiCatalog";
 import { GRUTA_DA_MARE_CATALOG_ENTRIES } from "./grutaDaMareCatalog";
 import { GRUTA_DA_ORIGEM_CATALOG_ENTRIES } from "./grutaDaOrigemCatalog";
 import { NAVIO_PERDIDO_CATALOG_ENTRIES } from "./navioPerdidoCatalog";
+import { PASSAGENS_NATURAIS_CATALOG_ENTRIES } from "./passagensNaturaisCatalog";
 import { TORRE_JURAMENTO_CATALOG_ENTRIES } from "./torreJuramentoCatalog";
 import { USINA_VELHA_CATALOG_ENTRIES } from "./usinaVelhaCatalog";
 
@@ -16,14 +17,13 @@ const families = [
   ["Usina Velha", USINA_VELHA_CATALOG_ENTRIES, 2],
   ["Torre Juramento", TORRE_JURAMENTO_CATALOG_ENTRIES, 8],
   ["Navio Perdido", NAVIO_PERDIDO_CATALOG_ENTRIES, 13],
+  ["Passagens naturais", PASSAGENS_NATURAIS_CATALOG_ENTRIES, 3],
 ] as const;
 
 describe("catálogo agregado de presets de Arauna", () => {
   it("agrega todas as famílias com a cardinalidade esperada", () => {
-    for (const [label, entries, expected] of families) {
-      expect(entries, label).toHaveLength(expected);
-    }
-    expect(ARAUNA_ALL_PRESETS).toHaveLength(71);
+    for (const [label, entries, expected] of families) expect(entries, label).toHaveLength(expected);
+    expect(ARAUNA_ALL_PRESETS).toHaveLength(74);
   });
 
   it("não contém ids duplicados e expõe integralmente cada família", () => {
