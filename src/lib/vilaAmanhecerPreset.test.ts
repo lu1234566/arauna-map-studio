@@ -53,7 +53,7 @@ describe("piloto Vila Amanhecer", () => {
     const parsed = parseDetailedMapCommand(VILA_AMANHECER_PROMPT, [], [], 20, 20);
     expect(parsed.errors).toEqual([]);
     expect(parsed.plan?.connections).toEqual([
-      expect.objectContaining({ direction: "up", map: "MAP_ROUTE101", offset: 0 }),
+      expect.objectContaining({ direction: "north", map: "MAP_ROUTE101", offset: 0 }),
     ]);
     expect(parsed.plan?.structures ?? []).toHaveLength(0);
   });
