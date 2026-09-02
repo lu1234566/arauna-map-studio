@@ -2,14 +2,15 @@ import { Bot, Braces, Check, Download, Hammer, Sparkles, WandSparkles, X } from 
 import { useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { ExactGridPreview } from "@/components/studio/ExactGridPreview";
+import { AGUAS_MBOI_PROMPT, aguasMboiGuardFromAtlas } from "@/lib/aguasMboiPreset";
 import { compileAiExactGrid, serializeAiExactGrid } from "@/lib/aiExactGrid";
 import { applyExactGridToEditor } from "@/lib/aiExactGridApply";
 import { applyCompiledAiMap } from "@/lib/aiMapApply";
 import { planAiMapIdentityBase } from "@/lib/aiMapIdentity";
+import { parseLocalMapCommand } from "@/lib/aiMapLocalInterpreter";
 import {
   compileAiMapPlan,
   parseAiMapPlanJson,
-  parseDetailedMapCommand,
   type AiMapCompileResult,
   type AiMapPlan,
 } from "@/lib/aiMapPlan";
@@ -137,6 +138,13 @@ export function AiCityBuilderDock() {
     atlas,
   ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
 
+  const mboiGuard = useMemo(() => aguasMboiGuardFromAtlas(
+    editor.map.width,
+    editor.map.height,
+    editor.mapMetadata?.id ?? null,
+    atlas,
+  ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
+
   const compatiblePatterns = useMemo(() => patternState.patterns.filter((pattern) => (
     !pattern.scope || Boolean(atlas && pattern.scope.primary === atlas.primary && pattern.scope.secondary === atlas.secondary)
   )), [patternState.patterns, atlas?.primary, atlas?.secondary]);
@@ -257,7 +265,7 @@ export function AiCityBuilderDock() {
   };
 
   const runLocalInterpreter = (text: string, source = "Interpretador preciso") => {
-    const parsed = parseDetailedMapCommand(
+    const parsed = parseLocalMapCommand(
       text,
       compatiblePatterns,
       compatiblePaths,
@@ -310,6 +318,15 @@ export function AiCityBuilderDock() {
     }
     setPrompt(CASA_DA_CINZA_PROMPT);
     runLocalInterpreter(CASA_DA_CINZA_PROMPT, "Piloto Casa da Cinza (local, determinístico)");
+  };
+
+  const runAguasMboiPreset = () => {
+    if (!mboiGuard.enabled) {
+      setMessage(mboiGuard.reason);
+      return;
+    }
+    setPrompt(AGUAS_MBOI_PROMPT);
+    runLocalInterpreter(AGUAS_MBOI_PROMPT, "Piloto Águas de M'Boi (local, determinístico)");
   };
 
   const interpretAi = async () => {
@@ -566,6 +583,17 @@ export function AiCityBuilderDock() {
                 <b className={cinzaGuard.enabled ? "text-success" : undefined}>Piloto Casa da Cinza.</b> {cinzaGuard.reason} O núcleo termal é uma zona preserve explícita, além das proteções normais de eventos/estruturas.
               </div>
 
+              <div
+                className={cn(
+                  "rounded border p-2 text-[9px] leading-relaxed",
+                  mboiGuard.enabled
+                    ? "border-success/30 bg-success/5 text-muted-foreground"
+                    : "border-border bg-canvas text-muted-foreground",
+                )}
+              >
+                <b className={mboiGuard.enabled ? "text-success" : undefined}>Piloto M'Boi.</b> {mboiGuard.reason} Como Sootopolis não possui connections, este é um plano layered-only certificado; nenhuma saída artificial é adicionada.
+              </div>
+
               <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
@@ -603,13 +631,22 @@ export function AiCityBuilderDock() {
                 >
                   <WandSparkles className="size-3" /> Piloto Casa da Cinza
                 </button>
+                <button
+                  type="button"
+                  disabled={busy || !mboiGuard.enabled}
+                  onClick={runAguasMboiPreset}
+                  title={mboiGuard.reason}
+                  className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
+                >
+                  <WandSparkles className="size-3" /> Piloto M'Boi
+                </button>
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
                 <button
                   type="button"
                   disabled={busy || !prompt.trim()}
                   onClick={interpretLocal}
                   className="inline-flex items-center gap-1 rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface disabled:opacity-35"
-                  title="Funciona sem API; exige comandos explícitos com coordenadas"
+                  title="Funciona sem API; aceita comandos explícitos e planos de camadas válidos"
                 >
                   <Braces className="size-3" /> Interpretar local
                 </button>
