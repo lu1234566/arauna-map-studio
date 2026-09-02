@@ -2,6 +2,7 @@ import { ARAUNA_ADDITIONAL_PRESETS } from "./araunaPresetCatalog";
 import { CAVERNAS_MBOI_CATALOG_ENTRIES } from "./cavernasMboiCatalog";
 import { GRUTA_DA_MARE_CATALOG_ENTRIES } from "./grutaDaMareCatalog";
 import { GRUTA_DA_ORIGEM_CATALOG_ENTRIES } from "./grutaDaOrigemCatalog";
+import { NAVIO_PERDIDO_CATALOG_ENTRIES } from "./navioPerdidoCatalog";
 import { TORRE_JURAMENTO_CATALOG_ENTRIES } from "./torreJuramentoCatalog";
 import { USINA_VELHA_CATALOG_ENTRIES } from "./usinaVelhaCatalog";
 
@@ -17,4 +18,5 @@ export const ARAUNA_ALL_PRESETS = [
   ...GRUTA_DA_MARE_CATALOG_ENTRIES,
   ...USINA_VELHA_CATALOG_ENTRIES,
   ...TORRE_JURAMENTO_CATALOG_ENTRIES,
+  ...NAVIO_PERDIDO_CATALOG_ENTRIES,
 ] as const;
