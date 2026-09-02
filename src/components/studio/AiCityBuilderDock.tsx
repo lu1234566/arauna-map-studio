@@ -16,6 +16,7 @@ import {
 import { planMapWithGemini } from "@/lib/aiMapPlan.functions";
 import { isAiRemodelPrompt, planAiMapReconstruction } from "@/lib/aiMapReconstruction";
 import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
+import { CASA_DA_CINZA_PROMPT, casaDaCinzaGuardFromAtlas } from "@/lib/casaDaCinzaPreset";
 import { METATILE_MASK } from "@/lib/emeraldMap";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
@@ -123,6 +124,13 @@ export function AiCityBuilderDock() {
   ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
 
   const portoGuard = useMemo(() => portoDoSalGuardFromAtlas(
+    editor.map.width,
+    editor.map.height,
+    editor.mapMetadata?.id ?? null,
+    atlas,
+  ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
+
+  const cinzaGuard = useMemo(() => casaDaCinzaGuardFromAtlas(
     editor.map.width,
     editor.map.height,
     editor.mapMetadata?.id ?? null,
@@ -293,6 +301,15 @@ export function AiCityBuilderDock() {
     }
     setPrompt(PORTO_DO_SAL_PROMPT);
     runLocalInterpreter(PORTO_DO_SAL_PROMPT, "Piloto Porto do Sal (local, determinístico)");
+  };
+
+  const runCasaDaCinzaPreset = () => {
+    if (!cinzaGuard.enabled) {
+      setMessage(cinzaGuard.reason);
+      return;
+    }
+    setPrompt(CASA_DA_CINZA_PROMPT);
+    runLocalInterpreter(CASA_DA_CINZA_PROMPT, "Piloto Casa da Cinza (local, determinístico)");
   };
 
   const interpretAi = async () => {
@@ -538,6 +555,17 @@ export function AiCityBuilderDock() {
                 <b className={portoGuard.enabled ? "text-success" : undefined}>Piloto Porto do Sal.</b> {portoGuard.reason} A faixa portuária só é resolvida a partir de material real do atlas/patterns; se isso não puder ser provado, o Exact Grid bloqueia a aplicação.
               </div>
 
+              <div
+                className={cn(
+                  "rounded border p-2 text-[9px] leading-relaxed",
+                  cinzaGuard.enabled
+                    ? "border-success/30 bg-success/5 text-muted-foreground"
+                    : "border-border bg-canvas text-muted-foreground",
+                )}
+              >
+                <b className={cinzaGuard.enabled ? "text-success" : undefined}>Piloto Casa da Cinza.</b> {cinzaGuard.reason} O núcleo termal é uma zona preserve explícita, além das proteções normais de eventos/estruturas.
+              </div>
+
               <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
@@ -565,6 +593,15 @@ export function AiCityBuilderDock() {
                   className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
                 >
                   <WandSparkles className="size-3" /> Piloto Porto do Sal
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !cinzaGuard.enabled}
+                  onClick={runCasaDaCinzaPreset}
+                  title={cinzaGuard.reason}
+                  className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
+                >
+                  <WandSparkles className="size-3" /> Piloto Casa da Cinza
                 </button>
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
                 <button
