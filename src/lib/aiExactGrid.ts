@@ -17,6 +17,7 @@ import type { AiMapReconstructionPlan } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
 import { protectExactGridBlockedGeometry } from "./exactGridBlockedGeometrySafety";
 import { protectExactGridElevationLanes } from "./exactGridElevationSafety";
+import { protectExactGridFunctionalBehaviors } from "./exactGridFunctionalBehaviorSafety";
 import {
   applyExactGridDeterministicDetails,
   normalizeExactGridSelectivePreserve,
@@ -184,10 +185,11 @@ export function compileAiExactGrid({
     return inactive;
   }
 
-  // Proteções de geometria precisam rodar antes de qualquer normalização física.
-  // Paredes/rochas só são congeladas quando o próprio prompt pede esse opt-in;
-  // passarelas em elevação não dominante continuam protegidas automaticamente.
+  // Proteções do mapa real precisam rodar antes de qualquer normalização física.
+  // Paredes e behaviors especiais são opt-in pelo prompt; passarelas em elevação
+  // não dominante continuam protegidas automaticamente.
   protectExactGridBlockedGeometry({ sourceMap, layered, prompt });
+  protectExactGridFunctionalBehaviors({ sourceMap, layered, atlas, prompt });
   protectExactGridElevationLanes({ sourceMap, layered, atlas });
   normalizeExactGridSelectivePreserve(layered, reconstruction);
 
