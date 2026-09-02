@@ -12,12 +12,13 @@ const expectedMaps = [
   ["Vale do Silêncio", 20, 20, "MAP_VERDANTURF_TOWN"],
   ["Casa da Fogueira", 20, 40, "MAP_PACIFIDLOG_TOWN"],
   ["Baía das Luzes", 80, 40, "MAP_LILYCOVE_CITY"],
+  ["Galerias Serra", 36, 24, "MAP_RUSTURF_TUNNEL"],
 ] as const;
 
 describe("catálogo de presets adicionais de Arauna", () => {
-  it("mantém dez presets com ids únicos", () => {
-    expect(ARAUNA_ADDITIONAL_PRESETS).toHaveLength(10);
-    expect(new Set(ARAUNA_ADDITIONAL_PRESETS.map((entry) => entry.id)).size).toBe(10);
+  it("mantém onze presets com ids únicos", () => {
+    expect(ARAUNA_ADDITIONAL_PRESETS).toHaveLength(11);
+    expect(new Set(ARAUNA_ADDITIONAL_PRESETS.map((entry) => entry.id)).size).toBe(11);
   });
 
   it("liga cada botão somente ao slot real esperado", () => {

@@ -19,6 +19,11 @@ import {
   encruzilhadaCentralGuardFromAtlas,
 } from "./encruzilhadaCentralPreset";
 import {
+  GALERIAS_SERRA_PRESET_ID,
+  GALERIAS_SERRA_PROMPT,
+  galeriasSerraGuardFromAtlas,
+} from "./galeriasSerraPreset";
+import {
   MATA_DO_MEIO_PRESET_ID,
   MATA_DO_MEIO_PROMPT,
   mataDoMeioGuardFromAtlas,
@@ -132,5 +137,11 @@ export const ARAUNA_ADDITIONAL_PRESETS: readonly AraunaPresetCatalogEntry[] = [
     label: "Baía das Luzes",
     prompt: BAIA_DAS_LUZES_PROMPT,
     guardFromAtlas: baiaDasLuzesGuardFromAtlas,
+  },
+  {
+    id: GALERIAS_SERRA_PRESET_ID,
+    label: "Galerias Serra",
+    prompt: GALERIAS_SERRA_PROMPT,
+    guardFromAtlas: galeriasSerraGuardFromAtlas,
   },
 ] as const;
