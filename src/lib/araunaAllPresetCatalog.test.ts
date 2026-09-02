@@ -3,6 +3,7 @@ import { ARAUNA_ALL_PRESETS } from "./araunaAllPresetCatalog";
 import { CAVERNAS_MBOI_CATALOG_ENTRIES } from "./cavernasMboiCatalog";
 import { GRUTA_DA_MARE_CATALOG_ENTRIES } from "./grutaDaMareCatalog";
 import { GRUTA_DA_ORIGEM_CATALOG_ENTRIES } from "./grutaDaOrigemCatalog";
+import { TORRE_JURAMENTO_CATALOG_ENTRIES } from "./torreJuramentoCatalog";
 import { USINA_VELHA_CATALOG_ENTRIES } from "./usinaVelhaCatalog";
 
 const mboiMaps = [
@@ -39,6 +40,17 @@ const usinaMaps = [
   ["Usina Velha · Interior", 41, 41, "MAP_NEW_MAUVILLE_INSIDE"],
 ] as const;
 
+const torreMaps = [
+  ["Torre Juramento · Entrada", 18, 18, "MAP_SKY_PILLAR_ENTRANCE"],
+  ["Torre Juramento · Exterior", 28, 23, "MAP_SKY_PILLAR_OUTSIDE"],
+  ["Torre Juramento · 1F", 14, 14, "MAP_SKY_PILLAR_1F"],
+  ["Torre Juramento · 2F", 14, 14, "MAP_SKY_PILLAR_2F"],
+  ["Torre Juramento · 3F", 14, 14, "MAP_SKY_PILLAR_3F"],
+  ["Torre Juramento · 4F", 14, 14, "MAP_SKY_PILLAR_4F"],
+  ["Torre Juramento · 5F", 14, 14, "MAP_SKY_PILLAR_5F"],
+  ["Torre Juramento · Topo", 27, 24, "MAP_SKY_PILLAR_TOP"],
+] as const;
+
 function expectCatalogMaps(entries: readonly (readonly [string, number, number, string])[], fakeMap: string) {
   for (const [label, width, height, mapId] of entries) {
     const entry = ARAUNA_ALL_PRESETS.find((candidate) => candidate.label === label);
@@ -54,8 +66,9 @@ describe("catálogo agregado de presets de Arauna", () => {
     expect(GRUTA_DA_ORIGEM_CATALOG_ENTRIES).toHaveLength(3);
     expect(GRUTA_DA_MARE_CATALOG_ENTRIES).toHaveLength(7);
     expect(USINA_VELHA_CATALOG_ENTRIES).toHaveLength(2);
-    expect(ARAUNA_ALL_PRESETS).toHaveLength(50);
-    expect(new Set(ARAUNA_ALL_PRESETS.map((entry) => entry.id)).size).toBe(50);
+    expect(TORRE_JURAMENTO_CATALOG_ENTRIES).toHaveLength(8);
+    expect(ARAUNA_ALL_PRESETS).toHaveLength(58);
+    expect(new Set(ARAUNA_ALL_PRESETS.map((entry) => entry.id)).size).toBe(58);
   });
 
   it("expõe cada família somente nos map ids reais", () => {
@@ -63,5 +76,6 @@ describe("catálogo agregado de presets de Arauna", () => {
     expectCatalogMaps(originMaps, "MAP_CAVE_OF_ORIGIN_UNUSED_RUBY_SAPPHIRE_MAP1");
     expectCatalogMaps(mareMaps, "MAP_SHOAL_CAVE_FAKE");
     expectCatalogMaps(usinaMaps, "MAP_NEW_MAUVILLE_FAKE");
+    expectCatalogMaps(torreMaps, "MAP_SKY_PILLAR_FAKE");
   });
 });
