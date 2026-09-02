@@ -26,7 +26,7 @@ CAMADA 1 — BASE VERDE SERRANA
 - faixa sudoeste: x=1..18, y=48..58 -> piso verde
 - faixa sudeste: x=24..38, y=48..58 -> piso verde
 
-CAMADA 2 — EIXO E RAMAIS URBANOS
+CAMADA 2 — CAMINHOS E VIAS URBANAS
 - eixo serrano norte-sul: x=20..22, y=0..59 -> piso urbano
 - acesso Horizonte: x=11..22, y=14..16 -> piso urbano
 - ramal ginásio e moradias norte: x=22..34, y=18..20 -> piso urbano
@@ -37,7 +37,7 @@ CAMADA 2 — EIXO E RAMAIS URBANOS
 - acesso moradias leste: x=22..31, y=27..29 -> piso urbano
 - saída leste Route 116: x=22..39, y=27..30 -> piso urbano
 
-CAMADA 3 — RESPIROS VERDES AGRUPADOS
+CAMADA 3 — ZONAS VERDES AGRUPADAS
 - jardim cívico oeste: x=14..18, y=31..35 -> piso verde
 - jardim cívico leste: x=29..33, y=36..41 -> piso verde
 - praça serrana sul: x=18..24, y=49..53 -> piso verde
