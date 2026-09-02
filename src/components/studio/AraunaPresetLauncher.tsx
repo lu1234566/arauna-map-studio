@@ -3,12 +3,13 @@ import { useMemo, useState } from "react";
 import { ExactGridPreview } from "@/components/studio/ExactGridPreview";
 import { compileAiExactGrid, type AiExactGridPlan } from "@/lib/aiExactGrid";
 import { applyExactGridToEditor } from "@/lib/aiExactGridApply";
+import { ARAUNA_ALL_PRESETS } from "@/lib/araunaAllPresetCatalog";
 import { planAiMapIdentityBase } from "@/lib/aiMapIdentity";
 import { parseLocalMapCommand } from "@/lib/aiMapLocalInterpreter";
 import { compileAiMapPlan, type AiMapCompileResult } from "@/lib/aiMapPlan";
 import { planAiMapReconstruction } from "@/lib/aiMapReconstruction";
 import { deriveAiReservedCells } from "@/lib/aiMapReservedCells";
-import { ARAUNA_ADDITIONAL_PRESETS, type AraunaPresetCatalogEntry } from "@/lib/araunaPresetCatalog";
+import type { AraunaPresetCatalogEntry } from "@/lib/araunaPresetCatalog";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
@@ -47,7 +48,7 @@ export function AraunaPresetLauncher() {
     editor.map.height,
   ), [editor.events, editor.mapJsonDocument, editor.map.width, editor.map.height]);
 
-  const entries = useMemo(() => ARAUNA_ADDITIONAL_PRESETS.map((entry) => ({
+  const entries = useMemo(() => ARAUNA_ALL_PRESETS.map((entry) => ({
     entry,
     guard: entry.guardFromAtlas(
       editor.map.width,
