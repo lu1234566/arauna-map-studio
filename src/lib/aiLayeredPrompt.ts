@@ -56,6 +56,8 @@ export interface ParsedLayeredPrompt {
   requireFullCoverage: boolean;
   strictFinish: boolean;
   strictIsolation: boolean;
+  /** O prompt declara explicitamente que tudo fora das zonas deve ser preservado. */
+  preserveUnassigned: boolean;
   errors: string[];
   warnings: string[];
 }
