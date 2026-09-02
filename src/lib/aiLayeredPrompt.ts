@@ -204,11 +204,15 @@ export function parseLayeredPrompt(prompt: string): ParsedLayeredPrompt {
     || zones.length > 0
   );
   const active = sawLayerHeading && zones.length > 0;
-  const strictIsolation = active;
+  const preserveUnassigned = /preserv\w*\s+(?:tod[oa]s?|tudo|o\s*restante|as\s*estruturas|todas\s*as\s*estruturas)/i.test(key);
+  const strictIsolation = active && !preserveUnassigned;
   if (sawLayerHeading && !zones.length && !errors.length) {
     warnings.push("Prompt menciona camadas, mas nenhuma zona x=.. / y=.. foi reconhecida; o pipeline clássico será usado.");
   }
-  return { active, zones, requireFullCoverage, strictFinish, strictIsolation, errors, warnings };
+  if (active && preserveUnassigned) {
+    warnings.push("Modo preservar-restante: células fora das zonas mantêm o mapa real (estruturas, eventos e moldura) e não são reescritas.");
+  }
+  return { active, zones, requireFullCoverage, strictFinish, strictIsolation, preserveUnassigned, errors, warnings };
 }
 
 function behaviorMap(atlas: SavedRealAtlas | null) {
