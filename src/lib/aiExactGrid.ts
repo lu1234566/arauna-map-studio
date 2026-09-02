@@ -15,6 +15,7 @@ import {
 import type { AiMapCompileResult } from "./aiMapPlan";
 import type { AiMapReconstructionPlan } from "./aiMapReconstruction";
 import type { AiReservedCell } from "./aiMapReservedCells";
+import { protectExactGridBlockedGeometry } from "./exactGridBlockedGeometrySafety";
 import { protectExactGridElevationLanes } from "./exactGridElevationSafety";
 import {
   applyExactGridDeterministicDetails,
@@ -183,9 +184,10 @@ export function compileAiExactGrid({
     return inactive;
   }
 
-  // Antes de qualquer normalização física, restaura e reserva corredores cuja
-  // elevação caminhável difere do piso-base dominante (ex.: passarelas de Fortree).
-  // Assim nenhuma etapa posterior pode achatá-los para o physical canônico do chão.
+  // Proteções de geometria precisam rodar antes de qualquer normalização física.
+  // Paredes/rochas só são congeladas quando o próprio prompt pede esse opt-in;
+  // passarelas em elevação não dominante continuam protegidas automaticamente.
+  protectExactGridBlockedGeometry({ sourceMap, layered, prompt });
   protectExactGridElevationLanes({ sourceMap, layered, atlas });
   normalizeExactGridSelectivePreserve(layered, reconstruction);
 
