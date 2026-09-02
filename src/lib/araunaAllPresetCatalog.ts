@@ -1,0 +1,12 @@
+import { ARAUNA_ADDITIONAL_PRESETS } from "./araunaPresetCatalog";
+import { CAVERNAS_MBOI_CATALOG_ENTRIES } from "./cavernasMboiCatalog";
+
+/**
+ * Catálogo efetivamente consumido pelo launcher. O catálogo histórico permanece
+ * estável e famílias grandes podem ser anexadas sem transformar um único arquivo
+ * numa lista de dezenas de imports manuais.
+ */
+export const ARAUNA_ALL_PRESETS = [
+  ...ARAUNA_ADDITIONAL_PRESETS,
+  ...CAVERNAS_MBOI_CATALOG_ENTRIES,
+] as const;
