@@ -30,6 +30,38 @@ export interface ExactGridDetailStats {
   layeredCount: number;
 }
 
+function normalize(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * `preserve` tem dois usos diferentes nos prompts do Studio:
+ *
+ * 1. `água/costa/litoral`: o retângulo é apenas uma área de busca. Terra comum
+ *    dentro dele pode voltar ao piso-base porque a máscara real de costa já
+ *    protege água e margem autênticas.
+ * 2. `preservar/manter`: o usuário quer congelar aquele intervalo de verdade.
+ *
+ * Para decidir qual intenção vale em uma célula usamos a última zona que a cobre,
+ * seguindo a mesma regra de precedência do compilador de camadas.
+ */
+function isSelectiveCoastPreserve(layered: LayeredBasePlan, cellIndex: number) {
+  const x = cellIndex % layered.map.width;
+  const y = Math.floor(cellIndex / layered.map.width);
+  for (let zoneIndex = layered.parsed.zones.length - 1; zoneIndex >= 0; zoneIndex--) {
+    const zone = layered.parsed.zones[zoneIndex]!;
+    if (x < zone.x1 || x > zone.x2 || y < zone.y1 || y > zone.y2) continue;
+    if (zone.material.role !== "preserve") return false;
+    const source = normalize(zone.material.source);
+    return /(agua|costa|litoral)/.test(source)
+      && !/(preserv|manter|nao alterar)/.test(source);
+  }
+  return false;
+}
+
 export function normalizeExactGridSelectivePreserve(
   layered: LayeredBasePlan,
   reconstruction: AiMapReconstructionPlan,
@@ -43,11 +75,11 @@ export function normalizeExactGridSelectivePreserve(
   for (let i = 0; i < layered.materialByCell.length; i++) {
     if (layered.occupancy[i] !== LAYER_OCCUPANCY.unset) continue;
     if (layered.materialByCell[i] !== MATERIAL_PRESERVE_SENTINEL) continue;
+    if (!isSelectiveCoastPreserve(layered, i)) continue;
 
-    // Em prompts como “preservar água/costa”, a área geométrica é apenas um
-    // limite de busca. Células terrestres comuns não devem congelar o Slateport
-    // antigo; elas retornam ao piso-base. Água/costa/eventos já chegam aqui com
-    // occupancy=reserved e, portanto, continuam intocados.
+    // Em zonas semânticas de água/costa, o retângulo é só limite de busca.
+    // Água/costa/eventos reais já chegam aqui como occupancy=reserved; portanto
+    // somente a terra comum do range seletivo retorna ao piso-base.
     layered.materialByCell[i] = base;
     layered.map.metatiles[i] = base;
     layered.map.physical[i] = ((layered.map.physical[i] ?? 0) & ~COLLISION_MASK) & 0xffff;
@@ -57,7 +89,7 @@ export function normalizeExactGridSelectivePreserve(
 
   if (selectiveGroundCount) {
     layered.warnings.push(
-      `Preservação seletiva: ${selectiveGroundCount} célula(s) terrestres dentro de ranges “preservar água/costa” voltaram ao piso-base; somente costa/eventos reais permaneceram preservados.`,
+      `Preservação seletiva: ${selectiveGroundCount} célula(s) terrestres dentro de ranges de água/costa voltaram ao piso-base; zonas “preservar/manter” explícitas continuam congeladas.`,
     );
   }
   return { selectiveGroundCount };
