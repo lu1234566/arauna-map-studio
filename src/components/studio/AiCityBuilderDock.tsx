@@ -472,7 +472,27 @@ export function AiCityBuilderDock() {
                 </>
               )}
 
+              <div
+                className={cn(
+                  "rounded border p-2 text-[9px] leading-relaxed",
+                  vilaGuard.enabled
+                    ? "border-success/30 bg-success/5 text-muted-foreground"
+                    : "border-warning/35 bg-warning/5 text-warning",
+                )}
+              >
+                <b className={vilaGuard.enabled ? "text-success" : undefined}>Piloto Vila Amanhecer.</b> {vilaGuard.reason} O preset roda 100% local (reconstruction + Exact Grid em camadas), sem Gemini/PixelLab e sem inventar metatile IDs; a aplicação continua sendo um passo separado.
+              </div>
+
               <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  disabled={busy || !vilaGuard.enabled}
+                  onClick={runVilaAmanhecerPreset}
+                  title={vilaGuard.reason}
+                  className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
+                >
+                  <WandSparkles className="size-3" /> Piloto Vila Amanhecer
+                </button>
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
                 <button
                   type="button"
