@@ -23,6 +23,7 @@ import { usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import { useSmartPath } from "@/lib/smartPathStore";
 import { cn } from "@/lib/utils";
+import { VILA_AMANHECER_PROMPT, vilaAmanhecerGuardFromAtlas } from "@/lib/vilaAmanhecerPreset";
 
 const EXAMPLE = `Mapa 20x20; nome="Vila Amanhecer IA"
 estrutura "Casa do jogador" usar "casa do jogador" em (2,4)
@@ -104,6 +105,13 @@ export function AiCityBuilderDock() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("Descreva a cidade com posições, estruturas, portas, rotas e saídas.");
   const [onlineModel, setOnlineModel] = useState<string | null>(null);
+
+  const vilaGuard = useMemo(() => vilaAmanhecerGuardFromAtlas(
+    editor.map.width,
+    editor.map.height,
+    editor.mapMetadata?.id ?? null,
+    atlas,
+  ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
 
   const compatiblePatterns = useMemo(() => patternState.patterns.filter((pattern) => (
     !pattern.scope || Boolean(atlas && pattern.scope.primary === atlas.primary && pattern.scope.secondary === atlas.secondary)
@@ -224,9 +232,9 @@ export function AiCityBuilderDock() {
     return result;
   };
 
-  const interpretLocal = () => {
+  const runLocalInterpreter = (text: string, source = "Interpretador preciso") => {
     const parsed = parseDetailedMapCommand(
-      prompt,
+      text,
       compatiblePatterns,
       compatiblePaths,
       editor.map.width,
@@ -239,8 +247,20 @@ export function AiCityBuilderDock() {
       return;
     }
     setOnlineModel(null);
-    setAndCompile(parsed.plan, "Interpretador preciso");
+    setAndCompile(parsed.plan, source);
   };
+
+  const interpretLocal = () => runLocalInterpreter(prompt);
+
+  const runVilaAmanhecerPreset = () => {
+    if (!vilaGuard.enabled) {
+      setMessage(vilaGuard.reason);
+      return;
+    }
+    setPrompt(VILA_AMANHECER_PROMPT);
+    runLocalInterpreter(VILA_AMANHECER_PROMPT, "Piloto Vila Amanhecer (local, determinístico)");
+  };
+
 
   const interpretAi = async () => {
     if (!prompt.trim()) {
@@ -452,7 +472,27 @@ export function AiCityBuilderDock() {
                 </>
               )}
 
+              <div
+                className={cn(
+                  "rounded border p-2 text-[9px] leading-relaxed",
+                  vilaGuard.enabled
+                    ? "border-success/30 bg-success/5 text-muted-foreground"
+                    : "border-warning/35 bg-warning/5 text-warning",
+                )}
+              >
+                <b className={vilaGuard.enabled ? "text-success" : undefined}>Piloto Vila Amanhecer.</b> {vilaGuard.reason} O preset roda 100% local (reconstruction + Exact Grid em camadas), sem Gemini/PixelLab e sem inventar metatile IDs; a aplicação continua sendo um passo separado.
+              </div>
+
               <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  disabled={busy || !vilaGuard.enabled}
+                  onClick={runVilaAmanhecerPreset}
+                  title={vilaGuard.reason}
+                  className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
+                >
+                  <WandSparkles className="size-3" /> Piloto Vila Amanhecer
+                </button>
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
                 <button
                   type="button"

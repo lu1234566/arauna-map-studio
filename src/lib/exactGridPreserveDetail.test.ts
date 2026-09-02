@@ -45,6 +45,7 @@ function layeredPlan(width = 8, height = 8): LayeredBasePlan {
       requireFullCoverage: true,
       strictFinish: true,
       strictIsolation: true,
+      preserveUnassigned: false,
       errors: [],
       warnings: [],
     },
