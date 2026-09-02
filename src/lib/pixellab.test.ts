@@ -87,9 +87,10 @@ describe("PixelLab visual blueprint", () => {
     expect(snapshot.cells[2 * 5 + 2]).toBe("building");
   });
 
-  it("prompt estrutural explicita topologia e entradas obrigatórias", () => {
-    expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/exact road topology/i);
+  it("prompt estrutural preserva conectividade sem exigir reprodução literal do guia", () => {
+    expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/connectivity of the main road network/i);
     expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/mandatory entrance\/exit/i);
     expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/16x16-tile/i);
+    expect(PIXELLAB_BLUEPRINT_PROMPT_APPENDIX).toMatch(/not a blueprint or wireframe/i);
   });
 });

@@ -291,7 +291,7 @@ describe("vanilla audit false-positive regressions", () => {
     expect(has(report, "SOURCE_SYMBOL_NOT_FOUND")).toBe(false);
   });
 
-  it("downgrades the vanilla Harbor first-margin destination without a declared connection", () => {
+  it("certifies the vanilla Harbor first-margin destination by exact reciprocal return", () => {
     const source = sourceMap();
     const destination = harborDestination(false);
     const report = withWarpEndpointSafetyAudit(
@@ -301,8 +301,9 @@ describe("vanilla audit false-positive regressions", () => {
     );
 
     expect(report.pass).toBe(true);
-    expect(report.implementable).toBe(false);
-    expect(has(report, "WARP_DEST_SPAWN_EDGE_UNVERIFIED")).toBe(true);
+    expect(report.implementable).toBe(true);
+    expect(has(report, "WARP_DEST_SPAWN_EDGE_RECIPROCAL_OK")).toBe(true);
+    expect(has(report, "WARP_DEST_SPAWN_EDGE_UNVERIFIED")).toBe(false);
     expect(has(report, "WARP_DEST_SPAWN_OUT_OF_BOUNDS")).toBe(false);
   });
 
