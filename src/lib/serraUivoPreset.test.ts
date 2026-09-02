@@ -37,7 +37,11 @@ describe("piloto Serra do Uivo", () => {
     expect(layered.errors).toEqual([]);
     expect(layered.preserveUnassigned).toBe(true);
     expect(layered.strictIsolation).toBe(false);
-    expect(layered.zones.length).toBeGreaterThan(15);
+    expect(layered.zones).toHaveLength(20);
+    expect(layered.zones.filter((zone) => zone.kind === "road")).toHaveLength(9);
+    expect(layered.zones.filter((zone) => zone.kind === "ground")).toHaveLength(11);
+    expect(layered.zones.filter((zone) => zone.kind === "road").every((zone) => zone.material.role === "urban")).toBe(true);
+    expect(layered.zones.filter((zone) => zone.kind === "ground").every((zone) => zone.material.role === "green")).toBe(true);
 
     for (const zone of layered.zones) {
       expect(zone.x1).toBeGreaterThanOrEqual(0);
