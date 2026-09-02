@@ -1,0 +1,38 @@
+import {
+  TORRE_JURAMENTO_1F_PRESET_ID,
+  TORRE_JURAMENTO_1F_PROMPT,
+  TORRE_JURAMENTO_2F_PRESET_ID,
+  TORRE_JURAMENTO_2F_PROMPT,
+  TORRE_JURAMENTO_3F_PRESET_ID,
+  TORRE_JURAMENTO_3F_PROMPT,
+  TORRE_JURAMENTO_4F_PRESET_ID,
+  TORRE_JURAMENTO_4F_PROMPT,
+  TORRE_JURAMENTO_5F_PRESET_ID,
+  TORRE_JURAMENTO_5F_PROMPT,
+  TORRE_JURAMENTO_ENTRANCE_PRESET_ID,
+  TORRE_JURAMENTO_ENTRANCE_PROMPT,
+  TORRE_JURAMENTO_OUTSIDE_PRESET_ID,
+  TORRE_JURAMENTO_OUTSIDE_PROMPT,
+  TORRE_JURAMENTO_TOP_PRESET_ID,
+  TORRE_JURAMENTO_TOP_PROMPT,
+  torreJuramento1FGuardFromAtlas,
+  torreJuramento2FGuardFromAtlas,
+  torreJuramento3FGuardFromAtlas,
+  torreJuramento4FGuardFromAtlas,
+  torreJuramento5FGuardFromAtlas,
+  torreJuramentoEntranceGuardFromAtlas,
+  torreJuramentoOutsideGuardFromAtlas,
+  torreJuramentoTopGuardFromAtlas,
+} from "./torreJuramentoPresets";
+import type { AraunaPresetCatalogEntry } from "./araunaPresetCatalog";
+
+export const TORRE_JURAMENTO_CATALOG_ENTRIES: readonly AraunaPresetCatalogEntry[] = [
+  { id: TORRE_JURAMENTO_ENTRANCE_PRESET_ID, label: "Torre Juramento · Entrada", prompt: TORRE_JURAMENTO_ENTRANCE_PROMPT, guardFromAtlas: torreJuramentoEntranceGuardFromAtlas },
+  { id: TORRE_JURAMENTO_OUTSIDE_PRESET_ID, label: "Torre Juramento · Exterior", prompt: TORRE_JURAMENTO_OUTSIDE_PROMPT, guardFromAtlas: torreJuramentoOutsideGuardFromAtlas },
+  { id: TORRE_JURAMENTO_1F_PRESET_ID, label: "Torre Juramento · 1F", prompt: TORRE_JURAMENTO_1F_PROMPT, guardFromAtlas: torreJuramento1FGuardFromAtlas },
+  { id: TORRE_JURAMENTO_2F_PRESET_ID, label: "Torre Juramento · 2F", prompt: TORRE_JURAMENTO_2F_PROMPT, guardFromAtlas: torreJuramento2FGuardFromAtlas },
+  { id: TORRE_JURAMENTO_3F_PRESET_ID, label: "Torre Juramento · 3F", prompt: TORRE_JURAMENTO_3F_PROMPT, guardFromAtlas: torreJuramento3FGuardFromAtlas },
+  { id: TORRE_JURAMENTO_4F_PRESET_ID, label: "Torre Juramento · 4F", prompt: TORRE_JURAMENTO_4F_PROMPT, guardFromAtlas: torreJuramento4FGuardFromAtlas },
+  { id: TORRE_JURAMENTO_5F_PRESET_ID, label: "Torre Juramento · 5F", prompt: TORRE_JURAMENTO_5F_PROMPT, guardFromAtlas: torreJuramento5FGuardFromAtlas },
+  { id: TORRE_JURAMENTO_TOP_PRESET_ID, label: "Torre Juramento · Topo", prompt: TORRE_JURAMENTO_TOP_PROMPT, guardFromAtlas: torreJuramentoTopGuardFromAtlas },
+] as const;
