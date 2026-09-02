@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useEditor } from "@/lib/editorStore";
 import { AiCityBuilderDock } from "./AiCityBuilderDock";
 import { AiStarterPatternBootstrap } from "./AiStarterPatternBootstrap";
+import { AraunaPresetLauncher } from "./AraunaPresetLauncher";
 
 export function Gen3LibraryLauncher() {
   const editor = useEditor();
@@ -26,6 +27,7 @@ export function Gen3LibraryLauncher() {
     <>
       <AiStarterPatternBootstrap />
       <AiCityBuilderDock key={aiSessionKey} />
+      <AraunaPresetLauncher key={`arauna-presets|${aiSessionKey}`} />
       <Link
         to="/gen3-library"
         className="absolute right-2 top-12 z-30 inline-flex h-8 items-center gap-1.5 rounded border border-success/40 bg-panel/95 px-2.5 text-[10px] font-semibold text-success shadow-lg backdrop-blur-sm hover:bg-success/10"
