@@ -21,6 +21,7 @@ import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
 import { useRealAtlas } from "@/lib/realAtlasStore";
+import { SERRA_UIVO_PROMPT, serraUivoGuardFromAtlas } from "@/lib/serraUivoPreset";
 import { useSmartPath } from "@/lib/smartPathStore";
 import { cn } from "@/lib/utils";
 import { VILA_AMANHECER_PROMPT, vilaAmanhecerGuardFromAtlas } from "@/lib/vilaAmanhecerPreset";
@@ -107,6 +108,13 @@ export function AiCityBuilderDock() {
   const [onlineModel, setOnlineModel] = useState<string | null>(null);
 
   const vilaGuard = useMemo(() => vilaAmanhecerGuardFromAtlas(
+    editor.map.width,
+    editor.map.height,
+    editor.mapMetadata?.id ?? null,
+    atlas,
+  ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
+
+  const serraGuard = useMemo(() => serraUivoGuardFromAtlas(
     editor.map.width,
     editor.map.height,
     editor.mapMetadata?.id ?? null,
@@ -261,6 +269,14 @@ export function AiCityBuilderDock() {
     runLocalInterpreter(VILA_AMANHECER_PROMPT, "Piloto Vila Amanhecer (local, determinístico)");
   };
 
+  const runSerraUivoPreset = () => {
+    if (!serraGuard.enabled) {
+      setMessage(serraGuard.reason);
+      return;
+    }
+    setPrompt(SERRA_UIVO_PROMPT);
+    runLocalInterpreter(SERRA_UIVO_PROMPT, "Piloto Serra do Uivo (local, determinístico)");
+  };
 
   const interpretAi = async () => {
     if (!prompt.trim()) {
@@ -447,7 +463,7 @@ export function AiCityBuilderDock() {
                 </div>
               ) : exactGridPreview?.active ? (
                 <div className="rounded border border-success/25 bg-success/5 p-2 text-[9px] leading-relaxed text-success">
-                  Exact Grid válido: {exactGridPreview.resolvedCount}/{exactGridPreview.totalCount} células finais resolvidas; {exactGridPreview.changedCount} diferem do mapa aberto; checksum {exactGridPreview.checksum}.
+                  Exact Grid válido: {exactGridPreview.resolvedCount}/{exactGridPreview.totalCount} células finais resolvidas; {exactGridPreview.changedCount} diferem do mapa aberto; checksum {exactGridPreview.checksum}. Warps, triggers e NPCs reservados não são movidos.
                 </div>
               ) : layeredPreview?.active && layeredPreview.errors.length ? (
                 <div className="max-h-24 overflow-y-auto rounded border border-destructive/35 bg-destructive/5 p-2 text-[9px] leading-relaxed text-destructive">
@@ -483,6 +499,17 @@ export function AiCityBuilderDock() {
                 <b className={vilaGuard.enabled ? "text-success" : undefined}>Piloto Vila Amanhecer.</b> {vilaGuard.reason} O preset roda 100% local (reconstruction + Exact Grid em camadas), sem Gemini/PixelLab e sem inventar metatile IDs; a aplicação continua sendo um passo separado.
               </div>
 
+              <div
+                className={cn(
+                  "rounded border p-2 text-[9px] leading-relaxed",
+                  serraGuard.enabled
+                    ? "border-success/30 bg-success/5 text-muted-foreground"
+                    : "border-border bg-canvas text-muted-foreground",
+                )}
+              >
+                <b className={serraGuard.enabled ? "text-success" : undefined}>Piloto Serra do Uivo.</b> {serraGuard.reason} O preset também roda somente no pipeline local e nunca aplica silenciosamente.
+              </div>
+
               <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
@@ -492,6 +519,15 @@ export function AiCityBuilderDock() {
                   className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
                 >
                   <WandSparkles className="size-3" /> Piloto Vila Amanhecer
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !serraGuard.enabled}
+                  onClick={runSerraUivoPreset}
+                  title={serraGuard.reason}
+                  className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
+                >
+                  <WandSparkles className="size-3" /> Piloto Serra do Uivo
                 </button>
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
                 <button
