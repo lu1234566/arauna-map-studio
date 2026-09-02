@@ -78,13 +78,24 @@ const reconstruction = {
 } as AiMapReconstructionPlan;
 
 describe("Exact Grid preserve/detail pass", () => {
-  it("turns non-protected preserve-range land back into deterministic base ground", () => {
+  it("turns land inside a selective água/costa range back into deterministic base ground", () => {
     const layered = layeredPlan(4, 3);
     layered.occupancy.fill(LAYER_OCCUPANCY.unset);
     layered.materialByCell.fill(-2);
     layered.map.metatiles.fill(8);
     layered.map.physical.fill(0x3400);
     layered.occupancy[idx(3, 1, 4)] = LAYER_OCCUPANCY.reserved;
+    layered.parsed.zones = [{
+      id: "ground-faixa-costeira-1",
+      label: "faixa costeira",
+      kind: "ground",
+      x1: 0,
+      y1: 0,
+      x2: 3,
+      y2: 2,
+      material: { role: "preserve", source: "água/costa" },
+      line: 2,
+    }];
 
     const stats = normalizeExactGridSelectivePreserve(layered, reconstruction);
 
@@ -94,6 +105,33 @@ describe("Exact Grid preserve/detail pass", () => {
     expect(layered.map.physical[idx(0, 0, 4)] & 0x0c00).toBe(0);
     expect(layered.occupancy[idx(3, 1, 4)]).toBe(LAYER_OCCUPANCY.reserved);
     expect(layered.map.metatiles[idx(3, 1, 4)]).toBe(8);
+  });
+
+  it("keeps an explicit preservar range frozen instead of converting it to base", () => {
+    const layered = layeredPlan(4, 3);
+    layered.occupancy.fill(LAYER_OCCUPANCY.unset);
+    layered.materialByCell.fill(-2);
+    layered.map.metatiles.fill(8);
+    layered.map.physical.fill(0x3400);
+    layered.parsed.zones = [{
+      id: "ground-cena-1",
+      label: "cena protegida",
+      kind: "ground",
+      x1: 0,
+      y1: 0,
+      x2: 3,
+      y2: 2,
+      material: { role: "preserve", source: "preservar" },
+      line: 2,
+    }];
+
+    const stats = normalizeExactGridSelectivePreserve(layered, reconstruction);
+
+    expect(stats.selectiveGroundCount).toBe(0);
+    expect(layered.occupancy[idx(0, 0, 4)]).toBe(LAYER_OCCUPANCY.unset);
+    expect(layered.materialByCell[idx(0, 0, 4)]).toBe(-2);
+    expect(layered.map.metatiles[idx(0, 0, 4)]).toBe(8);
+    expect(layered.map.physical[idx(0, 0, 4)]).toBe(0x3400);
   });
 
   it("restores sparse authentic small details but not large old obstacle masses", () => {
