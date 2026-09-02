@@ -224,9 +224,9 @@ export function AiCityBuilderDock() {
     return result;
   };
 
-  const interpretLocal = () => {
+  const runLocalInterpreter = (text: string, source = "Interpretador preciso") => {
     const parsed = parseDetailedMapCommand(
-      prompt,
+      text,
       compatiblePatterns,
       compatiblePaths,
       editor.map.width,
@@ -239,8 +239,20 @@ export function AiCityBuilderDock() {
       return;
     }
     setOnlineModel(null);
-    setAndCompile(parsed.plan, "Interpretador preciso");
+    setAndCompile(parsed.plan, source);
   };
+
+  const interpretLocal = () => runLocalInterpreter(prompt);
+
+  const runVilaAmanhecerPreset = () => {
+    if (!vilaGuard.enabled) {
+      setMessage(vilaGuard.reason);
+      return;
+    }
+    setPrompt(VILA_AMANHECER_PROMPT);
+    runLocalInterpreter(VILA_AMANHECER_PROMPT, "Piloto Vila Amanhecer (local, determinístico)");
+  };
+
 
   const interpretAi = async () => {
     if (!prompt.trim()) {
