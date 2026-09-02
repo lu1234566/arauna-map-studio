@@ -20,6 +20,7 @@ import { METATILE_MASK } from "@/lib/emeraldMap";
 import { editorStore, useEditor } from "@/lib/editorStore";
 import { requestMapCameraFit } from "@/lib/mapCamera";
 import { usePatternLibrary } from "@/lib/patternLibraryStore";
+import { PORTO_DO_SAL_PROMPT, portoDoSalGuardFromAtlas } from "@/lib/portoDoSalPreset";
 import { useRealAtlas } from "@/lib/realAtlasStore";
 import { SERRA_UIVO_PROMPT, serraUivoGuardFromAtlas } from "@/lib/serraUivoPreset";
 import { useSmartPath } from "@/lib/smartPathStore";
@@ -115,6 +116,13 @@ export function AiCityBuilderDock() {
   ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
 
   const serraGuard = useMemo(() => serraUivoGuardFromAtlas(
+    editor.map.width,
+    editor.map.height,
+    editor.mapMetadata?.id ?? null,
+    atlas,
+  ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
+
+  const portoGuard = useMemo(() => portoDoSalGuardFromAtlas(
     editor.map.width,
     editor.map.height,
     editor.mapMetadata?.id ?? null,
@@ -276,6 +284,15 @@ export function AiCityBuilderDock() {
     }
     setPrompt(SERRA_UIVO_PROMPT);
     runLocalInterpreter(SERRA_UIVO_PROMPT, "Piloto Serra do Uivo (local, determinístico)");
+  };
+
+  const runPortoDoSalPreset = () => {
+    if (!portoGuard.enabled) {
+      setMessage(portoGuard.reason);
+      return;
+    }
+    setPrompt(PORTO_DO_SAL_PROMPT);
+    runLocalInterpreter(PORTO_DO_SAL_PROMPT, "Piloto Porto do Sal (local, determinístico)");
   };
 
   const interpretAi = async () => {
@@ -510,6 +527,17 @@ export function AiCityBuilderDock() {
                 <b className={serraGuard.enabled ? "text-success" : undefined}>Piloto Serra do Uivo.</b> {serraGuard.reason} O preset também roda somente no pipeline local e nunca aplica silenciosamente.
               </div>
 
+              <div
+                className={cn(
+                  "rounded border p-2 text-[9px] leading-relaxed",
+                  portoGuard.enabled
+                    ? "border-success/30 bg-success/5 text-muted-foreground"
+                    : "border-border bg-canvas text-muted-foreground",
+                )}
+              >
+                <b className={portoGuard.enabled ? "text-success" : undefined}>Piloto Porto do Sal.</b> {portoGuard.reason} A faixa portuária só é resolvida a partir de material real do atlas/patterns; se isso não puder ser provado, o Exact Grid bloqueia a aplicação.
+              </div>
+
               <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
@@ -528,6 +556,15 @@ export function AiCityBuilderDock() {
                   className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
                 >
                   <WandSparkles className="size-3" /> Piloto Serra do Uivo
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !portoGuard.enabled}
+                  onClick={runPortoDoSalPreset}
+                  title={portoGuard.reason}
+                  className="inline-flex items-center gap-1 rounded border border-success/50 bg-success/15 px-2 py-1 text-[9px] font-semibold text-success hover:bg-success/25 disabled:opacity-35"
+                >
+                  <WandSparkles className="size-3" /> Piloto Porto do Sal
                 </button>
                 <button type="button" onClick={() => setPrompt(EXAMPLE)} className="rounded border border-border bg-toolbar px-2 py-1 text-[9px] hover:bg-surface">Exemplo preciso</button>
                 <button
