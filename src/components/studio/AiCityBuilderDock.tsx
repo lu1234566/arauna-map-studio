@@ -105,6 +105,13 @@ export function AiCityBuilderDock() {
   const [message, setMessage] = useState("Descreva a cidade com posições, estruturas, portas, rotas e saídas.");
   const [onlineModel, setOnlineModel] = useState<string | null>(null);
 
+  const vilaGuard = useMemo(() => vilaAmanhecerGuardFromAtlas(
+    editor.map.width,
+    editor.map.height,
+    editor.mapMetadata?.id ?? null,
+    atlas,
+  ), [editor.map.width, editor.map.height, editor.mapMetadata?.id, atlas?.primary, atlas?.secondary]);
+
   const compatiblePatterns = useMemo(() => patternState.patterns.filter((pattern) => (
     !pattern.scope || Boolean(atlas && pattern.scope.primary === atlas.primary && pattern.scope.secondary === atlas.secondary)
   )), [patternState.patterns, atlas?.primary, atlas?.secondary]);
