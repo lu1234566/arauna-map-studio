@@ -59,6 +59,23 @@ import {
 } from "./portoDasRedesPreset";
 import type { SavedRealAtlas } from "./realAtlasStore";
 import {
+  RUINAS_DA_QUEDA_1F_1R_PRESET_ID,
+  RUINAS_DA_QUEDA_1F_1R_PROMPT,
+  RUINAS_DA_QUEDA_1F_2R_PRESET_ID,
+  RUINAS_DA_QUEDA_1F_2R_PROMPT,
+  RUINAS_DA_QUEDA_B1F_1R_PRESET_ID,
+  RUINAS_DA_QUEDA_B1F_1R_PROMPT,
+  RUINAS_DA_QUEDA_B1F_2R_PRESET_ID,
+  RUINAS_DA_QUEDA_B1F_2R_PROMPT,
+  RUINAS_DA_QUEDA_BENTO_PRESET_ID,
+  RUINAS_DA_QUEDA_BENTO_PROMPT,
+  ruinasDaQueda1F1RGuardFromAtlas,
+  ruinasDaQueda1F2RGuardFromAtlas,
+  ruinasDaQuedaB1F1RGuardFromAtlas,
+  ruinasDaQuedaB1F2RGuardFromAtlas,
+  ruinasDaQuedaBentoGuardFromAtlas,
+} from "./ruinasDaQuedaPresets";
+import {
   VALE_DO_SILENCIO_PRESET_ID,
   VALE_DO_SILENCIO_PROMPT,
   valeDoSilencioGuardFromAtlas,
@@ -181,5 +198,35 @@ export const ARAUNA_ADDITIONAL_PRESETS: readonly AraunaPresetCatalogEntry[] = [
     label: "Gruta das Vozes · Seu Bento",
     prompt: GRUTA_DAS_VOZES_BENTO_PROMPT,
     guardFromAtlas: grutaDasVozesBentoGuardFromAtlas,
+  },
+  {
+    id: RUINAS_DA_QUEDA_1F_1R_PRESET_ID,
+    label: "Ruínas da Queda · 1F · 1R",
+    prompt: RUINAS_DA_QUEDA_1F_1R_PROMPT,
+    guardFromAtlas: ruinasDaQueda1F1RGuardFromAtlas,
+  },
+  {
+    id: RUINAS_DA_QUEDA_1F_2R_PRESET_ID,
+    label: "Ruínas da Queda · 1F · 2R",
+    prompt: RUINAS_DA_QUEDA_1F_2R_PROMPT,
+    guardFromAtlas: ruinasDaQueda1F2RGuardFromAtlas,
+  },
+  {
+    id: RUINAS_DA_QUEDA_B1F_1R_PRESET_ID,
+    label: "Ruínas da Queda · B1F · 1R",
+    prompt: RUINAS_DA_QUEDA_B1F_1R_PROMPT,
+    guardFromAtlas: ruinasDaQuedaB1F1RGuardFromAtlas,
+  },
+  {
+    id: RUINAS_DA_QUEDA_B1F_2R_PRESET_ID,
+    label: "Ruínas da Queda · B1F · 2R",
+    prompt: RUINAS_DA_QUEDA_B1F_2R_PROMPT,
+    guardFromAtlas: ruinasDaQuedaB1F2RGuardFromAtlas,
+  },
+  {
+    id: RUINAS_DA_QUEDA_BENTO_PRESET_ID,
+    label: "Ruínas da Queda · Seu Bento",
+    prompt: RUINAS_DA_QUEDA_BENTO_PROMPT,
+    guardFromAtlas: ruinasDaQuedaBentoGuardFromAtlas,
   },
 ] as const;
