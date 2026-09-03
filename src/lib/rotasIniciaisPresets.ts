@@ -35,7 +35,8 @@ const SPECS = {
       "berry trees em (24,2) e (25,2): x=22..27, y=0..4 -> preservar",
       "Potion em (11,15) e seu acesso: x=9..13, y=13..17 -> preservar",
       "corredores e sight lines dos quatro treinadores: x=5..36, y=2..18 -> preservar",
-      "Pokémon de Arauna nas extremidades em (3,4) e (44,5): x=1..5, y=2..6; x=42..46, y=3..7 -> preservar",
+      "Pokémon de Arauna oeste em (3,4): x=1..5, y=2..6 -> preservar",
+      "Pokémon de Arauna leste em (44,5): x=42..46, y=3..7 -> preservar",
     ],
     extra: [
       "preservar Calvin, Rick, Tiana e Allen com sight ranges originais, berry growth ids, placas e todos os NPCs/eventos.",
@@ -49,12 +50,16 @@ const SPECS = {
   route103: {
     id: "piloto-rota-103-terra-de-arauna", mapId: "MAP_ROUTE103", source: "Route103", width: 80, height: 22, label: "Rota 103 · Terra de Arauna",
     preserves: [
-      "faixa externa completa para conexões e costa: x=0..79, y=0..1; x=0..79, y=20..21; x=0..1, y=0..21; x=78..79, y=0..21 -> preservar",
+      "borda norte: x=0..79, y=0..1 -> preservar",
+      "borda sul e conexão com Vila da Passagem: x=0..79, y=20..21 -> preservar",
+      "borda oeste: x=0..1, y=0..21 -> preservar",
+      "borda leste e conexão com Rota 110: x=78..79, y=0..21 -> preservar",
       "palco do primeiro confronto com Ciro e Anahi/Birch: x=4..14, y=0..10 -> preservar",
       "canal aquático central e nadadores: x=31..47, y=2..17 -> preservar",
       "entrada dinâmica de Altering Cave em (45,5)/(45,6): x=43..47, y=3..8 -> preservar",
       "setor leste de berries, Cut, itens e treinadores: x=48..76, y=2..17 -> preservar",
-      "Pokémon de Arauna em (3,9) e (28,8): x=1..5, y=7..11; x=26..30, y=6..10 -> preservar",
+      "Pokémon de Arauna oeste em (3,9): x=1..5, y=7..11 -> preservar",
+      "Pokémon de Arauna central em (28,8): x=26..30, y=6..10 -> preservar",
     ],
     extra: [
       "preservar LOCALID_ROUTE103_RIVAL em (10,3), seus movimentos de saída/jump_2_down e todas as células necessárias para a cena de Ciro.",
