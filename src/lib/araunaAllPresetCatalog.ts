@@ -8,6 +8,7 @@ import { NAVIO_PERDIDO_CATALOG_ENTRIES } from "./navioPerdidoCatalog";
 import { PASSAGENS_NATURAIS_CATALOG_ENTRIES } from "./passagensNaturaisCatalog";
 import { ROTAS_COSTEIRAS_CATALOG_ENTRIES } from "./rotasCosteirasCatalog";
 import { ROTAS_INICIAIS_CATALOG_ENTRIES } from "./rotasIniciaisCatalog";
+import { ROTAS_INTERIORES_CATALOG_ENTRIES } from "./rotasInterioresCatalog";
 import { TORRE_JURAMENTO_CATALOG_ENTRIES } from "./torreJuramentoCatalog";
 import { USINA_VELHA_CATALOG_ENTRIES } from "./usinaVelhaCatalog";
 
@@ -29,4 +30,5 @@ export const ARAUNA_ALL_PRESETS = [
   ...ARQUIVO_CENTRAL_CATALOG_ENTRIES,
   ...ROTAS_INICIAIS_CATALOG_ENTRIES,
   ...ROTAS_COSTEIRAS_CATALOG_ENTRIES,
+  ...ROTAS_INTERIORES_CATALOG_ENTRIES,
 ] as const;
