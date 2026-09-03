@@ -6,6 +6,7 @@ import { GRUTA_DA_MARE_CATALOG_ENTRIES } from "./grutaDaMareCatalog";
 import { GRUTA_DA_ORIGEM_CATALOG_ENTRIES } from "./grutaDaOrigemCatalog";
 import { NAVIO_PERDIDO_CATALOG_ENTRIES } from "./navioPerdidoCatalog";
 import { PASSAGENS_NATURAIS_CATALOG_ENTRIES } from "./passagensNaturaisCatalog";
+import { ROTAS_INICIAIS_CATALOG_ENTRIES } from "./rotasIniciaisCatalog";
 import { TORRE_JURAMENTO_CATALOG_ENTRIES } from "./torreJuramentoCatalog";
 import { USINA_VELHA_CATALOG_ENTRIES } from "./usinaVelhaCatalog";
 
@@ -25,4 +26,5 @@ export const ARAUNA_ALL_PRESETS = [
   ...PASSAGENS_NATURAIS_CATALOG_ENTRIES,
   ...ESCONDERIJO_SERRA_CATALOG_ENTRIES,
   ...ARQUIVO_CENTRAL_CATALOG_ENTRIES,
+  ...ROTAS_INICIAIS_CATALOG_ENTRIES,
 ] as const;
